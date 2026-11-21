@@ -9,6 +9,7 @@
 | Articulated seat characters | Original inline SVG art and pose code for Maple (Fox), Pip (Rabbit), Tallow (Tanuki) and Nori (Dragon) in [`web/src/actors.ts`](../web/src/actors.ts), with original styling in [`web/src/actors.css`](../web/src/actors.css). The body, head, upper arms, forearms and wrists move on committed live discards, calls, wins and losses. |
 | Visual effects | Original motion and inline SVG stamp glyphs in [`web/src/effects.ts`](../web/src/effects.ts), with trails, rings and bursts styled in [`web/src/effects.css`](../web/src/effects.css) and placed by [`web/src/table.ts`](../web/src/table.ts). The [win scene](../web/src/finale.ts) uses original lantern and votive art. Deal packets use the original tile backs; draw and discard copies reuse the same CC0 marks as the real tiles. No animation library, sprite images or video assets. |
 | Audio cues and quiet table music | Original, procedurally synthesized Web Audio tones and chords in [`web/src/audio.ts`](../web/src/audio.ts). No samples, recordings or third-party music. Audio follows the guest’s saved preferences and stays silent when the browser denies activation. |
+| Portal lobby and board-game art | The [court illustration](../web/src/portal/court-study.svg), [chess silhouettes and table studies](../web/src/portal/art.ts), [board lattices](../web/src/portal/board.ts) and [piece/surface styles](../web/src/portal/styles.css) were created for Jade Court. The portal reuses the original tile favicon but builds and loads independently of Mahjong. No external fonts or media are requested. |
 
 The original project assets and code are under [GPL-3.0](../LICENSE); the adapted tile marks are CC0. We kept each suit’s painted geometry, including the calligraphed 萬, the bamboo bird and the coin rosettes. We dropped editor metadata and unused definitions, rounded vector coordinates at tile scale, adjusted the inks for ivory tile bodies, and shared repeated paths as internal fragments. There are no honor, bonus or red-five tiles, upstream code, external SVG references, scripts or fonts.
 
@@ -18,7 +19,9 @@ The original project assets and code are under [GPL-3.0](../LICENSE); the adapte
 
 Use Vite's production `web/dist` and Node 26.13.1 `gzipSync` on each file, then sum the results. Count `index.html`, its entry JS and CSS, and the favicon against the **32 KiB** cold landing budget. Add the lazy `actors` JS and CSS, the dragon engraving and the same-origin `tile-suits` SVG for full play; count the Settings Fullscreen chunk separately. This estimates compressed static assets, not HTTP transfer size or server compression.
 
-The Jade Court build is **236 bytes under** the 32,768-byte cold budget.
+The two HTML entries share only the small emblem asset; there is no shared preload or board-game bundle in the Mahjong shell. The portal build's Mahjong entry measures **32,648 gzip bytes** before mount substitution and **32,653 bytes** served at the standalone `/mahjong/` mount.
+
+The pre-portal Jade Court baseline was **236 bytes under** the 32,768-byte cold budget.
 
 | Static assets | Raw bytes | Gzip bytes |
 |---|---:|---:|
