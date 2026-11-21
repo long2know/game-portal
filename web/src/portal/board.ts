@@ -64,6 +64,7 @@ export class BoardView {
   private readonly hint = el("p", "board-hint");
   private readonly keys = el("p", "board-keys", "Keyboard: arrow keys to move, Enter or Space to choose.");
   private readonly actions = el("div", "board-actions");
+  private readonly passNote = el("p", "board-keys", "Two consecutive passes end the game. Play out unsettled groups before passing.");
   private readonly chooser = el("section", "move-chooser");
   private readonly zoom = button("Enlarge board", "button small", () => this.toggleZoom());
   private readonly zoomNote = el("p", "board-keys", "Swipe or scroll to see the rest of the board.");
@@ -92,9 +93,10 @@ export class BoardView {
     this.chooser.hidden = true;
     this.zoom.hidden = true;
     this.zoomNote.hidden = true;
+    this.passNote.hidden = true;
     this.grid.addEventListener("keydown", event => this.navigate(event));
     this.root.append(this.frame, this.chooser, el("div", "board-instructions", this.hint, this.keys),
-      el("div", "board-tools", this.actions, this.zoom), this.zoomNote);
+      el("div", "board-tools", this.actions, this.zoom), this.passNote, this.zoomNote);
   }
 
   update(position: Position, mine: boolean, enabled: boolean, reset: boolean): void {
@@ -280,6 +282,7 @@ export class BoardView {
       action.remove();
       this.passButtons.delete(id);
     }
+    this.passNote.hidden = this.game !== "go" || keep.size === 0;
   }
 
   private openChoices(moves: Move[]): void {

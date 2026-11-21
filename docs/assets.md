@@ -19,7 +19,7 @@ The original project assets and code are under [GPL-3.0](../LICENSE); the adapte
 
 Use Vite's production `web/dist` and Node 26.13.1 `gzipSync` on each file, then sum the results. Count `index.html`, its entry JS and CSS, and the favicon against the **32 KiB** cold landing budget. Add the lazy `actors` JS and CSS, the dragon engraving and the same-origin `tile-suits` SVG for full play; count the Settings Fullscreen chunk separately. This estimates compressed static assets, not HTTP transfer size or server compression.
 
-The two HTML entries share only the small emblem asset; there is no shared preload or board-game bundle in the Mahjong shell. The portal build's Mahjong entry measures **32,648 gzip bytes** before mount substitution and **32,653 bytes** served at the standalone `/mahjong/` mount.
+The two HTML entries share only the small emblem asset; there is no shared preload or board-game bundle in the Mahjong shell. The portal build's Mahjong entry measures **32,648 gzip bytes** before mount substitution, **32,653 bytes** served at the standalone `/mahjong/` mount and **32,654 bytes** served at `/portal/mahjong/`.
 
 The pre-portal Jade Court baseline was **236 bytes under** the 32,768-byte cold budget.
 

@@ -130,8 +130,9 @@ test.describe("mounted Jade Court portal", () => {
         await fitsPhone(page);
         await tap(page, "Fit board");
       }
+      const cellIdAt = (row: number, column: number) => position.cells.find(cell => cell.row === row && cell.column === column)?.id;
       const move = (game === "chess"
-        ? position.moves.find(move => move.from === "r6c4" && move.to === "r5c4")
+        ? position.moves.find(move => move.from === cellIdAt(6, 4) && move.to === cellIdAt(5, 4))
         : position.moves.find(move => move.to !== null && position.moves.filter(candidate => candidate.from === move.from && candidate.to === move.to).length === 1))!;
       expect(move, `${game} should offer a playable opening`).toBeDefined();
       const played = receive(page, url(`api/board/tables/${initial.id}/moves`), "POST");
@@ -248,6 +249,7 @@ test.describe("mounted Jade Court portal", () => {
       await expect(friend).toHaveURL(url("go/"));
       expect(requests.every(request => !request.includes(waiting.invite!))).toBe(true);
       await expect(state(page)).toHaveText("Your turn");
+      await expect(page.getByText("Two consecutive passes end the game. Play out unsettled groups before passing.")).toBeVisible();
       await expect(state(friend)).toHaveText("Opal’s turn");
       await expect(page.getByRole("textbox", { name: "Invite link" })).toHaveCount(0);
       await expect(page.getByText("2 of 2 seats filled")).toBeVisible();
