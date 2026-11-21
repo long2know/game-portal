@@ -14,6 +14,19 @@
           "SQLitePCLRaw.core": "2.1.13"
         }
       },
+      "Ardalis.SmartEnum": {
+        "type": "Transitive",
+        "resolved": "2.0.1",
+        "contentHash": "tukxECzQuEXRGUzalYGF90CrD0hqW+308J3IaDKUoIavF3npUGVGn2ptumDSMIdZWInjPTlk3eJrrZuAePQbYA=="
+      },
+      "Gera.Chess": {
+        "type": "Transitive",
+        "resolved": "1.2.0",
+        "contentHash": "zinzizUTdkhGMMwt/f7J/AoldRvpbND5zBZrB9b8B/SLhi93lCrLnaQg5KAT4JUpDptNVUHtfggQIk6xQHD4kw==",
+        "dependencies": {
+          "Ardalis.SmartEnum": "2.0.1"
+        }
+      },
       "Microsoft.Data.Sqlite.Core": {
         "type": "Transitive",
         "resolved": "10.0.15",
@@ -91,6 +104,16 @@
         "dependencies": {
           "SQLitePCLRaw.core": "2.1.13"
         }
+      },
+      "jadecourt.chess": {
+        "type": "Project",
+        "dependencies": {
+          "Gera.Chess": "[1.2.0, 1.2.0]",
+          "JadeCourt.Games": "[1.0.0, )"
+        }
+      },
+      "jadecourt.games": {
+        "type": "Project"
       },
       "mahjong.rules": {
         "type": "Project"

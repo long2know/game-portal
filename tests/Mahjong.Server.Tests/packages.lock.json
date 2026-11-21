@@ -29,6 +29,19 @@
         "resolved": "3.1.5",
         "contentHash": "tKi7dSTwP4m5m9eXPM2Ime4Kn7xNf4x4zT9sdLO/G4hZVnQCRiMTWoSZqI/pYTVeI27oPPqHBKYI/DjJ9GsYgA=="
       },
+      "Ardalis.SmartEnum": {
+        "type": "Transitive",
+        "resolved": "2.0.1",
+        "contentHash": "tukxECzQuEXRGUzalYGF90CrD0hqW+308J3IaDKUoIavF3npUGVGn2ptumDSMIdZWInjPTlk3eJrrZuAePQbYA=="
+      },
+      "Gera.Chess": {
+        "type": "Transitive",
+        "resolved": "1.2.0",
+        "contentHash": "zinzizUTdkhGMMwt/f7J/AoldRvpbND5zBZrB9b8B/SLhi93lCrLnaQg5KAT4JUpDptNVUHtfggQIk6xQHD4kw==",
+        "dependencies": {
+          "Ardalis.SmartEnum": "2.0.1"
+        }
+      },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
         "resolved": "17.14.1",
@@ -266,12 +279,24 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
+      "jadecourt.chess": {
+        "type": "Project",
+        "dependencies": {
+          "Gera.Chess": "[1.2.0, 1.2.0]",
+          "JadeCourt.Games": "[1.0.0, )"
+        }
+      },
+      "jadecourt.games": {
+        "type": "Project"
+      },
       "mahjong.rules": {
         "type": "Project"
       },
       "mahjong.server": {
         "type": "Project",
         "dependencies": {
+          "JadeCourt.Chess": "[1.0.0, )",
+          "JadeCourt.Games": "[1.0.0, )",
           "Mahjong.Rules": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Sqlite": "[10.0.15, )"
         }

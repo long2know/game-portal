@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using Mahjong.Server;
+using Mahjong.Server.Board;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Data.Sqlite;
@@ -31,6 +32,13 @@ builder.Services.AddSingleton<RoomGame>();
 builder.Services.AddSingleton<Rooms>();
 builder.Services.AddSingleton<Realtime>();
 builder.Services.AddHostedService<RoomClock>();
+if (portalEnabled)
+{
+    var stockfishPath = builder.Configuration["Portal:StockfishPath"];
+    builder.Services.AddSingleton(services =>
+        new BoardRegistry(stockfishPath, services.GetRequiredService<ILogger<BoardRegistry>>()));
+    builder.Services.AddSingleton<BoardTables>();
+}
 
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
@@ -63,6 +71,11 @@ builder.Services.AddRateLimiter(rate =>
     rate.OnRejected = (context, _) => new ValueTask(HttpApi.Error(429, "busy").ExecuteAsync(context.HttpContext));
     rate.AddPolicy("mutate", context => PerAddress(context, 60));
     rate.AddPolicy("read", context => PerAddress(context, 120));
+    if (portalEnabled)
+    {
+        rate.AddPolicy("board-read", context => BoardApi.PerGuest(context, 90, 120));
+        rate.AddPolicy("board-write", context => BoardApi.PerGuest(context, 60, 60));
+    }
 });
 
 await using var app = builder.Build();
@@ -96,6 +109,7 @@ app.UseWebSockets(new WebSocketOptions
 });
 
 HttpApi.Map(app);
+if (portalEnabled) BoardApi.Map(app);
 app.MapGet("/ws", (HttpContext context, Realtime realtime) => realtime.InvokeAsync(context)).RequireRateLimiting("read");
 app.MapGet("/health/live", () => Results.Json(new { status = "live" }, Wire.Json));
 app.MapGet("/health/ready", async (Rooms rooms, HttpContext context) =>
