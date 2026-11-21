@@ -1,0 +1,159 @@
+using System.Diagnostics;
+
+namespace JadeCourt.Chess.Tests;
+
+public sealed class StockfishTests
+{
+    private readonly ChessGame builtIn = new();
+
+    [Fact]
+    public void UnconfiguredBotIsLegalDeterministicAndSilent()
+    {
+        var warnings = new List<string>();
+        var game = new ChessGame(warn: warnings.Add);
+        var checkpoint = SicilianOpening(game);
+        var move = game.SelectBotMove(checkpoint);
+        Assert.Contains(game.View(checkpoint).Moves, m => m.Id == move);
+        Assert.Equal(move, new ChessGame().SelectBotMove(checkpoint));
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void MissingConfiguredExecutableWarnsAndFallsBackToTheBuiltInMove()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, $"missing-uci-{Guid.NewGuid():N}");
+        var checkpoint = SicilianOpening(builtIn);
+        AssertFallback(path, checkpoint, "could not be run");
+    }
+
+    [LinuxUciFact]
+    public void AdapterSendsFixedCommandsAndAcceptsOnlyLegalUciIds()
+    {
+        var checkpoint = SicilianOpening(builtIn);
+        using var good = new UciExecutable("""
+            IFS= read -r line && [ "$line" = uci ] || exit 11
+            printf 'id name Test Engine\r\nuciok\r\n'
+            IFS= read -r line && [ "$line" = 'setoption name Threads value 1' ] || exit 12
+            IFS= read -r line && [ "$line" = 'setoption name Hash value 16' ] || exit 13
+            IFS= read -r line && [ "$line" = isready ] || exit 14
+            printf 'readyok\n'
+            IFS= read -r line && [ "$line" = 'position startpos moves e2e4 c7c5' ] || exit 15
+            IFS= read -r line && [ "$line" = 'go movetime 100' ] || exit 16
+            printf 'info depth 1\nbestmove a2a3 ponder b8c6\n'
+            IFS= read -r line && [ "$line" = quit ]
+            """);
+        var warnings = new List<string>();
+        Assert.NotEqual("a2a3", builtIn.SelectBotMove(checkpoint));
+        Assert.Equal("a2a3", new ChessGame(good.Path, warnings.Add).SelectBotMove(checkpoint));
+        Assert.Empty(warnings);
+
+        using var illegal = new UciExecutable("""
+            while IFS= read -r line; do
+              case "$line" in
+                uci) printf 'uciok\n' ;;
+                isready) printf 'readyok\n' ;;
+                'go movetime 100') printf 'bestmove a1a8\n' ;;
+                quit) exit ;;
+              esac
+            done
+            """);
+        AssertFallback(illegal.Path, checkpoint, "not legal");
+    }
+
+    [LinuxUciFact]
+    public void BrokenPipeLeavesAPlayableFallback()
+    {
+        using var closed = new UciExecutable("exit 0");
+        AssertFallback(closed.Path, builtIn.Start("standard", 2), "pipe closed");
+    }
+
+    [LinuxUciFact]
+    public void TimeoutKillsAndReapsTheUnresponsiveProcess()
+    {
+        using var hung = new UciExecutable("""
+            printf '%s\n' "$$" > "$0.pid"
+            while IFS= read -r line; do :; done
+            """);
+        var timer = Stopwatch.StartNew();
+        AssertFallback(hung.Path, builtIn.Start("standard", 2), "timed out");
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(5), $"Took {timer.Elapsed}.");
+        var pid = int.Parse(File.ReadAllText(hung.Path + ".pid"), System.Globalization.CultureInfo.InvariantCulture);
+        Assert.False(Directory.Exists($"/proc/{pid}"), $"Unresponsive child {pid} was not reaped.");
+    }
+
+    [LinuxUciFact]
+    public void BothOutputPipesHaveLimitsEvenWithoutNewlines()
+    {
+        using var stdout = new UciExecutable("while :; do printf '0123456789abcdef'; done");
+        using var stderr = new UciExecutable("while :; do printf '0123456789abcdef' >&2; done");
+        var checkpoint = builtIn.Start("standard", 2);
+        AssertFallback(stdout.Path, checkpoint, "output limit");
+        AssertFallback(stderr.Path, checkpoint, "output limit");
+    }
+
+    [StockfishQualificationFact]
+    public void PinnedStockfishReturnsAnAuthoritativeLegalMoveWithoutFallback()
+    {
+        var warnings = new List<string>();
+        var path = Environment.GetEnvironmentVariable(StockfishQualificationFactAttribute.Variable);
+        var game = new ChessGame(path, warnings.Add);
+        var checkpoint = SicilianOpening(game);
+        var timer = Stopwatch.StartNew();
+        var move = game.SelectBotMove(checkpoint);
+        Assert.Empty(warnings);
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(5), $"Took {timer.Elapsed}.");
+        Assert.Contains(game.View(checkpoint).Moves, m => m.Id == move);
+        Assert.Equal(move, game.View(game.Apply(checkpoint, move)).LastMove?.Id);
+    }
+
+    private void AssertFallback(string path, string checkpoint, string reason)
+    {
+        var warnings = new List<string>();
+        var game = new ChessGame(path, warnings.Add);
+        Assert.Equal(builtIn.SelectBotMove(checkpoint), game.SelectBotMove(checkpoint));
+        Assert.Contains(reason, Assert.Single(warnings), StringComparison.Ordinal);
+    }
+
+    private static string SicilianOpening(ChessGame game) =>
+        game.Apply(game.Apply(game.Start("standard", 2), "e2e4"), "c7c5");
+
+    private sealed class UciExecutable : IDisposable
+    {
+        internal UciExecutable(string body)
+        {
+            if (OperatingSystem.IsWindows())
+                throw new PlatformNotSupportedException();
+            Path = System.IO.Path.Combine(AppContext.BaseDirectory, $"uci-{Guid.NewGuid():N}.sh");
+            File.WriteAllText(Path, "#!/bin/sh\n" + body + "\n");
+            File.SetUnixFileMode(Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        internal string Path { get; }
+
+        public void Dispose()
+        {
+            File.Delete(Path);
+            File.Delete(Path + ".pid");
+        }
+    }
+}
+
+public sealed class LinuxUciFactAttribute : FactAttribute
+{
+    public LinuxUciFactAttribute()
+    {
+        if (!OperatingSystem.IsLinux())
+            Skip = "Uses a Linux UCI executable fixture.";
+    }
+}
+
+public sealed class StockfishQualificationFactAttribute : FactAttribute
+{
+    public const string Variable = "JADECOURT_STOCKFISH_TEST_PATH";
+
+    public StockfishQualificationFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(Variable)))
+            Skip = $"Set {Variable} to an absolute path to pinned Stockfish for qualification.";
+    }
+}
