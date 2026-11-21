@@ -1,0 +1,189 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BUILD_VERSION: 0.1.0
+  SOURCE_COMMIT: ${{ github.sha }}
+
+jobs:
+  application:
+    name: .NET and browser tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+          package-manager-cache: false
+      - name: Build TypeScript and Vite assets
+        run: |
+          npm --prefix web ci
+          npm --prefix web run build
+      - name: Test rules and server with locked dependencies
+        run: |
+          dotnet test tests/Mahjong.Rules.Tests/Mahjong.Rules.Tests.csproj -c Release -p:RestoreLockedMode=true \
+            -- RunConfiguration.TreatNoTestsAsError=true
+          dotnet test tests/Mahjong.Server.Tests/Mahjong.Server.Tests.csproj -c Release -p:RestoreLockedMode=true \
+            -- RunConfiguration.TreatNoTestsAsError=true
+      - name: Publish the server with built assets
+        run: |
+          dotnet publish src/Mahjong.Server/Mahjong.Server.csproj -c Release --no-restore -o artifacts/publish \
+            -p:UseAppHost=false -p:ContinuousIntegrationBuild=true \
+            -p:Version="$BUILD_VERSION" -p:InformationalVersion="$BUILD_VERSION+$SOURCE_COMMIT" \
+            -p:IncludeSourceRevisionInInformationalVersion=false
+      - name: Install pinned Playwright browsers and their system dependencies
+        working-directory: web
+        run: ./node_modules/.bin/playwright install --with-deps chromium webkit
+      - name: Run Chromium and WebKit against the published app and verify offline restore
+        env:
+          ASPNETCORE_ENVIRONMENT: Testing
+          Mahjong__Testing__BotDelayMilliseconds: '100'
+          Mahjong__Testing__TurnSeconds: '30'
+          Mahjong__Testing__ClaimSeconds: '8'
+        run: bash scripts/smoke-published.sh artifacts/publish "$BUILD_VERSION" "$SOURCE_COMMIT" --with-browser
+      - name: Verify runtime subpath hosting against the same published app
+        env:
+          SMOKE_PATH_BASE: /mahjong
+          SMOKE_PLAYWRIGHT_OUTPUT_DIR: test-results/mounted
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/mounted
+        run: bash scripts/smoke-published.sh artifacts/publish "$BUILD_VERSION" "$SOURCE_COMMIT" --with-browser
+      - name: Preserve browser evidence and failure logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-evidence
+          path: |
+            web/playwright-report/
+            web/test-results/
+            artifacts/infra-smoke-*/*.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  image:
+    name: Runtime image and persistence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      MAHJONG_IMAGE: mahjong-web:ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+          package-manager-cache: false
+      - name: Build the Compose runtime image locally
+        run: |
+          docker compose --env-file /dev/null config --quiet
+          docker compose --env-file /dev/null build mahjong
+      - name: Verify the image and durable guest identity across recreation and restore
+        run: bash scripts/smoke-container.sh "$MAHJONG_IMAGE" "$BUILD_VERSION" "$SOURCE_COMMIT"
+
+  publish:
+    name: Publish the verified GHCR image
+    needs: [application, image]
+    if: >-
+      github.event_name == 'push' && github.server_url == 'https://github.com' &&
+      github.repository == 'long2know/mahjong-web' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: ghcr-mahjong-web-latest
+      queue: max
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+          package-manager-cache: false
+      - name: Build and smoke-test the exact release candidate
+        id: candidate
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ || "$(git rev-parse HEAD)" != "$SOURCE_COMMIT" ]]; then
+            echo 'The checked-out revision does not match the full push SHA.' >&2
+            exit 1
+          fi
+          docker build --platform linux/amd64 --load --provenance=false --tag mahjong-web:release \
+            --build-arg BUILD_VERSION="$BUILD_VERSION" --build-arg SOURCE_COMMIT="$SOURCE_COMMIT" .
+          image_id=$(docker image inspect --format '{{.Id}}' mahjong-web:release)
+          [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          bash scripts/smoke-container.sh "$image_id" "$BUILD_VERSION" "$SOURCE_COMMIT"
+          printf 'image_id=%s\n' "$image_id" >> "$GITHUB_OUTPUT"
+      - name: Publish the revision and verify public latest
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          TESTED_IMAGE_ID: ${{ steps.candidate.outputs.image_id }}
+        run: |
+          set -euo pipefail
+          current_main() {
+            GIT_TERMINAL_PROMPT=0 git -c credential.helper= ls-remote --exit-code \
+              https://github.com/long2know/mahjong-web.git refs/heads/main | cut -f1
+          }
+          main_commit=$(current_main)
+          if [[ "$main_commit" != "$SOURCE_COMMIT" ]]; then
+            echo "Skipping publication: main is now $main_commit."
+            exit 0
+          fi
+
+          image=ghcr.io/long2know/mahjong-web
+          candidate="$image:sha-$SOURCE_COMMIT"
+          docker image tag "$TESTED_IMAGE_ID" "$candidate"
+
+          umask 077
+          auth_dir="$PWD/.ghcr-publish-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -- "$auth_dir"
+          trap 'rm -rf -- "$auth_dir"' EXIT
+          mkdir -- "$auth_dir/write" "$auth_dir/read"
+          # An explicit empty GHCR entry prevents Docker from using its default credential store.
+          printf '%s\n' '{"auths":{"ghcr.io":{}}}' > "$auth_dir/read/config.json"
+          cp "$auth_dir/read/config.json" "$auth_dir/write/config.json"
+          printf '%s\n' "$GHCR_TOKEN" | docker --config "$auth_dir/write" login ghcr.io \
+            --username "$GITHUB_ACTOR" --password-stdin
+          unset GHCR_TOKEN
+          docker --config "$auth_dir/write" image push "$candidate"
+
+          public_digest() {
+            docker --config "$auth_dir/read" buildx imagetools inspect --format '{{.Manifest.Digest}}' "$1"
+          }
+          digest=$(public_digest "$candidate")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker --config "$auth_dir/read" image pull --platform linux/amd64 "$image@$digest"
+          if [[ "$(docker image inspect --format '{{.Id}}' "$image@$digest")" != "$TESTED_IMAGE_ID" ]]; then
+            echo "Public image $image@$digest does not match the smoke-tested image." >&2
+            exit 1
+          fi
+          echo "Verified $candidate at $image@$digest"
+
+          main_commit=$(current_main)
+          if [[ "$main_commit" != "$SOURCE_COMMIT" ]]; then
+            echo "Skipping latest promotion: main is now $main_commit."
+            exit 0
+          fi
+          docker --config "$auth_dir/write" buildx imagetools create --prefer-index=false \
+            --tag "$image:latest" "$image@$digest"
+          latest_digest=$(public_digest "$image:latest")
+          if [[ "$latest_digest" != "$digest" ]]; then
+            echo "Public latest points to $latest_digest, expected $digest." >&2
+            exit 1
+          fi
+          echo "Verified $image:latest at $image@$digest"
