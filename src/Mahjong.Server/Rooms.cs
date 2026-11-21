@@ -638,9 +638,11 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
         var cutoff = EffectiveLeaseClock(utc).UtcTicks;
         await using var transaction = await db.Database.BeginTransactionAsync();
         await db.Receipts.Where(r => r.ExpiresAtTicks <= cutoff).ExecuteDeleteAsync();
+        await db.BoardTables.Where(table => table.ExpiresAtTicks <= utc.UtcTicks).ExecuteDeleteAsync();
         await db.Clock.Where(c => c.Id == 1).ExecuteUpdateAsync(setters => setters.SetProperty(c => c.LeasePruneTicks, cutoff));
         await db.Guests.Where(guest => guest.ExpiresAtTicks <= utc.UtcTicks
-            && !db.Memberships.Any(member => member.GuestId == guest.Id)).ExecuteDeleteAsync();
+            && !db.Memberships.Any(member => member.GuestId == guest.Id)
+            && !db.BoardMemberships.Any(member => member.GuestId == guest.Id)).ExecuteDeleteAsync();
         await transaction.CommitAsync();
         Volatile.Write(ref _leasePruneTicks, cutoff);
         _lastPrune = time.GetTimestamp();

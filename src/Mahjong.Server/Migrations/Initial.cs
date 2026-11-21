@@ -83,12 +83,6 @@ internal sealed class Initial : Migration
     protected override void BuildTargetModel(ModelBuilder modelBuilder) => InitialSchema.Build(modelBuilder);
 }
 
-[DbContext(typeof(MahjongDb))]
-internal sealed class MahjongDbModelSnapshot : ModelSnapshot
-{
-    protected override void BuildModel(ModelBuilder modelBuilder) => InitialSchema.Build(modelBuilder);
-}
-
 internal static class InitialSchema
 {
     public static void Build(ModelBuilder builder)
