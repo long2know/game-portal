@@ -17,6 +17,8 @@ const connectionText: Record<Connection, string> = {
 };
 
 const nonDiscard = /[\u0000-\u001f\u007f-\u009f]/u;
+const mahjongPath = `${appPath}mahjong/`;
+const fromPortal = location.pathname.startsWith(mahjongPath);
 
 class LanternTable {
   private readonly root = el("div", "shell");
@@ -88,8 +90,12 @@ class LanternTable {
   private overlayActions: HTMLButtonElement[] = [];
 
   constructor(mount: HTMLElement) {
-    const brand = el("div", "brand", el("span", "brand-symbol"),
+    const brand = el(fromPortal ? "a" : "div", "brand", el("span", "brand-symbol"),
       el("div", "", el("p", "brand-name", "Jade Court"), el("p", "brand-kicker", "Changsha Mahjong")));
+    if (brand instanceof HTMLAnchorElement) {
+      brand.href = appPath;
+      brand.setAttribute("aria-label", "Back to all games in Jade Court");
+    }
     const rulesButton = iconButton("book", "Changsha rules", () => this.modal.show("rules", "Changsha rules", rulesContent()));
     const header = el("header", "site-header", brand, el("div", "header-actions", this.connection, rulesButton, this.chatButton, this.settingsButton));
     this.connection.setAttribute("role", "status");
@@ -401,7 +407,7 @@ class LanternTable {
   private openInvite(): void {
     const state = this.session.snapshot;
     if (state?.room.status !== "waiting" || !state.self.inviteCode) return;
-    const link = new URL(appPath, location.origin);
+    const link = new URL(fromPortal ? mahjongPath : appPath, location.origin);
     link.hash = new URLSearchParams({ invite: state.self.inviteCode }).toString();
     const input = el("input");
     input.readOnly = true;

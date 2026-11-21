@@ -56,6 +56,8 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 500; line-
 }
 .site-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 49px; margin-bottom: 12px; }
 .brand { display: flex; gap: 10px; align-items: center; min-width: 0; }
+a.brand { color: inherit; text-decoration: none; min-height: 44px; }
+a.brand::before { content: "‹"; color: var(--gold); }
 .brand-symbol {
   width: 41px; height: 41px; flex: none;
   background: url("./jade-court.svg?no-inline") center / contain no-repeat;

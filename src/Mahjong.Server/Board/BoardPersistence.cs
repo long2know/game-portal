@@ -1,0 +1,48 @@
+using Microsoft.EntityFrameworkCore;
+
+namespace Mahjong.Server.Board;
+
+internal sealed class BoardTableRow
+{
+    public required string Id { get; init; }
+    public required string Game { get; init; }
+    public required string Variant { get; init; }
+    public string? InviteCode { get; init; }
+    public int Players { get; init; }
+    public bool Bots { get; init; }
+    public long Revision { get; init; }
+    public long ExpiresAtTicks { get; init; }
+    public string? Checkpoint { get; init; }
+    public List<BoardMembershipRow> Members { get; } = [];
+}
+
+internal sealed class BoardMembershipRow
+{
+    public required string TableId { get; init; }
+    public Guid GuestId { get; init; }
+    public int Seat { get; init; }
+    public long JoinedAtTicks { get; init; }
+    public BoardTableRow Table { get; init; } = null!;
+    public GuestRow Guest { get; set; } = null!;
+}
+
+internal static class BoardPersistence
+{
+    public static void Configure(ModelBuilder builder)
+    {
+        builder.Entity<BoardTableRow>(table =>
+        {
+            table.ToTable("BoardTables");
+            table.HasIndex(t => t.InviteCode).IsUnique();
+            table.HasIndex(t => t.ExpiresAtTicks);
+        });
+        builder.Entity<BoardMembershipRow>(member =>
+        {
+            member.ToTable("BoardMemberships");
+            member.HasKey(m => new { m.TableId, m.Seat });
+            member.HasIndex(m => new { m.GuestId, m.TableId }).IsUnique();
+            member.HasOne(m => m.Guest).WithMany().HasForeignKey(m => m.GuestId);
+            member.HasOne(m => m.Table).WithMany(t => t.Members).HasForeignKey(m => m.TableId);
+        });
+    }
+}

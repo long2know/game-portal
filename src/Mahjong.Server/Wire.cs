@@ -115,13 +115,13 @@ internal static class Wire
         return json.ValueKind is JsonValueKind.True or JsonValueKind.False;
     }
 
-    private static bool Int(this JsonElement json, out int result)
+    public static bool Int(this JsonElement json, out int result)
     {
         result = -1;
         return json.ValueKind == JsonValueKind.Number && json.TryGetInt32(out result);
     }
 
-    private static bool Revision(JsonElement json, out long result)
+    public static bool Revision(JsonElement json, out long result)
     {
         result = -1;
         return json.ValueKind == JsonValueKind.Number && json.TryGetInt64(out result)

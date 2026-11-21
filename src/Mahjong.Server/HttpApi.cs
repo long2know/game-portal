@@ -62,7 +62,10 @@ internal static class HttpApi
         }
     }
 
-    private static async Task<ProfileChange?> ReadProfileAsync(HttpContext context, bool allowPreferences)
+    private static Task<ProfileChange?> ReadProfileAsync(HttpContext context, bool allowPreferences) =>
+        ReadJsonAsync(context, body => Wire.TryProfile(body, allowPreferences, out var change) ? change : null);
+
+    public static async Task<T?> ReadJsonAsync<T>(HttpContext context, Func<JsonElement, T?> parse) where T : class
     {
         const int limit = 4096;
         if (!context.Request.HasJsonContentType() || context.Request.ContentLength > limit) return null;
@@ -80,7 +83,7 @@ internal static class HttpApi
             if (length > limit) return null;
             using var json = JsonDocument.Parse(buffer.AsMemory(0, length), Wire.DocumentOptions);
             Wire.ValidateStrings(json.RootElement);
-            return Wire.TryProfile(json.RootElement, allowPreferences, out var change) ? change : null;
+            return parse(json.RootElement);
         }
         catch (Exception ex) when (ex is JsonException or BadHttpRequestException)
         {

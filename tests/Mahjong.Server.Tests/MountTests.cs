@@ -35,7 +35,8 @@ public sealed class MountTests
         Assert.True(asset.Headers.CacheControl?.Extensions.Any(extension => extension.Name == "immutable"));
         Assert.NotEmpty(await asset.Content.ReadAsByteArrayAsync());
         foreach (var route in new[] { "/", "/api/version", "/health/ready", "/tables/mahjong-more/",
-            "/tables/Mahjong/", mount + "/api/missing", mount + "/assets/missing", mount + "/ws/missing" })
+            "/tables/Mahjong/", mount + "/api/missing", mount + "/assets/missing", mount + "/ws/missing",
+            mount + "/api/board/games" })
         {
             using var missing = await http.GetAsync(route);
             Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);

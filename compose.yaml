@@ -1,7 +1,8 @@
-name: mahjong-web
+name: game-portal
 services:
-  mahjong:
-    image: ${MAHJONG_IMAGE:-mahjong-web:local}
+  game-portal:
+    image: ${GAME_PORTAL_IMAGE:-game-portal:local}
+    platform: linux/amd64
     pull_policy: never
     build:
       context: .
@@ -9,15 +10,13 @@ services:
         BUILD_VERSION: ${BUILD_VERSION:-0.1.0}
         SOURCE_COMMIT: ${SOURCE_COMMIT:-unknown}
     environment:
-      BASE_URL: ${BASE_URL:-/}
-      Mahjong__AllowHttpLoopbackOrigin: ${Mahjong__AllowHttpLoopbackOrigin:-true}
-      Mahjong__BehindHttpsProxy:
-      Mahjong__PublicOrigin:
-      Mahjong__TrustedProxies__0:
+      BASE_URL: /portal
+      Portal__Enabled: "true"
+      Mahjong__AllowHttpLoopbackOrigin: "true"
     ports:
-      - "127.0.0.1:${MAHJONG_PORT:-8080}:8080"
+      - "127.0.0.1:${GAME_PORTAL_HOST_PORT:-8912}:8080"
     volumes:
-      - data:/data
+      - portal-data:/data
     restart: unless-stopped
     stop_grace_period: 30s
     cap_drop: [ALL]
@@ -25,4 +24,4 @@ services:
       - no-new-privileges:true
 
 volumes:
-  data:
+  portal-data:

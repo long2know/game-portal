@@ -58,6 +58,8 @@ internal sealed class Kestrel : IAsyncDisposable
         start.ArgumentList.Add(DataDirectory);
         start.Environment.Remove("BASE_URL");
         start.Environment.Remove("Mahjong__BehindHttpsProxy");
+        start.Environment.Remove("Portal__Enabled");
+        start.Environment.Remove("Portal__StockfishPath");
         foreach (var (key, value) in _configuration) start.Environment[key] = value;
 
         var ready = new TaskCompletionSource<Uri>(TaskCreationOptions.RunContinuationsAsynchronously);

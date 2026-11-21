@@ -6,13 +6,18 @@
     <Version>0.1.0</Version>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+    <ClientDist Condition="'$(ClientDist)' == ''">../../web/dist</ClientDist>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Mahjong.Rules/Mahjong.Rules.csproj" />
+    <ProjectReference Include="../JadeCourt.Games/JadeCourt.Games.csproj" />
+    <ProjectReference Include="../JadeCourt.Chess/JadeCourt.Chess.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.15" />
-    <Content Include="../../web/dist/index.html" Condition="Exists('../../web/dist/index.html')"
+    <Content Include="$(ClientDist)/index.html" Condition="Exists('$(ClientDist)/index.html')"
              Link="index.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="../../web/dist/**/*" Exclude="../../web/dist/index.html;../../web/dist/**/*.map"
+    <Content Include="$(ClientDist)/portal.html" Condition="Exists('$(ClientDist)/portal.html')"
+             Link="portal.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(ClientDist)/**/*" Exclude="$(ClientDist)/index.html;$(ClientDist)/portal.html;$(ClientDist)/**/*.map"
              Link="wwwroot/%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

@@ -1,244 +1,235 @@
-# Operations
+# Jade Court operations
 
-## Deployment and configuration
+Run one portal process per data directory. The `long2know/game-portal` Linux/amd64 image runs `dotnet Mahjong.Server.dll` on port `8080` as non-root (UID `1654` by default), with no SDK or Node. Its defaults are `BASE_URL=/portal`, `Portal__Enabled=true`, and `Portal__StockfishPath=/usr/games/stockfish`. The HTML, HTTP API and WebSocket share the mount.
 
-Run **one** ASP.NET Core process per data directory. It serves the built client, HTTP API, and WebSocket at the root of one origin by default, or under a single configured prefix on that origin. No shared DB, Redis, runtime Node, or second replica is needed. The container listens on `8080`, runs as the non-root .NET `app` user (UID `1654`), and stores SQLite and ASP.NET Data Protection keys together on a writable volume mounted at `/data`.
+**Do not change an existing Mahjong container, image, proxy route or volume.** Jade Court uses a new service, host port and data directory. Although the new SQLite file is named `mahjong.db`, the portal must not open the old file or key ring. There is no migration from the other service.
 
 | Setting | Purpose |
 |---|---|
-| `MAHJONG_PORT` | Compose host port, default `8080`; published on `127.0.0.1` only. |
-| `MAHJONG_IMAGE` | Local Compose image tag, default `mahjong-web:local`. No registry pull of the application image. |
-| `BASE_URL` | Runtime path, e.g. `/mahjong`. Unset, empty or `/` serves the root. Use case-sensitive path segments with ASCII letters, digits, `.`, `_`, `~` or `-`; no empty or dot (`.` or `..`) segments, escapes, host, query, or fragment. One trailing slash is normalized. Invalid values fail startup. |
-| `BUILD_VERSION`, `SOURCE_COMMIT` | Image build inputs; defaults `0.1.0` and `unknown`. Use a full SHA from a clean checkout. The app's `/api/version` endpoint and the OCI `version`/`revision` labels report the artifact identity. Runtime environment changes don't change it. |
-| `Mahjong__DataDirectory` | Private, writable data directory. Defaults to `mahjong-web` in the OS local application data directory, or `/data` in the image. Don't put it in the publish directory. |
-| `Mahjong__AllowHttpLoopbackOrigin` | Compose enables this for local HTTP through the Docker bridge. The request origin must still be loopback. Off in the standalone image; never use it with a publicly bound HTTP port. Has no effect with `Mahjong__BehindHttpsProxy=true`. |
-| `Mahjong__BehindHttpsProxy` | Opt in with `true` for a TLS proxy that preserves `Host` and the path and has exclusive access to the private HTTP upstream. The app requires a matching HTTPS browser origin and ignores all forwarded headers. Default `false` preserves direct and IP-based proxy behavior. |
-| `Mahjong__PublicOrigin` | Optional origin pin, e.g. `https://games.example.test`, without the app path. With `Mahjong__BehindHttpsProxy=true`, it must be HTTPS and pins both the actual `Host` authority and the browser origin. Leave unset to check against the proxy-preserved `Host` without duplicating the hostname. |
-| `Mahjong__TrustedProxies__0`, `Mahjong__TrustedProxies__1`, … | Exact proxy peer IPs as seen by Kestrel. Setting a list replaces default loopback trust. Incompatible with `Mahjong__BehindHttpsProxy=true`. Compose passes through `Mahjong__TrustedProxies__0`; for more peers use a Compose override. |
+| `GAME_PORTAL_HOST_PORT` | Loopback port for either Compose example; default `8912`. |
+| `DOCKER_DATA` | Required for [production Compose](#production-compose-on-the-proxy-host). Mounts only `${DOCKER_DATA}/games/portal/data`. |
+| `GAME_PORTAL_UID`, `GAME_PORTAL_GID` | Production bind-mount user; both default to `1000`. Match the owner of the new directory. |
+| `GAME_PORTAL_PRODUCTION_IMAGE` | Published tag or digest; default `ghcr.io/long2know/game-portal:latest`. |
+| `GAME_PORTAL_PULL_POLICY` | `always` by default. Set to `never` only for a verified image already loaded locally. |
+| `GAME_PORTAL_IMAGE` | Local named-volume Compose build; default `game-portal:local`, no registry pull of the application image. |
+| `BUILD_VERSION`, `SOURCE_COMMIT` | Build-time identity (defaults `0.1.0` and `unknown`). Use a full SHA from a clean checkout; `/portal/api/version` and the OCI labels report it. |
+| `Mahjong__BehindHttpsProxy` | `true` only behind a TLS edge that preserves `Host` and the path and has exclusive access to the HTTP upstream. |
+| `Mahjong__AllowHttpLoopbackOrigin` | Local quickstart only; allows HTTP from a matching loopback browser origin through Docker. Omit in production. |
+| `Portal__StockfishPath` | Optional path to a local UCI binary for native runs. Without it, Chess uses a built-in legal bot. The image supplies its own exact pin. |
 
-Use the Compose named volume unless you can guarantee ownership and permissions on a bind mount. The container's UID/GID must be able to create and modify SQLite files and the key ring; do not make the directory world-writable. Room state, names, invite information, and protection keys are sensitive; restrict and encrypt backups, and keep them separate from the software image. The key ring is not automatically encrypted at rest.
-
-`GET /health/live` checks that HTTP can serve; `GET /health/ready` checks readiness after migrations and recovery and while SQLite is usable. Prefix these routes and `/api/version` with `BASE_URL` when mounted, e.g. `/mahjong/health/ready`. Docker's healthcheck does this automatically. The app does not serve unprefixed routes on a mounted deployment. Inspect `docker compose logs mahjong` if readiness doesn't return. Keep access logs free of credentials, cookies, invite codes, and private message bodies.
+`GET /portal/health/live` checks HTTP; `/portal/health/ready` requires startup migrations, recovery and a usable SQLite directory. The Docker healthcheck follows the image mount. Keep `/data` writable by only the intended user: it holds SQLite and ASP.NET Data Protection keys. The keys are not automatically encrypted at rest.
 
 ## Run the published image
 
-Use the [README Docker command](../README.md#run-the-published-image) with Docker Engine 28 or newer on Linux/amd64 once the `Publish the verified GHCR image` job in [CI](https://github.com/long2know/mahjong-web/actions/workflows/ci.yml) logs a verified `latest` digest for the desired commit. The image is anonymously pullable after verification. The old `Mahjong.Autotable.Api.dll` image isn't this app: start `Mahjong.Server.dll` with a fresh data directory, and leave the legacy database and backups intact. No legacy SQLite connection string, database provider, JWT signing key, or CORS settings apply. The app opens `mahjong.db` and creates a `keys/` directory under the selected data directory; browsers get a protected guest cookie. This is not a migration.
+Check the [CI summary](https://github.com/long2know/game-portal/actions/workflows/ci.yml) for the desired full source commit. An authenticated `latest` digest does **not** establish public access. Use the [README Docker command](../README.md#run-the-published-image) without login only after the run reports **Verified anonymous pull**. For exact production rollback or promotion, record `ghcr.io/long2know/game-portal@sha256:<manifest-digest>`, not just `latest`. The `sha-<full-commit>` tag identifies the source build; digest pinning identifies exact registry bytes.
 
-To select a known revision, replace `:latest` with `:sha-<full-commit>`, or pin `ghcr.io/long2know/mahjong-web@sha256:<manifest-digest>` from the publish log for exact bytes. Keep `--pull=always`, then check `/health/ready` and `/api/version` at the chosen loopback port (e.g. `curl -fsS http://127.0.0.1:8911/api/version` at root). The reported revision must match the intended commit. For remote access, use the HTTPS setup below, pass its application settings with `docker run --env`, and set the proxy upstream to the chosen loopback port.
+GHCR creates a fresh package as private, even for this public repository. **HTTP 401/403 on the anonymous token request** is reported as not anonymously pullable. Only the package owner can make `game-portal` public: in the new package's **Package settings → Danger Zone → Change visibility**, choose **Public** if intended. Then check without signing in (use a clean Docker config) that `latest` pulls and has the tested digest and image ID. Do not grant the new repository access to the old package. If the new package rejects the push, inspect only that new package's Actions access; no personal token is required by these jobs.
 
-If GHCR denies the job's push, the maintainer of the existing package linked to `long2know/mahjong-webgl` should open its package settings, choose **Manage Actions access**, and add `long2know/mahjong-web` with **Write**. Then rerun the publish job for the current `main` push. The job uses the repository's Actions token; no PAT in the repo is needed.
+```bash
+mkdir -m 0700 .jade-court-anonymous
+printf '%s\n' '{"auths":{"ghcr.io":{}}}' > .jade-court-anonymous/config.json
+image=ghcr.io/long2know/game-portal:latest
+docker --config "$PWD/.jade-court-anonymous" pull --platform linux/amd64 "$image"
+docker image inspect --format '{{.Id}} {{json .RepoDigests}}' "$image"
+rm -r .jade-court-anonymous
+```
 
-### Keep an existing `/mahjong` route and bind mount
+### No-login image archive
 
-Use a verified image revision that supports `BASE_URL` and `Mahjong__BehindHttpsProxy`. If replacing Autotable, stop it and back up its data before reusing the host bind mount. Leave `Mahjong__DataDirectory` unset: the image uses `/data` and stores `mahjong.db` and `keys/` directly in the mount. Before starting the new app, verify the directory is private, accessible and writable by the effective container UID/GID (UID `1654` by default), and either empty or contains only intended state from the new app. Keep the legacy backup intact; this is not a migration. If keeping both apps, use separate data directories so neither opens or overwrites the other's files.
+If GHCR is private or its publication job fails, the separate CI archive job can attach the **same tested image**, not a rebuild, to a build-specific [prerelease](https://github.com/long2know/game-portal/releases) in this public repo. Use a release after the job reports **Verified anonymous download**. It does not change the latest GitHub Release, old Mahjong package, or live deployment.
+
+Copy the full source commit, build-specific tag and tested image ID from the release:
+
+```bash
+sha='<full source commit>'
+tag='<portal-image-commit-run-attempt tag>'
+tested_id='<sha256:tested image ID>'
+file=game-portal-linux-amd64.tar.gz
+base="https://github.com/long2know/game-portal/releases/download/$tag"
+curl --disable -fLO "$base/$file"
+curl --disable -fLO "$base/$file.sha256"
+sha256sum -c "$file.sha256"
+docker image load --input "$file"
+image="ghcr.io/long2know/game-portal:sha-$sha"
+test "$(docker image inspect --format '{{.Id}}' "$image")" = "$tested_id"
+```
+
+In the README's `docker run` command, replace `--pull=always` with `--pull=never` and the final image name with `"$image"`. For production Compose, set `GAME_PORTAL_PRODUCTION_IMAGE="$image"` and `GAME_PORTAL_PULL_POLICY=never`. If no public asset is available yet, check out the intended clean revision from the [public source](https://github.com/long2know/game-portal) and use the [named-volume Compose build](../README.md#run-with-docker-compose). A build from the same pinned recipe is not proof of the hosted image's exact digest.
+
+## Production Compose on the proxy host
+
+On a Linux/amd64 host with Docker Engine 28+ and Compose, set `DOCKER_DATA` in the shell or your deployment `.env`. The checked-in [compose.production.yaml](../compose.production.yaml) runs the distinct `game-portal` service and does not merge with the local quickstart:
 
 ```yaml
 services:
-  mahjong:
-    image: ghcr.io/long2know/mahjong-web:latest
-    pull_policy: always
-    # user: "1000:1000" # Optional; match the intended ownership of the bind mount.
+  game-portal:
+    image: ${GAME_PORTAL_PRODUCTION_IMAGE:-ghcr.io/long2know/game-portal:latest}
+    platform: linux/amd64
+    pull_policy: ${GAME_PORTAL_PULL_POLICY:-always}
+    user: "${GAME_PORTAL_UID:-1000}:${GAME_PORTAL_GID:-1000}"
     ports:
-      - "127.0.0.1:${MAHJONG_HOST_PORT:-8911}:8080"
+      - "127.0.0.1:${GAME_PORTAL_HOST_PORT:-8912}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: http://+:8080
-      BASE_URL: /mahjong
+      BASE_URL: /portal
+      Portal__Enabled: "true"
       Mahjong__BehindHttpsProxy: "true"
-      # Autotable settings below are not used by this image:
-      # Persistence__Provider: sqlite
-      # ConnectionStrings__Sqlite: Data Source=/data/legacy.sqlite
-      # Authentication__JwtSigningKeys__0: <legacy signing key>
-      # Cors__AllowedOrigins__0: https://games.example.test
     volumes:
-      - ${DOCKER_DATA}/games/mahjong/data:/data
+      - type: bind
+        source: ${DOCKER_DATA:?Set DOCKER_DATA in .env}/games/portal/data
+        target: /data
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    stop_grace_period: 30s
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
 ```
 
-The explicit ASP.NET Core port and environment match the image defaults. The port mapping binds only to loopback for a proxy on the same host. For a separate proxy, use a private Docker network (`http://mahjong:8080`) or restrict access to the published port to that proxy with your network/firewall. Do not expose the raw HTTP port to other clients. At the default host port, check `curl -fsS http://127.0.0.1:8911/mahjong/health/ready` and `curl -fsS http://127.0.0.1:8911/mahjong/api/version`; then open the public `/mahjong/` URL and verify guest entry and play.
+Prepare an unused directory before the first launch. Do not point it or any symlink at other service data. Keep the owner and mode across restores; never make it world-writable.
+
+```bash
+set -eu
+export DOCKER_DATA=/srv/docker-data # Set to your own storage root.
+data_dir="$DOCKER_DATA/games/portal/data"
+if [[ -e $data_dir || -L $data_dir ]]; then echo "Not a new data directory: $data_dir" >&2; exit 1; fi
+sudo install -d -m 0700 -o "${GAME_PORTAL_UID:-1000}" -g "${GAME_PORTAL_GID:-1000}" "$data_dir"
+docker compose -f compose.production.yaml up -d --wait
+curl -fsS http://127.0.0.1:8912/portal/health/ready
+curl -fsS http://127.0.0.1:8912/portal/api/version
+```
+
+If the directory already exists, stop and inspect it before launching; reuse only data intentionally created by this same Jade Court deployment. A containerized proxy on a private Docker network can instead use upstream `http://game-portal:8080`; remove the host port mapping if the proxy is the only client. Do not publish the raw HTTP port on `0.0.0.0`.
 
 ## HTTPS for other devices
 
-If your existing TLS proxy preserves the public `Host` (including a non-default HTTPS port), path and WebSocket upgrades, set **`Mahjong__BehindHttpsProxy=true`**. No hostname, proxy IP, CORS, or forwarded headers are needed. Guest entry, profile updates and WebSocket upgrades require exactly one `Origin` matching `https://` plus the actual request authority. The proxy must preserve the browser's `Origin`. The app does not rewrite its scheme or peer address, and rate limits are shared by requests from the same proxy peer. A redundant `X-Forwarded-Prefix` is ignored; it cannot select the mount.
-
-**Keep the HTTP upstream reachable only by the intended proxy.** The switch declares how you deployed the app; neither it nor an optional `Mahjong__PublicOrigin` pin proves proxy identity or TLS. Route only the intended TLS virtual host, reject unmatched hosts at the edge and redirect or block public HTTP there. Remove `Mahjong__TrustedProxies__*` and disable `ASPNETCORE_FORWARDEDHEADERS_ENABLED`; these cannot be combined with this mode.
-
-For `BASE_URL=/mahjong`, **preserve the prefix**. An existing `proxy_pass http://mahjong:8080;` (no trailing slash) can stay in place. Route only `/mahjong` and `/mahjong/...`, not `/mahjong-other`. The app can redirect `GET /mahjong` to `/mahjong/` with the original query string; an edge redirect works too. Invite codes use URL fragments, which the browser retains across the redirect.
-
-For example, in Nginx's `http` context with a certificate for the existing hostname (use the service's actual private upstream):
+Add these locations **inside your existing TLS virtual host**, retaining its certificates, server-name allowlist, and `/mahjong` locations. Set the upstream to the host port chosen above. Add this dedicated upgrade map in Nginx's `http` context:
 
 ```nginx
-map $http_upgrade $mahjong_connection {
+map $http_upgrade $portal_connection {
     default upgrade;
     '' close;
 }
+```
 
-server {
-    listen 443 ssl;
-    server_name games.example.test;
-    ssl_certificate /path/to/fullchain.pem;
-    ssl_certificate_key /path/to/private-key.pem;
+```nginx
+location = /portal {
+    absolute_redirect off;
+    return 308 /portal/$is_args$args;
+}
 
-    if ($host != games.example.test) { return 421; }
-
-    location = /mahjong {
-        return 308 /mahjong/$is_args$args;
-    }
-
-    location ^~ /mahjong/ {
-        proxy_pass http://127.0.0.1:8911;
-        proxy_http_version 1.1;
-        proxy_set_header Host $http_host;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection $mahjong_connection;
-        proxy_read_timeout 180s;
-    }
+location ^~ /portal/ {
+    proxy_pass http://127.0.0.1:8912;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header Origin $http_origin;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $portal_connection;
+    proxy_set_header Forwarded "";
+    proxy_set_header X-Forwarded-For "";
+    proxy_set_header X-Forwarded-Host "";
+    proxy_set_header X-Forwarded-Proto "";
+    proxy_set_header X-Forwarded-Prefix "";
+    proxy_read_timeout 180s;
 }
 ```
 
-For root hosting, use `location /` instead of both `/mahjong` locations and omit `BASE_URL`. Verify that `wss://<host>/mahjong/ws` (or `/ws` for root) works, wrong or missing origins are rejected, and the guest cookie is `Secure`, `HttpOnly`, `SameSite=Lax`, and scoped to the configured path. Other apps at the same origin are not a browser security boundary; use a separate origin if those apps are not trusted.
+The `proxy_pass` URL has **no trailing slash**: Nginx sends `/portal/...` unchanged. Preserve the public `Host`, including any non-default HTTPS port. Reject unmatched hosts and redirect or block public HTTP at the edge. Run `nginx -t` before reloading, then verify the existing `/mahjong/` route is unchanged and open `/portal/` on the intended HTTPS host.
 
-### IP-based forwarding and stripped mounts
+The app checks exactly one matching HTTPS `Origin` on guest writes, moves, and WebSocket upgrades. The proxy must pass the supplied `Origin`, not invent it. Guest cookies are host-only, `Secure`, `HttpOnly`, `SameSite=Lax`, with `Path=/portal`; don't rewrite their path or domain. No app hostname, proxy IP, JWT, CORS, or forwarded-headers configuration is needed. Do not enable `ASPNETCORE_FORWARDEDHEADERS_ENABLED` or set `Mahjong__TrustedProxies__*` with this mode. It does not authenticate the proxy or encrypt its HTTP hop: restrict that hop to your trusted proxy. Apps sharing an origin are not a security boundary; use a separate origin if the other apps aren't trusted.
 
-Leave `Mahjong__BehindHttpsProxy` unset if you need the proxy to rewrite the host or **strip the path prefix**. Set `Mahjong__AllowHttpLoopbackOrigin=false`, `Mahjong__PublicOrigin` to the public HTTPS origin, and `Mahjong__TrustedProxies__0` to the immediate proxy peer IP as seen by Kestrel if it isn't loopback. A Docker bridge can change the apparent peer. Replace any legacy `ReverseProxy__KnownProxies__0` with `Mahjong__TrustedProxies__0`; never trust all peers or all container networks. Only one forwarded hop is supported.
+On an isolated staging deployment, run `node scripts/smoke-portal.mjs seed https://YOUR-HOST/portal/ <version> <full-commit> <new-state-file>` against the edge. It creates disposable guests/tables and checks cookie scope and HTTPS flags, allowed and rejected `Origin` values, `/portal/ws` upgrades, and actual play. Use a trusted certificate (or add the staging CA via `NODE_EXTRA_CA_CERTS`), not disabled certificate verification. Delete the smoke state file afterward; don't log cookies or access tokens.
 
-Add the following inside the proxy location, overwriting client-supplied forwarded headers:
+## Stop, back up, update, and restore
 
-```nginx
-proxy_set_header X-Forwarded-Host $http_host;
-proxy_set_header X-Forwarded-Proto https;
-proxy_set_header X-Forwarded-For $remote_addr;
-proxy_set_header X-Forwarded-Prefix "";
-proxy_set_header Forwarded "";
-```
+The examples use production Compose. For a local named volume, define `portal()` with `docker compose --env-file /dev/null` instead. Never stop or archive the old Mahjong service as part of a portal operation. Never use `down -v` or start a second writer to make a backup.
 
-If stripping, keep the exact `/mahjong` redirect at the edge, use `proxy_pass http://127.0.0.1:8911/;` (trailing slash), and set `X-Forwarded-Prefix /mahjong` in that location. The server requires a single exact prefix matching `BASE_URL` from the same trusted peer as the other forwarded headers. Never append it to a client value or send it while preserving the prefix.
+### Offline backup
 
-## Stop, backup, update, and restore
+Warn players, record `/portal/api/version`, and stop only the portal. Reuse the stopped container's exact image and user for the read-only `tar` helper:
 
-`docker compose stop mahjong` stops the server without deleting its container or volume. `docker compose down` removes the container and network but keeps data. Never use `down -v`, remove the volume, or start a second writer to make a backup.
-
-### Make an offline backup
-
-Warn players that play will be interrupted; downtime does not pause deadlines. From the repository root, using the same Compose project and image as the running server:
-
-```sh
+```bash
 set -eu
+portal() { docker compose -f compose.production.yaml "$@"; }
 umask 077
 mkdir -p backups
-backup="backups/mahjong-data-$(date -u +%Y%m%dT%H%M%SZ).tar"
-container="$(docker compose ps --all --quiet mahjong)"
+backup="backups/jade-court-data-$(date -u +%Y%m%dT%H%M%SZ).tar"
+container="$(portal ps --all --quiet game-portal)"
 test -n "$container"
-docker compose stop --timeout 30 mahjong
+portal stop --timeout 30 game-portal
 test "$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' "$container")" = exited:0
-
-# The separate helper runs tar, not the application; there must be no other writer.
-docker compose run --rm --no-deps -T --entrypoint tar mahjong \
-  -C /data -cpf - . > "$backup.part"
+image_id="$(docker inspect --format '{{.Image}}' "$container")"
+run_user="$(docker inspect --format '{{.Config.User}}' "$container")"
+docker run --rm --pull=never --network none --user "$run_user" --volumes-from "$container:ro" \
+  --entrypoint tar "$image_id" -C /data -cpf - . > "$backup.part"
 tar -tf "$backup.part" >/dev/null
 mv "$backup.part" "$backup"
 sha256sum "$backup" > "$backup.sha256"
-docker compose up -d --no-build --wait
+portal start --wait game-portal
 ```
 
-Copy the **whole stable data directory** after a graceful stop: `mahjong.db`, any SQLite WAL/SHM sidecars, `keys/`, and other contents. Do not copy just the main database from a live process, or use a partial archive left by a failed command. For a native run, stop the process gracefully first, then `tar -C` the configured data directory with the same full-directory semantics. Store archives with the image ID and `/api/version` at the time of backup. Schedule backups based on acceptable data loss; retain only what you need, secure a separate copy, and periodically rehearse a restore.
+The backup contains the entire stable directory: database, possible WAL/SHM sidecars, and `keys/`. A backup of the live main DB alone cannot restore guest identity and seats. Keep the verified backup off-host, restricted and encrypted; record the image digest/ID and source revision with it. Retain backups according to your data-loss tolerance and periodically rehearse a restore. Keep deployment backups and software image archives separate.
 
-### Update or save the image
+### Update and roll back
 
-Take and verify an offline backup before an update, skipping the final `up` so play stays stopped until the update succeeds. Save or tag the old image before retagging `mahjong-web:local`:
+Take a backup first, skipping the final `start` to keep the service stopped. For a registry update, set the intended digest in `GAME_PORTAL_PRODUCTION_IMAGE` and run `portal up -d --wait`. For an archive update, verify and load the new archive first and set its revision tag with `GAME_PORTAL_PULL_POLICY=never`. Validate readiness, version and guest reconnect. A simple restart does not change the image. For a source-build update, rebuild from the intended clean checkout but retain the previous image ID/tag.
 
-```sh
-docker image tag mahjong-web:local mahjong-web:rollback
-docker image save -o backups/mahjong-rollback-image.tar mahjong-web:rollback
-SOURCE_COMMIT="$(git rev-parse HEAD)" docker compose build mahjong
-docker compose up -d --no-build --wait
-```
+The app migrates SQLite at startup. For rollback, restore the **matching** pre-update data and image rather than opening a migrated database in older code. Stop only the portal before reusing its host port. Preserve the original data directory or volume as a fallback.
 
-Use the intended clean checkout for each build. Check readiness, version, and a guest reconnect after the update. EF Core applies migrations on startup before readiness. Don't point older application code at a database already migrated by a newer build; roll back the **matching** pre-update image and data backup. `docker image load -i backups/mahjong-rollback-image.tar` loads a saved image locally; an image archive is never a substitute for a data backup.
+### Restore into a fresh directory
 
-For a published-image deployment, likewise stop and take an offline data backup, record the old image digest, and remove only the stopped container. Recreate it with the verified new image and the same Lantern Table volume and settings. Restarting an existing container doesn't pick up a new image. Roll back using the saved digest and its matching data backup.
+Set `$backup` to the restore archive and `$restore_root` to a new, unused storage root. Use the same production UID/GID, port and public origin/mount. Set `GAME_PORTAL_PRODUCTION_IMAGE` to the corresponding saved digest or loaded tag, and choose its pull policy.
 
-### Restore and verify
-
-Run `docker compose stop --timeout 30 mahjong` in the original project before reusing its host port or hostname. Restore into a **fresh** volume (new Compose project), with the original volume retained as a fallback. Use an image that matches the saved database; the example uses the loaded rollback tag. Set `backup` to the actual data archive first, and use the same public origin and trusted proxy settings for the restored service.
-
-```sh
+```bash
 set -eu
 sha256sum -c "$backup.sha256"
-export MAHJONG_IMAGE=mahjong-web:rollback
-restore_project=mahjong-restored
-if docker volume inspect "${restore_project}_data" >/dev/null 2>&1; then
-  echo 'Choose a new project: its restore volume already exists.' >&2
-  exit 1
-fi
-
-docker compose -p "$restore_project" run --rm --no-deps -T --entrypoint tar mahjong \
-  -C /data -xpf - < "$backup"
-docker compose -p "$restore_project" up -d --no-build --wait
+restore_dir="$restore_root/games/portal/data"
+if [[ -e $restore_dir || -L $restore_dir ]]; then echo "Not a new restore directory: $restore_dir" >&2; exit 1; fi
+sudo install -d -m 0700 -o "${GAME_PORTAL_UID:-1000}" -g "${GAME_PORTAL_GID:-1000}" "$restore_dir"
+DOCKER_DATA="$restore_root" docker compose -f compose.production.yaml run --rm --no-deps -T \
+  --entrypoint tar game-portal -C /data -xpf - < "$backup"
+DOCKER_DATA="$restore_root" docker compose -f compose.production.yaml up -d --force-recreate --wait
 ```
 
-Check the app's `/health/ready` and `/api/version`, including any configured prefix. From a browser on the **original origin and path** with its original, still-valid guest cookie, reconnect to a previously saved room and confirm the same seat and room state (allow for elapsed deadlines). A successful response from the landing page does not prove a restore. Do not delete the old volume until this recovery is verified.
+Record the new `DOCKER_DATA` in subsequent deployment settings. For a quickstart named-volume restore, use a fresh Compose project name with `-p game-portal-restored` and verify `game-portal-restored_portal-data` does not exist before invoking the same `run`/`up` flow with the local Compose file and matching `GAME_PORTAL_IMAGE` already loaded.
 
-## Identity, retention, and deadlines
+Check version and readiness, then reconnect from a browser with its original cookie at the original origin and path. Confirm the original guest, table/seat and a valid position. A page load alone doesn't prove recovery. Clearing the cookie, changing the origin or path, or losing the key ring can lose access to seats. Mahjong deadlines continue to elapse during downtime.
 
-- Guests have a 30-day protected browser cookie, refreshed by the guest endpoint, not an account or password reset. Expired profiles without a seat are eligible for pruning. Clearing the cookie, changing origin or mount, or losing the key ring can lose access to a seat. Keep the DB and keys in the same backup, and don't share key rings between unrelated deployments.
-- Rooms expire after 24 hours without successful human subscription or a room command. Room checkpoints keep the last 30 chat messages. Command leases last 10 minutes; receipts support safe retries during the lease and are pruned on expiry. Backups preserve the state as of the backup, not actions that occurred after it.
-- Timers use persisted deadlines; an outage or restore doesn't grant extra play time. After recovery, elapsed windows and overdue automatic resume are processed by the service. Keep the host clock synchronized.
-- No real money, payments, wagering, or user accounts. Operate on a trusted network or with suitable network-level access controls; invite rooms aren't a substitute for protecting the deployment.
+## Release gates and local verification
 
-## Verify a build
+CI uses pinned action/tool and base-image versions, locked dependencies, and two read-only gates:
 
-From the repository root, with the pinned SDK and Node and a clean checkout. Use a fresh publish directory:
+- **Application:** Original Mahjong Rules/Server tests plus the JadeCourt.Games and JadeCourt.Chess tests in NuGet locked mode. Playwright runs Chromium and WebKit against the same native publish: the original root and `/mahjong` specs have `Portal__Enabled=false`; the dedicated `/portal` spec uses `Portal__Enabled=true` and the chess fallback with no configured native engine.
+- **Image:** Build Linux/amd64, smoke the **exact local image ID** and inspect runtime identity/architecture/entrypoint, non-root execution, no SDK or Node, and writable isolated volumes. Test the original root and `/mahjong` cold shell under the unchanged 32 KiB gzip budget and real WebSocket play and restore. Test `/portal` defaults, a separate 24 KiB shell budget, pinned Stockfish, real guest/Chess bot/Reversi invite moves, route/cookie boundaries and retained state after recreation. No runtime test means no promotion.
 
-```sh
-npm --prefix web ci && npm --prefix web run build
-dotnet test tests/Mahjong.Rules.Tests/Mahjong.Rules.Tests.csproj -c Release -p:RestoreLockedMode=true \
-  -- RunConfiguration.TreatNoTestsAsError=true
-dotnet test tests/Mahjong.Server.Tests/Mahjong.Server.Tests.csproj -c Release -p:RestoreLockedMode=true \
-  -- RunConfiguration.TreatNoTestsAsError=true
+For local use, publish from a clean checkout with the pinned SDK and Node after building the client with `npm --prefix web ci && npm --prefix web run build`:
+
+```bash
 version=0.1.0
 revision="$(git rev-parse HEAD)"
 publish="artifacts/publish-$revision"
+dotnet restore src/Mahjong.Server/Mahjong.Server.csproj -p:RestoreLockedMode=true
 dotnet publish src/Mahjong.Server/Mahjong.Server.csproj -c Release --no-restore -o "$publish" \
   -p:UseAppHost=false -p:ContinuousIntegrationBuild=true \
   -p:Version="$version" -p:InformationalVersion="$version+$revision" \
   -p:IncludeSourceRevisionInInformationalVersion=false
-bash scripts/smoke-published.sh "$publish" "$version" "$revision"
+Portal__Enabled=false bash scripts/smoke-published.sh "$publish" "$version" "$revision"
+SMOKE_PATH_BASE=/mahjong Portal__Enabled=false bash scripts/smoke-published.sh "$publish" "$version" "$revision"
+SMOKE_PATH_BASE=/portal Portal__Enabled=true bash scripts/smoke-published.sh "$publish" "$version" "$revision"
 ```
 
-The smoke check starts only the published app and checks real JS/CSS assets, the 32 KiB gzip cold-shell budget, version, health and WebSocket admission. It sets guest preferences, plays a legal choice and pauses the game, then restores an offline archive into a fresh directory. It verifies the old cookie, preferences, exact paused checkpoint, and command receipt. Run again with `SMOKE_PATH_BASE=/mahjong` to check the same publish at a runtime mount.
+Add `--with-browser` after installing the exact Playwright Chromium/WebKit dependencies to run browser cases too. On a host with a working Docker daemon, run the actual image gate:
 
-CI installs Chromium and WebKit from the locked Playwright dependency, tests against the published app, and retains browser evidence for seven days. To run both engines locally after installing the browsers and their dependencies:
-
-```sh
-ASPNETCORE_ENVIRONMENT=Testing Mahjong__Testing__BotDelayMilliseconds=100 \
-  bash scripts/smoke-published.sh "$publish" "$version" "$revision" --with-browser
-```
-
-For parallel local runs, use distinct `MAHJONG_GEOMETRY_PORT`, `SMOKE_PLAYWRIGHT_OUTPUT_DIR`, and `PLAYWRIGHT_HTML_OUTPUT_DIR` values. The loopback Vite server runs only the dev geometry harness; it isn't a deployment dependency.
-
-On a host with a working Docker daemon, use the same `version` and `revision` values for the separate runtime image smoke:
-
-```sh
+```bash
 docker compose --env-file /dev/null config --quiet
-BUILD_VERSION="$version" SOURCE_COMMIT="$revision" docker compose build mahjong
-bash scripts/smoke-container.sh mahjong-web:local "$version" "$revision"
+DOCKER_DATA=/example docker compose --env-file /dev/null -f compose.production.yaml config --quiet
+BUILD_VERSION="$version" SOURCE_COMMIT="$revision" docker compose --env-file /dev/null build game-portal
+bash scripts/smoke-container.sh game-portal:local "$version" "$revision"
 ```
 
-The image smoke prints the image ID and checks labels, non-root execution, a writable named volume, no Node or SDK, and readiness. It verifies the original guest after recreating the container and after archive restore into a separate volume. It also runs that image with `BASE_URL=/mahjong` and checks Docker health and actual mounted play. It uses disposable loopback containers and volumes, not a deployed service. Only a push to `main` in the upstream repository can publish, after both CI suites pass and the exact candidate is smoke-tested. Publication verifies public access to the commit-tagged image before moving `latest` to the same manifest; it does not deploy anything.
-
-The base-image digests in the [Dockerfile](../Dockerfile) were checked against the public registries. Update the [.NET SDK pin](../global.json), image references, and CI tools together as required; verify updates against the official [.NET release metadata](https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json) and [Node release schedule](https://github.com/nodejs/Release#release-schedule).
-When intentionally changing a NuGet reference, regenerate the affected project lock files with `dotnet restore <project> -p:RestoreLockedMode=false --force-evaluate`, then verify in locked mode.
+Only a push to `main` in `long2know/game-portal` can publish. Both read-only gates must pass before release jobs load the checksummed tested archive and compare the image ID. The serialized GHCR job alone has `packages: write`: it verifies the commit tag and `latest` at the same manifest digest, checks `main` just before promotion and reports actual anonymous visibility. The fallback job alone has `contents: write`: it creates a namespaced tag pointing at that build's full SHA, verifies assets on a draft, publishes it as a non-latest prerelease and checks the anonymous download's SHA-256. No remote deployment step runs in CI.
 
 ### Artifact licenses and provenance
 
-Native publish and the runtime image include the project [GPL v3 license](../LICENSE) and a `licenses/` directory:
-
-| Runtime dependency | Source and bundled license |
-|---|---|
-| EF Core, Microsoft.Data.Sqlite, and Microsoft.Extensions.DependencyModel 10.0.15 | [Server NuGet lock](../src/Mahjong.Server/packages.lock.json); [MIT grant](https://github.com/dotnet/dotnet/blob/8e0f8ed2312954727f8919d7d1c2f78b483b4ee7/src/efcore/LICENSE.txt) and DependencyModel's packaged `THIRD-PARTY-NOTICES.TXT`. |
-| SQLitePCLRaw bundle, core, provider and native SQLite 2.1.13 | [Server NuGet lock](../src/Mahjong.Server/packages.lock.json); Apache-2.0 and [upstream notice](https://github.com/ericsink/SQLitePCL.raw/blob/cbca586f45c727531091be43f76924580769ca54/NOTICE.TXT). The 2.1.13 packages declare the license and copyright but do not embed notice files or identify a source commit; the bundled notice is the upstream version whose last change predates the package. |
-| ASP.NET and .NET 10.0.15 | The pinned ASP.NET base image retains its own runtime licenses and notices. A native publish uses the runtime installed on the host. |
-
-Vite 7.3.8, TypeScript 5.9.3 and Playwright 1.65.1 are build/test tools pinned in the [web npm lock](../web/package-lock.json); the production client omits Vite's legacy modulepreload helper. The [.NET Rules test lock](../tests/Mahjong.Rules.Tests/packages.lock.json) and [.NET Server test lock](../tests/Mahjong.Server.Tests/packages.lock.json) are separate from the runtime. Update [the notice inventory](../scripts/licenses/THIRD-PARTY.txt) and [publish copy settings](../Directory.Build.targets) when changing a shipped dependency. If distributing the image or another binary, provide the corresponding source as required by the GPL.
-
-**Verification, 2026-11-19:** Locked Rules (55) and Server (8) tests passed, as did [14 Chromium/WebKit cases](browser-validation.md) against the published app. Native publish passed the notice check, HTTP/WebSocket play, and offline restore. A separate local Nginx TLS test passed secure cookies, WSS, invalid-origin rejection, and recovery. Compose configuration validated, but the Docker API socket was not available; those native runs do not qualify the runtime image or a container-to-proxy deployment.
+Native publish and the image include the project's [GPL v3 license](../LICENSE) and the [runtime notices](../scripts/licenses/THIRD-PARTY.txt) plus the bundled Chess notices. The image uses the Ubuntu Noble universe amd64 `stockfish=16-1build1` package. APT verifies the signed Ubuntu release metadata for both binary and source, then the build checks their pinned SHA-256 values. The exact corresponding source (including Noble’s package patches) and copyright are in `/usr/share/doc/stockfish/`; see [engine provenance, upstream mirrors and license details](portal-engines.md). The base image retains its runtime licenses. If redistributing, provide corresponding source as required by the GPL.
