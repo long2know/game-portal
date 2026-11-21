@@ -1,0 +1,25 @@
+name: game-portal-production
+services:
+  game-portal:
+    image: ${GAME_PORTAL_PRODUCTION_IMAGE:-ghcr.io/long2know/game-portal:latest}
+    platform: linux/amd64
+    pull_policy: ${GAME_PORTAL_PULL_POLICY:-always}
+    user: "${GAME_PORTAL_UID:-1000}:${GAME_PORTAL_GID:-1000}"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      BASE_URL: /portal
+      Portal__Enabled: "true"
+      Mahjong__BehindHttpsProxy: "true"
+    ports:
+      - "127.0.0.1:${GAME_PORTAL_HOST_PORT:-8912}:8080"
+    volumes:
+      - type: bind
+        source: ${DOCKER_DATA:?Set DOCKER_DATA in .env}/games/portal/data
+        target: /data
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    stop_grace_period: 30s
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true

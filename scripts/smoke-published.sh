@@ -13,12 +13,29 @@ if [[ ! -s "$publish/Mahjong.Server.dll" || ! -s "$publish/index.html" ]]; then
   echo "Missing published server or index.html in $publish" >&2
   exit 1
 fi
-for notice in LICENSE licenses/{THIRD-PARTY,Microsoft.NET-MIT,Apache-2.0,SQLitePCLRaw-NOTICE,Microsoft.Extensions.DependencyModel-NOTICES}.txt; do
+for notice in LICENSE licenses/{THIRD-PARTY,Microsoft.NET-MIT,Apache-2.0,SQLitePCLRaw-NOTICE,Microsoft.Extensions.DependencyModel-NOTICES,Gera.Chess-MIT,Ardalis.SmartEnum-MIT}.txt; do
   if [[ ! -s "$publish/$notice" ]]; then
     echo "Missing published license or notice: $publish/$notice" >&2
     exit 1
   fi
 done
+
+mount=${SMOKE_PATH_BASE:-}
+portal=${Portal__Enabled:-false}
+case "$portal" in
+  true)
+    if [[ ${mount%/} != /portal || ! -s "$publish/portal.html" ]]; then
+      echo "Portal smoke requires SMOKE_PATH_BASE=/portal and a published portal.html" >&2
+      exit 1
+    fi
+    runtime=scripts/smoke-portal.mjs
+    ;;
+  false) runtime=scripts/smoke-runtime.mjs ;;
+  *)
+    echo "Portal__Enabled must be true or false" >&2
+    exit 2
+    ;;
+esac
 
 umask 077
 mkdir -p artifacts
@@ -28,7 +45,6 @@ data="$work/data"
 restored="$work/restored"
 archive="$work/data.tar"
 state="$work/guest.json"
-mount=${SMOKE_PATH_BASE:-}
 export TMPDIR="$work/scratch"
 mkdir -- "$TMPDIR"
 server_pid=
@@ -47,7 +63,7 @@ cleanup() {
   if [[ -n $server_pid ]]; then
     stop_server || true
   fi
-  rm -rf -- "$data" "$restored" "$archive" "$state" "$TMPDIR"
+  rm -rf -- "$data" "$restored" "$work/browser-chromium" "$work/browser-webkit" "$archive" "$state" "$TMPDIR"
   if (( status == 0 )); then
     rm -rf -- "$work"
   else
@@ -61,8 +77,10 @@ start_server() {
   (
     cd -- "$publish"
     exec env -u Mahjong__BehindHttpsProxy -u Mahjong__PublicOrigin -u DOTNET_ENVIRONMENT \
+      -u Portal__StockfishPath \
       ASPNETCORE_ENVIRONMENT="${ASPNETCORE_ENVIRONMENT:-Production}" \
       Mahjong__DataDirectory="$directory" \
+      Portal__Enabled="$portal" \
       BASE_URL="$mount" \
       dotnet ./Mahjong.Server.dll --urls http://127.0.0.1:0 \
       --Logging:LogLevel:Microsoft.Hosting.Lifetime=Information
@@ -80,14 +98,26 @@ start_server() {
   return 1
 }
 
-start_server "$data" "$work/server.log"
-if [[ ${4:-} == --with-browser ]]; then
+run_browsers() {
   specs=()
-  if [[ -n ${mount%/} ]]; then specs+=(e2e/mount.spec.ts); fi
+  if [[ $portal == true ]]; then
+    specs+=(e2e/portal.spec.ts)
+  elif [[ -n ${mount%/} ]]; then
+    specs+=(e2e/mount.spec.ts)
+  else
+    for spec in web/e2e/*.spec.ts; do
+      if [[ $spec != web/e2e/portal.spec.ts ]]; then specs+=("${spec#web/}"); fi
+    done
+  fi
   BASE_URL="$origin${mount%/}/" PLAYWRIGHT_HTML_OPEN=never npm --prefix web run test:e2e -- \
-    --project=chromium --project=webkit --reporter=line,html --output="${SMOKE_PLAYWRIGHT_OUTPUT_DIR:-test-results}" "${specs[@]}"
+    "$@" --reporter=line,html --output="${SMOKE_PLAYWRIGHT_OUTPUT_DIR:-test-results}" "${specs[@]}"
+}
+
+start_server "$data" "$work/server.log"
+if [[ ${4:-} == --with-browser && $portal == false ]]; then
+  run_browsers --project=chromium --project=webkit
 fi
-node scripts/smoke-runtime.mjs seed "$origin${mount%/}/" "$version" "$revision" "$state"
+node "$runtime" seed "$origin${mount%/}/" "$version" "$revision" "$state"
 stop_server
 
 test -s "$data/mahjong.db"
@@ -97,5 +127,16 @@ mkdir -- "$restored"
 tar -xpf "$archive" -C "$restored"
 
 start_server "$restored" "$work/restore.log"
-node scripts/smoke-runtime.mjs resume "$origin${mount%/}/" "$version" "$revision" "$state"
+node "$runtime" resume "$origin${mount%/}/" "$version" "$revision" "$state"
 stop_server
+
+if [[ ${4:-} == --with-browser && $portal == true ]]; then
+  # Separate guests, state and per-proxy rate limits for each browser.
+  for browser in chromium webkit; do
+    start_server "$work/browser-$browser" "$work/browser-$browser.log"
+    SMOKE_PLAYWRIGHT_OUTPUT_DIR="${SMOKE_PLAYWRIGHT_OUTPUT_DIR:-test-results}/$browser" \
+      PLAYWRIGHT_HTML_OUTPUT_DIR="${PLAYWRIGHT_HTML_OUTPUT_DIR:-playwright-report}/$browser" \
+      run_browsers --project="$browser"
+    stop_server
+  done
+fi
