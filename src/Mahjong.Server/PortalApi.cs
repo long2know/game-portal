@@ -41,7 +41,7 @@ internal static class PortalApi
         catch (InvalidDataException)
         {
             var log = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(PortalApi));
-            log.LogError("A persisted portal game checkpoint could not be read.");
+            log.LogError("A portal game engine could not complete its operation.");
             return HttpApi.Error(500, "engine_unavailable");
         }
         catch (Exception ex) when (Rooms.Unavailable(ex))

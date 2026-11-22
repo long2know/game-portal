@@ -115,6 +115,7 @@ if (portalEnabled)
 {
     BoardApi.Map(app);
     PokerRules.Map(app);
+    WordsRules.Map(app);
 }
 app.MapGet("/ws", (HttpContext context, Realtime realtime) => realtime.InvokeAsync(context)).RequireRateLimiting("read");
 app.MapGet("/health/live", () => Results.Json(new { status = "live" }, Wire.Json));

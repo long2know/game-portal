@@ -1,6 +1,6 @@
 # Jade Court game APIs
 
-Set `Portal__Enabled=true` to enable the board API and portal shell (the default is off). With
+Set `Portal__Enabled=true` to enable the game APIs and portal shell (the default is off). With
 `BASE_URL=/portal`, the base for assets, HTTP and WebSocket URLs is `/portal/`, including on
 `/portal/chess/`, `/portal/go/`, `/portal/reversi/`, `/portal/checkers/`, and
 `/portal/chinese-checkers/`, `/portal/holdem/`, `/portal/solitaire/`, `/portal/sudoku/`, and
@@ -113,3 +113,18 @@ include `illegal_action`, `not_your_turn`, `hand_finished` (deal the next hand),
 (400); auth, member lookup, stale revision, and busy errors match boards. Waiting tables
 expire after 24 hours, playing tables after seven days, and closed or finished tables
 after 24 hours. Terminal tables cannot be resumed and do not count toward active limits.
+
+## Word Tiles
+
+The Word Tiles table routes, invite behavior, response shape, and outer revision rules match
+Poker under `/api/words` instead of `/api/poker`. Create with `{players: 2, bots}`; there is no
+`/next` route. `position` is the [typed `WordView`](word-tiles-rules.md), including sparse
+board cells, scores, bag count, seat rack sizes, and the caller's own rack only. Neither the
+other rack nor bag order is returned. A finished game cannot be changed.
+
+Write `POST /api/words/tables/{id}/actions` with `{revision, action}`. The action is
+`{kind: "pass"}`, `{kind: "exchange", exchange: [tileId, ...]}`, or
+`{kind: "place", placements: [{row, column, tileId}, ...]}`. Coordinates are zero-based
+and IDs must be in the caller's current rack. The host can return `not_your_turn`,
+`illegal_action`, or the shared room/revision errors. A bot sees only its own rack and the
+public board, and takes at most one turn before the response is committed.
