@@ -24,8 +24,8 @@ mount=${SMOKE_PATH_BASE:-}
 portal=${Portal__Enabled:-false}
 case "$portal" in
   true)
-    if [[ ${mount%/} != /portal || ! -s "$publish/portal.html" ]]; then
-      echo "Portal smoke requires SMOKE_PATH_BASE=/portal and a published portal.html" >&2
+    if [[ ( ${mount%/} != /portal && ${mount%/} != /game-portal ) || ! -s "$publish/portal.html" ]]; then
+      echo "Portal smoke requires SMOKE_PATH_BASE=/portal or /game-portal and a published portal.html" >&2
       exit 1
     fi
     runtime=scripts/smoke-portal.mjs
@@ -99,14 +99,18 @@ start_server() {
 }
 
 run_browsers() {
-  specs=()
+  local -a specs=()
   if [[ $portal == true ]]; then
     specs+=(e2e/portal.spec.ts)
+    if [[ -f web/e2e/expansion.spec.ts ]]; then specs+=(e2e/expansion.spec.ts); fi
   elif [[ -n ${mount%/} ]]; then
     specs+=(e2e/mount.spec.ts)
   else
     for spec in web/e2e/*.spec.ts; do
-      if [[ $spec != web/e2e/portal.spec.ts ]]; then specs+=("${spec#web/}"); fi
+      case "$spec" in
+        web/e2e/portal.spec.ts|web/e2e/expansion.spec.ts) ;;
+        *) specs+=("${spec#web/}") ;;
+      esac
     done
   fi
   BASE_URL="$origin${mount%/}/" PLAYWRIGHT_HTML_OPEN=never npm --prefix web run test:e2e -- \

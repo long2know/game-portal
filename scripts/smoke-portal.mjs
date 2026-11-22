@@ -11,8 +11,10 @@ assert(['seed', 'resume'].includes(phase) && url && appVersion && commitSha && s
 assert(/^(?:[0-9a-f]{40}|unknown)$/.test(commitSha), 'Expected a full Git SHA or unknown');
 const app = new URL(url);
 const { origin, pathname } = app;
-assert(['http:', 'https:'].includes(app.protocol) && url === `${origin}/portal/`,
-  'APP_URL must be the HTTP(S) /portal/ mount, with no query or fragment');
+const mount = pathname.slice(0, -1);
+assert(['http:', 'https:'].includes(app.protocol) && ['/portal', '/game-portal'].includes(mount)
+  && url === `${origin}${mount}/`,
+  'APP_URL must be the HTTP(S) /portal/ or /game-portal/ mount, with no query or fragment');
 
 function fetchApp(path, init) {
   return fetch(new URL(path, app), { redirect: 'error', signal: AbortSignal.timeout(5000), ...init });
@@ -64,7 +66,7 @@ async function checkApplication() {
     assert.equal(response.status, 404, `Portal unexpectedly served ${path}`);
     await response.body?.cancel();
   }
-  for (const path of ['/portal', 'chess']) {
+  for (const path of [mount, 'chess']) {
     const response = await fetchApp(`${path}?from=smoke%2Fredirect`, { redirect: 'manual' });
     assert.equal(response.status, 308, `${path} did not redirect to its canonical route`);
     assert.equal(response.headers.get('location'), `${new URL(path, app).pathname}/?from=smoke%2Fredirect`);
@@ -111,10 +113,11 @@ async function guest(displayName) {
   assert.equal(value.displayName, displayName, 'Guest name did not persist');
   const cookie = response.headers.getSetCookie().find(header => header.startsWith('mahjong_guest='));
   assert(cookie, 'Guest cookie was not issued');
-  assert.match(cookie, /;\s*httponly\b/i, 'Guest cookie must be HttpOnly');
-  assert.match(cookie, /;\s*samesite=lax\b/i, 'Guest cookie must be SameSite=Lax');
-  assert.match(cookie, /;\s*path=\/portal(?:;|$)/i, 'Guest cookie must be scoped to /portal');
-  assert.doesNotMatch(cookie, /;\s*domain=/i, 'Guest cookie must be host-only');
+  assert(/;\s*httponly\b/i.test(cookie), 'Guest cookie must be HttpOnly');
+  assert(/;\s*samesite=lax\b/i.test(cookie), 'Guest cookie must be SameSite=Lax');
+  const cookiePath = cookie.split(';').map(part => part.trim()).find(part => /^path=/i.test(part))?.slice(5);
+  assert.equal(cookiePath, mount, 'Guest cookie must be scoped to the mount');
+  assert(!/;\s*domain=/i.test(cookie), 'Guest cookie must be host-only');
   assert.equal(/;\s*secure\b/i.test(cookie), app.protocol === 'https:', 'Unexpected guest cookie Secure attribute');
   return cookie.split(';', 1)[0];
 }
@@ -183,7 +186,7 @@ if (phase === 'seed') {
   const host = await guest('Portal Smoke Host');
   const visitor = await guest('Portal Smoke Visitor');
   const outsider = await guest('Portal Smoke Outsider');
-  assert.notEqual(host, visitor, 'Independent guests shared a cookie');
+  assert.equal(new Set([host, visitor, outsider]).size, 3, 'Independent guests shared a cookie');
   assert.equal(await upgradeStatus(origin), 401, 'Unauthenticated mounted WebSocket');
   assert.equal(await upgradeStatus(null, host), 403, 'Origin-less mounted WebSocket');
   assert.equal(await upgradeStatus('https://unrelated-origin.invalid', host), 403, 'Cross-origin mounted WebSocket');

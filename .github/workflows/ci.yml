@@ -32,7 +32,7 @@ jobs:
         run: |
           npm --prefix web ci
           npm --prefix web run build
-      - name: Test Mahjong, portal games, Chess and the server with locked dependencies
+      - name: Test the rules engines and server with locked dependencies
         run: |
           dotnet test tests/Mahjong.Rules.Tests/Mahjong.Rules.Tests.csproj -c Release -p:RestoreLockedMode=true \
             -- RunConfiguration.TreatNoTestsAsError=true
@@ -41,6 +41,12 @@ jobs:
           dotnet test tests/JadeCourt.Games.Tests/JadeCourt.Games.Tests.csproj -c Release -p:RestoreLockedMode=true \
             -- RunConfiguration.TreatNoTestsAsError=true
           dotnet test tests/JadeCourt.Chess.Tests/JadeCourt.Chess.Tests.csproj -c Release -p:RestoreLockedMode=true \
+            -- RunConfiguration.TreatNoTestsAsError=true
+          dotnet test tests/JadeCourt.Poker.Tests/JadeCourt.Poker.Tests.csproj -c Release -p:RestoreLockedMode=true \
+            -- RunConfiguration.TreatNoTestsAsError=true
+          dotnet test tests/JadeCourt.Solo.Tests/JadeCourt.Solo.Tests.csproj -c Release -p:RestoreLockedMode=true \
+            -- RunConfiguration.TreatNoTestsAsError=true
+          dotnet test tests/JadeCourt.Words.Tests/JadeCourt.Words.Tests.csproj -c Release -p:RestoreLockedMode=true \
             -- RunConfiguration.TreatNoTestsAsError=true
       - name: Publish the server with built assets
         run: |
