@@ -132,11 +132,16 @@ public sealed class HttpsProxyTests
         }
     }
 
-    [Fact]
-    public async Task ProductionWithoutTheSettingStillRejectsHttpFromAnEffectiveRemotePeer()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProductionWithoutProxyModeStillRejectsHttpFromAnEffectiveRemotePeer(bool overrideLegacyProxy)
     {
         await using var server = new Kestrel().InProduction();
+        if (overrideLegacyProxy)
+            server.WithSetting("Mahjong__BehindHttpsProxy", "true").WithSetting("GamePortal__BehindHttpsProxy", "false");
         await server.StartAsync();
+        Assert.True(File.Exists(Path.Combine(server.DataDirectory, "mahjong.db")), "The legacy data path must still apply.");
         using var http = Http(server);
         using var remote = Request(HttpMethod.Post, "/api/guest", server.Address.Authority, [server.Origin]);
         remote.Headers.Add("X-Forwarded-For", "198.51.100.1");
@@ -147,6 +152,7 @@ public sealed class HttpsProxyTests
 
         using var loopback = Request(HttpMethod.Post, "/api/guest", server.Address.Authority, [server.Origin]);
         using var guest = await http.SendAsync(loopback);
+        Assert.Equal(HttpStatusCode.OK, guest.StatusCode);
         Assert.Equal("Proxy Guest", (await guest.Content.ReadFromJsonAsync<JsonElement>()).Text("displayName"));
         Assert.DoesNotContain(Assert.Single(guest.Headers.GetValues("Set-Cookie")).Split(';'),
             part => part.Trim().Equals("secure", StringComparison.OrdinalIgnoreCase));
@@ -186,12 +192,26 @@ public sealed class HttpsProxyTests
         Assert.False(Directory.Exists(server.DataDirectory));
     }
 
-    [Fact]
-    public async Task NonBooleanProxySwitchFailsBeforeOpeningData()
+    [Theory]
+    [InlineData("Mahjong", "https")]
+    [InlineData("GamePortal", "https")]
+    [InlineData("GamePortal", "")]
+    public async Task NonBooleanProxySwitchFailsBeforeOpeningData(string prefix, string value)
     {
-        await using var server = ProxyServer().WithSetting("Mahjong__BehindHttpsProxy", "https");
+        await using var server = ProxyServer().WithSetting($"{prefix}__BehindHttpsProxy", value);
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(server.StartAsync);
-        Assert.Contains("Mahjong:BehindHttpsProxy", failure.Message);
+        Assert.Contains($"{prefix}:BehindHttpsProxy must be true or false.", failure.Message);
+        Assert.False(Directory.Exists(server.DataDirectory));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task EmptyPortalDataDirectoryFailsInsteadOfOpeningLegacyData(string value)
+    {
+        await using var server = new Kestrel().WithSetting("GamePortal__DataDirectory", value);
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(server.StartAsync);
+        Assert.Contains("GamePortal:DataDirectory must not be empty.", failure.Message);
         Assert.False(Directory.Exists(server.DataDirectory));
     }
 

@@ -13,9 +13,12 @@ Run one portal process per data directory. The `long2know/game-portal` Linux/amd
 | `GAME_PORTAL_PULL_POLICY` | `always` by default. Set to `never` only for a verified image already loaded locally. |
 | `GAME_PORTAL_IMAGE` | Local named-volume Compose build; default `game-portal:local`, no registry pull of the application image. |
 | `BUILD_VERSION`, `SOURCE_COMMIT` | Build-time identity (defaults `0.1.0` and `unknown`). Use a full SHA from a clean checkout; `/portal/api/version` and the OCI labels report it. |
-| `Mahjong__BehindHttpsProxy` | `true` only behind a TLS edge that preserves `Host` and the path and has exclusive access to the HTTP upstream. |
+| `GamePortal__DataDirectory` | Directory holding the SQLite database and key ring. The image defaults to `/data`. |
+| `GamePortal__BehindHttpsProxy` | Defaults to `false`. Set `true` only behind a TLS edge that preserves `Host` and the path and has exclusive access to the HTTP upstream. |
 | `Mahjong__AllowHttpLoopbackOrigin` | Local quickstart only; allows HTTP from a matching loopback browser origin through Docker. Omit in production. |
 | `Portal__StockfishPath` | Optional path to a local UCI binary for native runs. Without it, Chess uses a built-in legal bot. The image supplies its own exact pin. |
+
+Each `GamePortal__` setting takes precedence over its corresponding `Mahjong__DataDirectory` or `Mahjong__BehindHttpsProxy` alias, even when the new proxy setting is `false`. An empty or invalid new value stops startup instead of falling back. The image keeps its `/data` default on the legacy alias so a deployed `Mahjong__DataDirectory` override still works.
 
 `GET /portal/health/live` checks HTTP; `/portal/health/ready` requires startup migrations, recovery and a usable SQLite directory. The Docker healthcheck follows the image mount. Keep `/data` writable by only the intended user: it holds SQLite and ASP.NET Data Protection keys. The keys are not automatically encrypted at rest.
 
@@ -73,7 +76,8 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       BASE_URL: /portal
       Portal__Enabled: "true"
-      Mahjong__BehindHttpsProxy: "true"
+      GamePortal__DataDirectory: /data
+      GamePortal__BehindHttpsProxy: "true"
     volumes:
       - type: bind
         source: ${DOCKER_DATA:?Set DOCKER_DATA in .env}/games/portal/data

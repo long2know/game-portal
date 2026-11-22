@@ -23,22 +23,29 @@ internal sealed record ServerOptions(string DataDirectory, Uri? PublicOrigin, IP
         var defaultRoot = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (defaultRoot.Length == 0)
             defaultRoot = Path.Combine(environment.ContentRootPath, "..");
-        var directory = config["Mahjong:DataDirectory"] ?? Path.Combine(defaultRoot, "mahjong-web");
+        var (directoryKey, directory) = ReadDeploymentSetting("DataDirectory", Path.Combine(defaultRoot, "mahjong-web"));
         if (string.IsNullOrWhiteSpace(directory))
-            throw new InvalidOperationException("Mahjong:DataDirectory must not be empty.");
+            throw new InvalidOperationException($"{directoryKey} must not be empty.");
+        try { directory = Path.GetFullPath(directory); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            throw new InvalidOperationException($"{directoryKey} must be a valid directory path.", ex);
+        }
 
         var testing = config.GetSection("Mahjong:Testing");
         if (testing.Exists() && !environment.IsEnvironment("Testing"))
             throw new InvalidOperationException("Mahjong:Testing overrides require the Testing environment.");
 
-        var behindHttpsProxy = config.GetValue<bool>("Mahjong:BehindHttpsProxy");
+        var (proxyKey, proxyValue) = ReadDeploymentSetting("BehindHttpsProxy", "false");
+        if (!bool.TryParse(proxyValue, out var behindHttpsProxy))
+            throw new InvalidOperationException($"{proxyKey} must be true or false.");
         var trustedProxies = config.GetSection("Mahjong:TrustedProxies");
         if (behindHttpsProxy)
         {
             if (trustedProxies.Exists())
-                throw new InvalidOperationException("Mahjong:BehindHttpsProxy cannot be combined with Mahjong:TrustedProxies.");
+                throw new InvalidOperationException($"{proxyKey} cannot be combined with Mahjong:TrustedProxies.");
             if (config.GetValue<bool>("FORWARDEDHEADERS_ENABLED") || config.GetValue<bool>("ASPNETCORE_FORWARDEDHEADERS_ENABLED"))
-                throw new InvalidOperationException("Mahjong:BehindHttpsProxy requires ASPNETCORE_FORWARDEDHEADERS_ENABLED to be disabled.");
+                throw new InvalidOperationException($"{proxyKey} requires ASPNETCORE_FORWARDEDHEADERS_ENABLED to be disabled.");
         }
 
         Uri? origin = null;
@@ -47,7 +54,7 @@ internal sealed record ServerOptions(string DataDirectory, Uri? PublicOrigin, IP
             if (behindHttpsProxy)
             {
                 if (!TryAuthorityOrigin(value.EndsWith('/') ? value[..^1] : value, out origin) || origin.Scheme != "https")
-                    throw new InvalidOperationException("With Mahjong:BehindHttpsProxy, Mahjong:PublicOrigin must be an HTTPS origin with no path or credentials.");
+                    throw new InvalidOperationException($"With {proxyKey}, Mahjong:PublicOrigin must be an HTTPS origin with no path or credentials.");
             }
             else if (!TryOrigin(value, out origin))
                 throw new InvalidOperationException("Mahjong:PublicOrigin must be an HTTP(S) origin with no path or credentials.");
@@ -58,7 +65,7 @@ internal sealed record ServerOptions(string DataDirectory, Uri? PublicOrigin, IP
                 : throw new InvalidOperationException("Mahjong:TrustedProxies entries must be explicit IP addresses."))
             .ToArray();
 
-        return new ServerOptions(Path.GetFullPath(directory), origin, proxies, pathBase,
+        return new ServerOptions(directory, origin, proxies, pathBase,
             TimeSpan.FromSeconds(ReadInt("TurnSeconds", 30, 1, 120)),
             TimeSpan.FromSeconds(ReadInt("ClaimSeconds", 8, 1, 30)),
             TimeSpan.FromMilliseconds(ReadInt("BotDelayMilliseconds", 700, 10, 5000)),
@@ -69,6 +76,16 @@ internal sealed record ServerOptions(string DataDirectory, Uri? PublicOrigin, IP
             TimeSpan.FromSeconds(ReadInt("UtcOffsetSeconds", 0, -172_800, 172_800)),
             environment.IsDevelopment() || environment.IsEnvironment("Testing"),
             config.GetValue<bool>("Mahjong:AllowHttpLoopbackOrigin"), behindHttpsProxy);
+
+        (string Key, string? Value) ReadDeploymentSetting(string name, string fallback)
+        {
+            // An explicitly null portal setting is invalid, not a request to use the alias.
+            var portal = config.GetSection("GamePortal").GetChildren()
+                .FirstOrDefault(section => section.Key.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (portal is not null) return ($"GamePortal:{name}", portal.Value);
+            var alias = $"Mahjong:{name}";
+            return (alias, config[alias] ?? fallback);
+        }
 
         int ReadInt(string key, int fallback, int minimum, int maximum)
         {

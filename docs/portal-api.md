@@ -8,12 +8,13 @@ Changsha Mahjong client. The bare routes return a 308 with the query intact; sin
 redirect does not supply a fragment, browsers retain the original fragment. Other shell
 paths return 404. The build publishes `index.html` and `portal.html` outside `wwwroot`.
 
-Use a dedicated data volume for the portal. Its EF migration installs board tables and
-memberships alongside the existing guest/profile and Mahjong tables in the portal's own
-SQLite file. The guest cookie and its protection keys are shared across games within this
-app, not imported from the original Mahjong installation. Keep the portal's database and
-keys together across restarts. With `Mahjong__BehindHttpsProxy=true`, the HTTPS edge must
-preserve the public `Host` and `/portal` path as for the existing Mahjong API.
+Use a dedicated data volume for the portal (`GamePortal__DataDirectory`, `/data` in the
+image). Its EF migration installs board tables and memberships alongside the existing
+guest/profile and Mahjong tables in the portal's own SQLite file. The guest cookie and
+its protection keys are shared across games within this app, not imported from the
+original Mahjong installation. Keep the portal's database and keys together across
+restarts. With `GamePortal__BehindHttpsProxy=true`, the HTTPS edge must preserve the
+public `Host` and `/portal` path as for the existing Mahjong API.
 
 ## HTTP contract
 

@@ -54,12 +54,20 @@ internal sealed class Kestrel : IAsyncDisposable
         start.ArgumentList.Add(executable);
         start.ArgumentList.Add("--urls");
         start.ArgumentList.Add("http://127.0.0.1:0");
-        start.ArgumentList.Add("--Mahjong:DataDirectory");
-        start.ArgumentList.Add(DataDirectory);
-        start.Environment.Remove("BASE_URL");
-        start.Environment.Remove("Mahjong__BehindHttpsProxy");
-        start.Environment.Remove("Portal__Enabled");
-        start.Environment.Remove("Portal__StockfishPath");
+        // Match configuration names, including alternate environment spellings and section children.
+        foreach (var name in start.Environment.Keys.ToArray())
+        {
+            var key = name.ToUpperInvariant().Replace("__", ":", StringComparison.Ordinal);
+            if (key.StartsWith("ASPNETCORE_", StringComparison.Ordinal)) key = key["ASPNETCORE_".Length..];
+            else if (key.StartsWith("DOTNET_", StringComparison.Ordinal)) key = key["DOTNET_".Length..];
+            var segments = key.Split(':', 3);
+            if (segments.Length == 3) key = $"{segments[0]}:{segments[1]}";
+            if (key is "BASE_URL" or "GAMEPORTAL:DATADIRECTORY" or "GAMEPORTAL:BEHINDHTTPSPROXY"
+                or "MAHJONG:DATADIRECTORY" or "MAHJONG:BEHINDHTTPSPROXY" or "MAHJONG:PUBLICORIGIN"
+                or "MAHJONG:TRUSTEDPROXIES" or "FORWARDEDHEADERS_ENABLED" or "PORTAL:ENABLED" or "PORTAL:STOCKFISHPATH")
+                start.Environment.Remove(name);
+        }
+        start.Environment["Mahjong__DataDirectory"] = DataDirectory;
         foreach (var (key, value) in _configuration) start.Environment[key] = value;
 
         var ready = new TaskCompletionSource<Uri>(TaskCreationOptions.RunContinuationsAsynchronously);

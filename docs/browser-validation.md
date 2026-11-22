@@ -28,7 +28,7 @@ To play the current checkout locally, use the [pinned .NET SDK](../global.json) 
 ```sh
 npm --prefix web ci && npm --prefix web run build
 umask 077
-Mahjong__DataDirectory="$PWD/artifacts/prototype/desktop-cartoon-local-data" \
+GamePortal__DataDirectory="$PWD/artifacts/prototype/desktop-cartoon-local-data" \
   dotnet run --project src/Mahjong.Server --no-launch-profile -- --urls http://127.0.0.1:8080
 ```
 
