@@ -8,9 +8,13 @@ namespace Mahjong.Server.Board;
 internal sealed record BoardSeat(int Seat, string Name, bool Bot, bool Occupied);
 internal sealed record BoardMotionStep(GameMove Move, GameCell[] Changes);
 internal sealed record BoardTurnMotion(long FromRevision, BoardMotionStep[] Steps);
+internal sealed record BoardResult(string Cause, int LoserSeat, int WinnerSeat);
 internal sealed record BoardTable(string Id, string Game, string Variant, long Revision, string Status,
     int Seat, string? Invite, BoardSeat[] Seats, GamePosition? Position,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BoardTurnMotion? TurnMotion);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BoardTurnMotion? TurnMotion,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? EndReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? EndedBySeat,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BoardResult? Result);
 
 internal sealed class BoardFault(int status, string code) : Exception(code)
 {
@@ -27,6 +31,7 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
     private const int MaxCheckpointLength = 600_000;
     private static readonly TimeSpan WaitingLifetime = TimeSpan.FromHours(24);
     private static readonly TimeSpan GameLifetime = TimeSpan.FromDays(7);
+    private static readonly TimeSpan EndedLifetime = TimeSpan.FromHours(24);
     private readonly SemaphoreSlim _botWorkers = new(4);
 
     public async Task<GuestRow?> GuestAsync(Guid id, CancellationToken stop)
@@ -52,9 +57,9 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         await using var db = await factory.CreateDbContextAsync(stop);
         await using var transaction = await db.Database.BeginTransactionAsync(stop);
         var utc = time.GetUtcNow();
-        if (await db.BoardTables.CountAsync(t => t.ExpiresAtTicks > utc.UtcTicks, stop) >= MaxTables
+        if (await db.BoardTables.CountAsync(t => t.EndReason == null && t.ExpiresAtTicks > utc.UtcTicks, stop) >= MaxTables
             || await db.BoardMemberships.CountAsync(m => m.GuestId == guest.Id && m.Seat == 0
-                && m.Table.ExpiresAtTicks > utc.UtcTicks, stop) >= MaxOwnedTables)
+                && m.Table.EndReason == null && m.Table.ExpiresAtTicks > utc.UtcTicks, stop) >= MaxOwnedTables)
             throw new BoardFault(429, "table_limit");
 
         var table = new BoardTableRow
@@ -124,7 +129,7 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         await using var db = await factory.CreateDbContextAsync(stop);
         var now = time.GetUtcNow().UtcTicks;
         return await db.BoardMemberships.AsNoTracking()
-            .Where(m => m.GuestId == guest && m.Table.Game == game && m.Table.ExpiresAtTicks > now)
+            .Where(m => m.GuestId == guest && m.Table.Game == game && m.Table.EndReason == null && m.Table.ExpiresAtTicks > now)
             .OrderByDescending(m => m.JoinedAtTicks).ThenByDescending(m => m.TableId)
             .Select(m => m.TableId).FirstOrDefaultAsync(stop);
     }
@@ -134,6 +139,7 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         await using var db = await factory.CreateDbContextAsync(stop);
         var table = await ForMemberAsync(db, guest, id, stop);
         if (revision != table.Revision) throw Stale();
+        RequireOpen(table);
         if (table.Checkpoint is not { } checkpoint) throw new BoardFault(400, "room_not_started");
         var seat = table.Members.Single(m => m.GuestId == guest).Seat;
         var game = FindGame(table.Game);
@@ -151,6 +157,44 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
             : new TurnResult(checkpoint, after);
         if (!await CommitAsync(db, table, next.Checkpoint, time.GetUtcNow(), stop)) throw Stale();
         return Project(table, seat, next.Position, table.Revision + 1, new(table.Revision, [.. steps]));
+    }
+
+    public async Task<BoardTable> EndAsync(Guid guest, string id, long revision, bool resign, CancellationToken stop)
+    {
+        await using var db = await factory.CreateDbContextAsync(stop);
+        var table = await ForMemberAsync(db, guest, id, stop);
+        if (revision != table.Revision) throw Stale();
+        RequireOpen(table);
+        var position = table.Checkpoint is { } checkpoint ? View(FindGame(table.Game), checkpoint, table.Players) : null;
+        if (position?.Status == "finished") throw new BoardFault(400, "game_finished");
+        if (resign)
+        {
+            if (table.Game != "chess") throw new BoardFault(400, "invalid_request");
+            if (position is null) throw new BoardFault(400, "room_not_started");
+        }
+        else if (table.Game == "chess" && position is not null)
+            throw new BoardFault(400, "resign_required");
+
+        var reason = resign ? "resignation" : "left";
+        var seat = table.Members.Single(m => m.GuestId == guest).Seat;
+        var utc = time.GetUtcNow();
+        var expires = (utc + EndedLifetime).UtcTicks;
+        if (await AtRevision(db, table, utc).ExecuteUpdateAsync(setters => setters
+                .SetProperty(t => t.Revision, t => t.Revision + 1)
+                .SetProperty(t => t.InviteCode, (string?)null)
+                .SetProperty(t => t.EndReason, reason)
+                .SetProperty(t => t.EndedBySeat, seat)
+                .SetProperty(t => t.ExpiresAtTicks, expires), stop) != 1)
+            throw Stale();
+        table.EndReason = reason;
+        table.EndedBySeat = seat;
+        return Project(table, seat, position, table.Revision + 1);
+    }
+
+    private static void RequireOpen(BoardTableRow table)
+    {
+        if (table.EndReason is "left") throw new BoardFault(400, "room_closed");
+        if (table.EndReason is "resignation") throw new BoardFault(400, "game_finished");
     }
 
     private IBoardGame FindGame(string id) => registry.Find(id) ?? throw new BoardFault(400, "invalid_request");
@@ -174,12 +218,15 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
     private static long ExpiresAt(DateTimeOffset utc, bool started) =>
         (utc + (started ? GameLifetime : WaitingLifetime)).UtcTicks;
 
+    private static IQueryable<BoardTableRow> AtRevision(MahjongDb db, BoardTableRow table, DateTimeOffset utc) =>
+        db.BoardTables.Where(t => t.Id == table.Id && t.Revision == table.Revision
+            && t.EndReason == null && t.ExpiresAtTicks > utc.UtcTicks);
+
     private static async Task<bool> CommitAsync(MahjongDb db, BoardTableRow table, string? checkpoint, DateTimeOffset utc,
         CancellationToken stop)
     {
         var expires = ExpiresAt(utc, checkpoint is not null);
-        return await db.BoardTables
-            .Where(t => t.Id == table.Id && t.Revision == table.Revision && t.ExpiresAtTicks > utc.UtcTicks)
+        return await AtRevision(db, table, utc)
             .ExecuteUpdateAsync(update => update
                 .SetProperty(t => t.Revision, t => t.Revision + 1)
                 .SetProperty(t => t.Checkpoint, checkpoint)
@@ -199,8 +246,19 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
                 : new(index, "", false, false);
         foreach (var member in table.Members)
             seats[member.Seat] = new(member.Seat, member.Guest.DisplayName, false, true);
-        return new(table.Id, table.Game, table.Variant, revision, position?.Status ?? "waiting", seat,
-            position is null ? table.InviteCode : null, seats, position, motion);
+        var closed = table.EndReason == "left";
+        var result = table.EndReason == "resignation" && table.EndedBySeat is { } loser
+            ? new BoardResult("resignation", loser, 1 - loser) : null;
+        if (position is not null && table.EndReason is not null)
+            position = position with
+            {
+                Status = "finished", Turn = null, Moves = [],
+                Winners = result is null ? [] : [result.WinnerSeat],
+                Detail = result is null ? "Table closed." : $"{(result.WinnerSeat == 0 ? "White" : "Black")} wins by resignation."
+            };
+        return new(table.Id, table.Game, table.Variant, revision, closed ? "closed" : position?.Status ?? "waiting", seat,
+            position is null && !closed ? table.InviteCode : null, seats, position, motion, closed ? table.EndReason : null,
+            closed ? table.EndedBySeat : null, result);
     }
 
     private sealed record TurnResult(string Checkpoint, GamePosition Position);

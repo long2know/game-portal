@@ -133,6 +133,135 @@ public sealed class BoardTableTests
     }
 
     [Fact]
+    public async Task LeavingRevokesInvitesAndRacesMovesWithoutLosingTheCommittedBoard()
+    {
+        await using var server = PortalServer();
+        await server.StartAsync();
+        var host = await Guest(server, "Host");
+        var peer = await Guest(server, "Peer");
+        var stranger = await Guest(server, "Stranger");
+        var reversi = Definition(await Catalog(host), "reversi");
+        var waiting = await Create(host, reversi, 2);
+        var waitingPath = Api + "/tables/" + waiting.Text("id");
+        var exit = waitingPath + "/leave";
+        await Error(await stranger.Request(HttpMethod.Post, exit, new { revision = 0 }),
+            HttpStatusCode.NotFound, "room_not_found");
+        await Error(await host.Request(HttpMethod.Post, exit, new { revision = 0 }, origin: "https://another.example"),
+            HttpStatusCode.Forbidden, "forbidden");
+        await Error(await host.Request(HttpMethod.Post, exit, new { revision = 0, seat = 1 }),
+            HttpStatusCode.BadRequest, "invalid_request");
+        var closed = await Ok(await host.Request(HttpMethod.Post, exit, new { revision = 0 }));
+        AssertClosed(closed, 0, 1);
+        Assert.Equal(JsonValueKind.Null, Position(closed).ValueKind);
+        Assert.Null(await Resume(host, "reversi"));
+        await Error(await peer.Request(HttpMethod.Post, Api + "/join", new { invite = waiting.Text("invite") }),
+            HttpStatusCode.NotFound, "room_not_found");
+        await Error(await host.Request(HttpMethod.Post, Api + "/join", new { invite = waiting.Text("invite") }),
+            HttpStatusCode.NotFound, "room_not_found");
+
+        var created = await Create(host, reversi, 2);
+        var path = Api + "/tables/" + created.Text("id");
+        var playing = await Ok(await peer.Request(HttpMethod.Post, Api + "/join", new { invite = created.Text("invite") }));
+        var revision = Revision(playing);
+        var moveId = Position(playing).GetProperty("moves")[0].Text("id");
+        var attempts = await Task.WhenAll(
+            host.Request(HttpMethod.Post, path + "/moves", new { revision, moveId }),
+            peer.Request(HttpMethod.Post, path + "/leave", new { revision }));
+        var committed = await Ok(Assert.Single(attempts, response => response.IsSuccessStatusCode));
+        await Error(Assert.Single(attempts, response => !response.IsSuccessStatusCode), HttpStatusCode.Conflict, "stale_room");
+        Assert.Equal(revision + 1, Revision(committed));
+        closed = committed.Text("status") == "closed" ? committed : await Ok(await peer.Request(
+            HttpMethod.Post, path + "/leave", new { revision = Revision(committed) }));
+        AssertClosed(closed, 1, Revision(committed) + (committed.Text("status") == "closed" ? 0 : 1));
+        Assert.True(JsonElement.DeepEquals(Position(committed).GetProperty("cells"), Position(closed).GetProperty("cells")));
+        Assert.Equal(JsonValueKind.Null, Position(closed).GetProperty("turn").ValueKind);
+        Assert.Empty(Position(closed).GetProperty("moves").EnumerateArray());
+        var current = await Ok(await host.Request(HttpMethod.Get, path));
+        AssertClosed(current, 1, Revision(closed));
+        Assert.Equal(0, current.GetProperty("seat").GetInt32());
+        Assert.Null(await Resume(peer, "reversi"));
+        Assert.Null(await Resume(host, "reversi"));
+        await Error(await host.Request(HttpMethod.Post, path + "/moves", new { revision = Revision(closed), moveId }),
+            HttpStatusCode.BadRequest, "room_closed");
+    }
+
+    [Fact]
+    public async Task ChessResignationOutOfTurnPreservesFinalPositionAndCannotBeReplayedOrReopened()
+    {
+        await using var server = PortalServer();
+        await server.StartAsync();
+        var white = await Guest(server, "White");
+        var black = await Guest(server, "Black");
+        var stranger = await Guest(server, "Observer");
+        var waiting = await Create(white, Definition(await Catalog(white), "chess"), 2);
+        var path = Api + "/tables/" + waiting.Text("id");
+        await Error(await white.Request(HttpMethod.Post, path + "/resign", new { revision = 0 }),
+            HttpStatusCode.BadRequest, "room_not_started");
+        var live = await Ok(await black.Request(HttpMethod.Post, Api + "/join", new { invite = waiting.Text("invite") }));
+        await Error(await black.Request(HttpMethod.Post, path + "/leave", new { revision = Revision(live) }),
+            HttpStatusCode.BadRequest, "resign_required");
+        await Error(await stranger.Request(HttpMethod.Post, path + "/resign", new { revision = Revision(live) }),
+            HttpStatusCode.NotFound, "room_not_found");
+        var moved = await Ok(await white.Request(HttpMethod.Post, path + "/moves",
+            new { revision = Revision(live), moveId = "e2e4" }));
+        Assert.Equal(1, Position(moved).GetProperty("turn").GetInt32());
+        await Error(await white.Request(HttpMethod.Post, path + "/resign", new { revision = Revision(live) }),
+            HttpStatusCode.Conflict, "stale_room");
+        var resigned = await Ok(await white.Request(HttpMethod.Post, path + "/resign", new { revision = Revision(moved) }));
+        Assert.Equal("finished", resigned.Text("status"));
+        Assert.Equal(Revision(moved) + 1, Revision(resigned));
+        Assert.Equal("resignation", resigned.At("result", "cause").GetString());
+        Assert.Equal(0, resigned.At("result", "loserSeat").GetInt32());
+        Assert.Equal(1, resigned.At("result", "winnerSeat").GetInt32());
+        Assert.Equal(1, Assert.Single(Position(resigned).GetProperty("winners").EnumerateArray()).GetInt32());
+        Assert.True(JsonElement.DeepEquals(Position(moved).GetProperty("cells"), Position(resigned).GetProperty("cells")));
+        Assert.Null(resigned.Text("invite"));
+        Assert.Equal(JsonValueKind.Null, Position(resigned).GetProperty("turn").ValueKind);
+        Assert.Empty(Position(resigned).GetProperty("moves").EnumerateArray());
+        AssertNoMotion(resigned);
+        Assert.False(resigned.TryGetProperty("checkpoint", out _));
+        Assert.Null(await Resume(white, "chess"));
+        Assert.Null(await Resume(black, "chess"));
+        await Error(await black.Request(HttpMethod.Post, Api + "/join", new { invite = waiting.Text("invite") }),
+            HttpStatusCode.NotFound, "room_not_found");
+
+        await server.StopAsync();
+        await server.StartAsync();
+        var recovered = await Ok(await black.Request(HttpMethod.Get, path));
+        AssertNoMotion(recovered);
+        Assert.True(JsonElement.DeepEquals(resigned.GetProperty("result"), recovered.GetProperty("result")));
+        Assert.True(JsonElement.DeepEquals(Position(resigned), Position(recovered)));
+        foreach (var operation in new[] { "leave", "resign", "moves" })
+        {
+            object body = operation == "moves" ? new { revision = Revision(recovered), moveId = "e7e5" }
+                : new { revision = Revision(recovered) };
+            await Error(await black.Request(HttpMethod.Post, path + "/" + operation, body),
+                HttpStatusCode.BadRequest, "game_finished");
+        }
+    }
+
+    [Fact]
+    public async Task LeavingCannotReplaceAnEngineResult()
+    {
+        await using var server = PortalServer();
+        await server.StartAsync();
+        var black = await Guest(server, "Black");
+        var peer = await Guest(server, "White");
+        var waiting = await Create(black, Definition(await Catalog(black), "go"), 2);
+        var path = Api + "/tables/" + waiting.Text("id");
+        var played = await Ok(await peer.Request(HttpMethod.Post, Api + "/join", new { invite = waiting.Text("invite") }));
+        played = await Ok(await black.Request(HttpMethod.Post, path + "/moves", new { revision = Revision(played), moveId = "pass" }));
+        played = await Ok(await peer.Request(HttpMethod.Post, path + "/moves", new { revision = Revision(played), moveId = "pass" }));
+        Assert.Equal("finished", played.Text("status"));
+        await Error(await black.Request(HttpMethod.Post, path + "/leave", new { revision = Revision(played) }),
+            HttpStatusCode.BadRequest, "game_finished");
+        var read = await Ok(await peer.Request(HttpMethod.Get, path));
+        Assert.Equal(Revision(played), Revision(read));
+        Assert.True(JsonElement.DeepEquals(Position(played), Position(read)));
+        Assert.False(read.TryGetProperty("endReason", out _));
+    }
+
+    [Fact]
     public async Task GoPassIsAnAcceptedPlyWithNoChangedCells()
     {
         await using var server = PortalServer();
@@ -261,6 +390,16 @@ public sealed class BoardTableTests
 
     private static void AssertNoMotion(JsonElement response) =>
         Assert.DoesNotContain("turnMotion", response.EnumerateObject().Select(property => property.Name));
+
+    private static void AssertClosed(JsonElement table, int seat, long revision)
+    {
+        Assert.Equal("closed", table.Text("status"));
+        Assert.Equal("left", table.Text("endReason"));
+        Assert.Equal(seat, table.GetProperty("endedBySeat").GetInt32());
+        Assert.Equal(revision, Revision(table));
+        Assert.Null(table.Text("invite"));
+        AssertNoMotion(table);
+    }
 
     private static JsonElement[] AssertTurnMotion(JsonElement before, JsonElement committed)
     {

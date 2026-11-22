@@ -13,6 +13,8 @@ internal sealed class BoardTableRow
     public long Revision { get; init; }
     public long ExpiresAtTicks { get; init; }
     public string? Checkpoint { get; init; }
+    public string? EndReason { get; set; }
+    public int? EndedBySeat { get; set; }
     public List<BoardMembershipRow> Members { get; } = [];
 }
 

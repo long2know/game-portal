@@ -30,17 +30,25 @@ the same `Origin` accepted by the existing server policy.
 | `POST /api/board/join` | `{invite}` → a table for the requesting guest. The final human to join starts the game. Valid member rejoin is idempotent. |
 | `GET /api/board/tables/{id}` | Current committed table, only for a seated guest. |
 | `POST /api/board/tables/{id}/moves` | `{revision, moveId}` → the committed table, after any bot replies. `moveId` is an opaque ID from `position.moves`. |
-| `GET /api/board/resume?game={gameId}` | `{tableId}`: the guest's most recently created or joined unexpired table for the game, or `null`. |
+| `POST /api/board/tables/{id}/leave` | `{revision}` → closes a waiting table or a live non-Chess table. |
+| `POST /api/board/tables/{id}/resign` | `{revision}` → a seated guest forfeits live Chess regardless of turn. |
+| `GET /api/board/resume?game={gameId}` | `{tableId}`: the guest's most recently created or joined unexpired table for the game, skipping closed or resigned tables, or `null`. |
 
-A table includes `id`, `game`, `variant`, `revision`, `status` (`waiting`, `playing`, or
-`finished`), the caller's zero-based `seat`, `invite`, `seats`, and `position`. Seats contain
+A table includes `id`, `game`, `variant`, `revision`, `status` (`waiting`, `playing`,
+`finished`, or `closed`), the caller's zero-based `seat`, `invite`, `seats`, and `position`. Seats contain
 only `seat`, `name`, `bot`, and `occupied`. While waiting, `position` is `null` and seated
 guests can share the 128-bit invite (32 hex characters). `invite` is `null` after the game
 starts. A table ID is not an invite. There is no public table list; nonmembers cannot read
 the seats or game state by guessing an ID. The position is the selected rules module's
 public board and legal options, never its checkpoint or any raw guest identifiers.
 
-Revision starts at 0 and advances once per new seat or accepted human move. Each move and
+Closing a table records `endReason: "left"` and `endedBySeat`. Live Chess requires resignation
+instead, which records `status: "finished"` and `result: {cause: "resignation", loserSeat, winnerSeat}`.
+Both operations revoke the invite, preserve the last public board (if started) without legal
+actions, and leave the terminal table readable by members. Naturally finished games cannot
+be closed or resigned. Navigating away does not close or resign a table.
+
+Revision starts at 0 and advances once per new seat, accepted human move, or exit. Each move and
 its bot replies are committed as one revision; reload using `GET` on any conflict. Bots
 take at most one seating round per move, outside the SQLite write transaction. If a bot
 doesn't return a legal move, the server logs the fallback and applies the first legal
@@ -53,10 +61,10 @@ include each bot reply. Each `{move, changes}` contains the canonical `GameMove`
 any promotion or jump path) and just the public `GameCell`s whose owner or piece changed in
 that ply. A pass has empty `changes`. Animate only from a matching `fromRevision`, replacing
 cells by ID in step order; the returned `position` is always authoritative. Create, join,
-read, resume and error responses omit `turnMotion`; it is not saved or replayed.
+read, resume, exit and error responses omit `turnMotion`; it is not saved or replayed.
 
 Errors use `{error:{code}}`: `invalid_request`, `illegal_move`, `not_your_turn`,
-`room_not_started`, and `game_finished` (400); `not_authenticated` (401); `forbidden`
+`room_not_started`, `room_closed`, `resign_required`, and `game_finished` (400); `not_authenticated` (401); `forbidden`
 (403); `room_not_found` (404, also for nonmembers or a full/unknown invite); `stale_room`
 (409); `busy` or `table_limit` (429); and `engine_unavailable` (500). Board requests cap
 mutation JSON at 4 KiB. Authenticated reads have a separate per-guest quota for polling
@@ -65,4 +73,5 @@ every 2–3 seconds through shared proxies; Mahjong quotas are unchanged.
 Waiting tables expire after 24 hours without a join; started tables expire seven days
 after starting or the last move. Polling and idempotent rejoin do not extend expiry.
 Each guest can own up to 32 unexpired tables, with a shared limit of 512. Creating a
-new table does not evict earlier tables or change their memberships.
+new table does not evict earlier tables or change their memberships. Explicitly closed
+or resigned tables remain readable for 24 hours and do not count toward those limits.
