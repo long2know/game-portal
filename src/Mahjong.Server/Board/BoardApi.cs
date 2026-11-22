@@ -7,7 +7,7 @@ internal static class BoardApi
 {
     private static readonly object CookieGuestKey = new();
 
-    private sealed record StartRequest(string Game, string Variant, int Players, bool Bots);
+    private sealed record StartRequest(string Game, string Variant, int Players, bool Bots, string? BotDifficulty);
     private sealed record MoveRequest(long Revision, string MoveId);
     private sealed record RevisionRequest(long Revision);
 
@@ -19,7 +19,8 @@ internal static class BoardApi
         routes.MapPost("/tables", (HttpContext context, BoardTables tables) => ForGuestAsync(context, tables, true,
             async (guest, stop) =>
                 await HttpApi.ReadJsonAsync(context, ReadStart) is { } request
-                    ? Json(await tables.CreateAsync(guest, request.Game, request.Variant, request.Players, request.Bots, stop))
+                    ? Json(await tables.CreateAsync(guest, request.Game, request.Variant, request.Players, request.Bots,
+                        request.BotDifficulty, stop))
                     : Invalid())).RequireRateLimiting("board-write");
         routes.MapPost("/join", (HttpContext context, BoardTables tables) => ForGuestAsync(context, tables, true,
             async (guest, stop) => await HttpApi.ReadJsonAsync(context, ReadInvite) is { } invite
@@ -97,9 +98,12 @@ internal static class BoardApi
     {
         var game = body.Get("game").AsString();
         var variant = body.Get("variant").AsString();
-        return Wire.Fields(body, "game", "variant", "players", "bots") && Wire.IsLocator(game) && Wire.IsLocator(variant)
+        var field = body.Get("botDifficulty");
+        var difficulty = field.AsString();
+        return Wire.Fields(body, "game", "variant", "players", "bots", "botDifficulty") && Wire.IsLocator(game)
+            && Wire.IsLocator(variant) && (field.ValueKind == JsonValueKind.Undefined || difficulty is not null)
             && body.Get("players").Int(out var players) && body.Get("bots").TryFlag(out var bots)
-            ? new(game!, variant!, players, bots) : null;
+            ? new(game!, variant!, players, bots, difficulty) : null;
     }
 
     private static string? ReadInvite(JsonElement body)

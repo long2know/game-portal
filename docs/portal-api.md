@@ -26,7 +26,7 @@ the same `Origin` accepted by the existing server policy.
 | Method and path | Body and result |
 | --- | --- |
 | `GET /api/board/games` | Public catalog `{games}`; entries include `id`, `name`, `description`, `playerCounts`, and `variants` (`id` and `label`). |
-| `POST /api/board/tables` | `{game, variant, players, bots}` → a new table with the creator in seat 0. `bots: true` fills every other seat and starts immediately. |
+| `POST /api/board/tables` | `{game, variant, players, bots, botDifficulty?}` → a new table with the creator in seat 0. `bots: true` fills every other seat and starts immediately. |
 | `POST /api/board/join` | `{invite}` → a table for the requesting guest. The final human to join starts the game. Valid member rejoin is idempotent. |
 | `GET /api/board/tables/{id}` | Current committed table, only for a seated guest. |
 | `POST /api/board/tables/{id}/moves` | `{revision, moveId}` → the committed table, after any bot replies. `moveId` is an opaque ID from `position.moves`. |
@@ -41,6 +41,10 @@ guests can share the 128-bit invite (32 hex characters). `invite` is `null` afte
 starts. A table ID is not an invite. There is no public table list; nonmembers cannot read
 the seats or game state by guessing an ID. The position is the selected rules module's
 public board and legal options, never its checkpoint or any raw guest identifiers.
+
+Chess bot tables accept and return `botDifficulty` (`easy`, `standard`, or `hard`).
+Omitting it defaults to `standard`, including on saves created before the difficulty option.
+Human Chess and all other games reject the field and do not return it.
 
 Closing a table records `endReason: "left"` and `endedBySeat`. Live Chess requires resignation
 instead, which records `status: "finished"` and `result: {cause: "resignation", loserSeat, winnerSeat}`.

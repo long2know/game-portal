@@ -10,6 +10,7 @@ internal sealed class BoardTableRow
     public string? InviteCode { get; init; }
     public int Players { get; init; }
     public bool Bots { get; init; }
+    public string? BotDifficulty { get; init; }
     public long Revision { get; init; }
     public long ExpiresAtTicks { get; init; }
     public string? Checkpoint { get; init; }

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
+using JadeCourt.Chess;
 using JadeCourt.Games;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,6 +13,7 @@ internal sealed record BoardResult(string Cause, int LoserSeat, int WinnerSeat);
 internal sealed record BoardTable(string Id, string Game, string Variant, long Revision, string Status,
     int Seat, string? Invite, BoardSeat[] Seats, GamePosition? Position,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BoardTurnMotion? TurnMotion,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BotDifficulty,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? EndReason,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? EndedBySeat,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BoardResult? Result);
@@ -29,6 +31,7 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
     private const int MaxTables = 512;
     private const int MaxOwnedTables = 32;
     private const int MaxCheckpointLength = 600_000;
+    private const string StandardDifficulty = "standard";
     private static readonly TimeSpan WaitingLifetime = TimeSpan.FromHours(24);
     private static readonly TimeSpan GameLifetime = TimeSpan.FromDays(7);
     private static readonly TimeSpan EndedLifetime = TimeSpan.FromHours(24);
@@ -41,18 +44,20 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
     }
 
     public async Task<BoardTable> CreateAsync(GuestRow guest, string gameId, string variant, int players, bool bots,
-        CancellationToken stop)
+        string? botDifficulty, CancellationToken stop)
     {
         var game = FindGame(gameId);
         if (players is < 2 or > MaxPlayers || !game.Definition.PlayerCounts.Contains(players)
-            || !game.Definition.Variants.Any(v => v.Id == variant))
+            || !game.Definition.Variants.Any(v => v.Id == variant)
+            || (botDifficulty is not null && (gameId != "chess" || !bots || botDifficulty is not ("easy" or StandardDifficulty or "hard"))))
             throw new BoardFault(400, "invalid_request");
+        var difficulty = gameId == "chess" && bots ? botDifficulty ?? StandardDifficulty : null;
 
         string start;
         try { start = game.Start(variant, players); }
         catch (ArgumentException) { throw new BoardFault(400, "invalid_request"); }
 
-        var initial = bots ? FinishTurn(game, start, View(game, start, players), players, null, stop) : null;
+        var initial = bots ? FinishTurn(game, start, View(game, start, players), players, difficulty, null, stop) : null;
 
         await using var db = await factory.CreateDbContextAsync(stop);
         await using var transaction = await db.Database.BeginTransactionAsync(stop);
@@ -64,7 +69,7 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
 
         var table = new BoardTableRow
         {
-            Id = Guid.NewGuid().ToString("N"), Game = gameId, Variant = variant, Players = players, Bots = bots,
+            Id = Guid.NewGuid().ToString("N"), Game = gameId, Variant = variant, Players = players, Bots = bots, BotDifficulty = difficulty,
             InviteCode = bots ? null : Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16)),
             Checkpoint = initial?.Checkpoint,
             ExpiresAtTicks = ExpiresAt(utc, bots)
@@ -153,7 +158,7 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         var after = View(game, checkpoint, table.Players);
         var steps = new List<BoardMotionStep>(table.Bots ? table.Players : 1) { MotionStep(move, position, after) };
         var next = table.Bots
-            ? FinishTurn(game, checkpoint, after, table.Players, steps, stop)
+            ? FinishTurn(game, checkpoint, after, table.Players, Difficulty(table), steps, stop)
             : new TurnResult(checkpoint, after);
         if (!await CommitAsync(db, table, next.Checkpoint, time.GetUtcNow(), stop)) throw Stale();
         return Project(table, seat, next.Position, table.Revision + 1, new(table.Revision, [.. steps]));
@@ -257,14 +262,17 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
                 Detail = result is null ? "Table closed." : $"{(result.WinnerSeat == 0 ? "White" : "Black")} wins by resignation."
             };
         return new(table.Id, table.Game, table.Variant, revision, closed ? "closed" : position?.Status ?? "waiting", seat,
-            position is null && !closed ? table.InviteCode : null, seats, position, motion, closed ? table.EndReason : null,
+            position is null && !closed ? table.InviteCode : null, seats, position, motion, Difficulty(table), closed ? table.EndReason : null,
             closed ? table.EndedBySeat : null, result);
     }
+
+    private static string? Difficulty(BoardTableRow table) =>
+        table.Game == "chess" && table.Bots ? table.BotDifficulty ?? StandardDifficulty : null;
 
     private sealed record TurnResult(string Checkpoint, GamePosition Position);
 
     private TurnResult FinishTurn(IBoardGame game, string checkpoint, GamePosition position, int players,
-        List<BoardMotionStep>? steps, CancellationToken stop)
+        string? difficulty, List<BoardMotionStep>? steps, CancellationToken stop)
     {
         if (position.Turn is not > 0) return new(checkpoint, position);
         if (!_botWorkers.Wait(0)) throw new BusyException();
@@ -273,7 +281,7 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
             for (var ply = 1; ply < players && position.Turn is > 0; ply++)
             {
                 stop.ThrowIfCancellationRequested();
-                var move = ChooseBotMove(game, checkpoint, position);
+                var move = ChooseBotMove(game, checkpoint, position, difficulty);
                 try { checkpoint = game.Apply(checkpoint, move.Id); }
                 catch (ArgumentException) { throw EngineFault(game, "the bot's legal move was rejected"); }
                 var after = View(game, checkpoint, players);
@@ -289,10 +297,11 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         }
     }
 
-    private GameMove ChooseBotMove(IBoardGame game, string checkpoint, GamePosition position)
+    private GameMove ChooseBotMove(IBoardGame game, string checkpoint, GamePosition position, string? difficulty)
     {
         string? selected;
-        try { selected = game.SelectBotMove(checkpoint); }
+        try { selected = game is ChessGame chess ? chess.SelectBotMove(checkpoint, difficulty ?? StandardDifficulty)
+                : game.SelectBotMove(checkpoint); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { selected = null; }
         if (position.Moves.FirstOrDefault(move => move.Id == selected) is { } legal) return legal;
         log.LogWarning("Board game {Game} bot did not select a legal move; using the first legal move.", game.Definition.Id);

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using JadeCourt.Chess;
 
 namespace Mahjong.Server.Tests;
 
@@ -325,6 +326,57 @@ public sealed class BoardTableTests
         Assert.Equal(0, Assert.Single(pieces, cell => cell.Text("id") == "e4").GetProperty("owner").GetInt32());
         Assert.Equal(1, Assert.Single(pieces, cell => cell.Text("id") == botMove.Text("to")).GetProperty("owner").GetInt32());
         Assert.Equal(position.GetRawText(), Position(await Ok(await guest.Request(HttpMethod.Get, path))).GetRawText());
+    }
+
+    [Fact]
+    public async Task ChessBotPresetSurvivesRestartAndIsUsedForTheCommittedBotMove()
+    {
+        await using var server = PortalServer();
+        await server.StartAsync();
+        var guest = await Guest(server, "White");
+        var catalog = await Catalog(guest);
+        foreach (var (game, bots, difficulty) in new (string, bool, object?)[]
+        {
+            ("chess", true, null), ("chess", true, 2), ("chess", true, "Hard"), ("chess", true, "expert"),
+            ("chess", false, "standard"), ("reversi", true, "easy")
+        })
+            await Error(await guest.Request(HttpMethod.Post, Api + "/tables", new
+            {
+                game, variant = Definition(catalog, game).GetProperty("variants")[0].Text("id"),
+                players = 2, bots, botDifficulty = difficulty
+            }), HttpStatusCode.BadRequest, "invalid_request");
+        Assert.Null(await Resume(guest, "chess"));
+        Assert.Null(await Resume(guest, "reversi"));
+
+        var chess = Definition(catalog, "chess");
+        foreach (var table in new[] { await Create(guest, chess, 2), await Create(guest, Definition(catalog, "reversi"), 2, true) })
+            Assert.False(table.TryGetProperty("botDifficulty", out _));
+        var created = new Dictionary<string, JsonElement>
+        {
+            ["standard"] = await Create(guest, chess, 2, true)
+        };
+        foreach (var preset in new[] { "easy", "hard" })
+            created[preset] = await Ok(await guest.Request(HttpMethod.Post, Api + "/tables",
+                new { game = "chess", variant = "standard", players = 2, bots = true, botDifficulty = preset }));
+        foreach (var (preset, table) in created)
+            Assert.Equal(preset, table.Text("botDifficulty"));
+
+        await server.StopAsync();
+        await server.StartAsync();
+        var fallback = new ChessGame();
+        var beforeBot = fallback.Apply(fallback.Start("standard", 2), "e2e4");
+        Assert.NotEqual(fallback.SelectBotMove(beforeBot, "easy"), fallback.SelectBotMove(beforeBot, "standard"));
+        foreach (var (preset, table) in created)
+        {
+            var path = Api + "/tables/" + table.Text("id");
+            var read = await Ok(await guest.Request(HttpMethod.Get, path));
+            Assert.Equal(preset, read.Text("botDifficulty"));
+            var committed = await Ok(await guest.Request(HttpMethod.Post, path + "/moves",
+                new { revision = Revision(read), moveId = "e2e4" }));
+            Assert.Equal(preset, committed.Text("botDifficulty"));
+            var reply = AssertTurnMotion(read, committed)[1];
+            Assert.Equal(fallback.SelectBotMove(beforeBot, preset), reply.At("move", "id").GetString());
+        }
     }
 
     [Fact]
