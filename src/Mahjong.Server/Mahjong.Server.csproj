@@ -14,6 +14,7 @@
     <ProjectReference Include="../JadeCourt.Chess/JadeCourt.Chess.csproj" />
     <ProjectReference Include="../JadeCourt.Poker/JadeCourt.Poker.csproj" />
     <ProjectReference Include="../JadeCourt.Words/JadeCourt.Words.csproj" />
+    <ProjectReference Include="../JadeCourt.Solo/JadeCourt.Solo.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.15" />
     <Content Include="$(ClientDist)/index.html" Condition="Exists('$(ClientDist)/index.html')"
              Link="index.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

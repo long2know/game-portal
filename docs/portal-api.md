@@ -10,8 +10,8 @@ redirect does not supply a fragment, browsers retain the original fragment. Othe
 paths return 404. The build publishes `index.html` and `portal.html` outside `wwwroot`.
 
 Use a dedicated data volume for the portal (`GamePortal__DataDirectory`, `/data` in the
-image). Its EF migration installs board tables and memberships alongside the existing
-guest/profile and Mahjong tables in the portal's own SQLite file. The guest cookie and
+image). Its EF migrations preserve existing board, guest/profile and Mahjong data and add
+private seated-game tables and solo saves to the portal's own SQLite file. The guest cookie and
 its protection keys are shared across games within this app, not imported from the
 original Mahjong installation. Keep the portal's database and keys together across
 restarts. With `GamePortal__BehindHttpsProxy=true`, the HTTPS edge must preserve the
@@ -128,3 +128,32 @@ Write `POST /api/words/tables/{id}/actions` with `{revision, action}`. The actio
 and IDs must be in the caller's current rack. The host can return `not_your_turn`,
 `illegal_action`, or the shared room/revision errors. A bot sees only its own rack and the
 public board, and takes at most one turn before the response is committed.
+
+## Solitaire and Sudoku
+
+Each protected guest has one saved table per game in SQLite, independent of other guests.
+The save lasts with the guest identity and survives server restarts when the database and
+cookie protection keys are preserved. No seed, solution, or future card order is sent or
+accepted. The same portal body size, same-origin, and per-guest quota rules apply.
+
+| Method and path | Body and result |
+| --- | --- |
+| `GET /api/solo/{game}` | `{table: null}` if there is no save, or `{table: SoloTable}`. |
+| `POST /api/solo/{game}` | `{variant}` replaces the save with a fresh deal and returns `SoloTable`. |
+| `POST /api/solo/{game}/moves` | `{revision, action}` applies one legal action and returns `SoloTable`. |
+
+`SoloTable` is `{game, variant, revision, position}`. The first deal has revision `0`;
+each accepted action or redeal advances it by one. Always send the current revision for a
+move; a prior board's revision after a redeal returns `stale_room` (409).
+
+- `solitaire` supports variant `draw-one` and actions `{kind: "draw"}` and
+  `{kind: "move", from, to, count}`. Use pile IDs from `position.legalMoves`; covered
+  cards show `null` rank and suit.
+- `sudoku` supports `easy`, `standard`, and `hard` and actions
+  `{kind: "set", index, value}` (value `0` clears the cell), or `{kind: "hint", index?}`.
+  The view contains row-major givens, current values, and conflicts. A hint changes
+  just one editable cell.
+
+See [solo engine rules](solo-rules.md) for action details. Unsupported variants, games, or
+malformed actions return `invalid_request`; illegal plays and finished saves return
+`illegal_action` and `game_finished` (400). A move without a save returns `room_not_found` (404).

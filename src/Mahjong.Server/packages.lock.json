@@ -118,6 +118,9 @@
       "jadecourt.poker": {
         "type": "Project"
       },
+      "jadecourt.solo": {
+        "type": "Project"
+      },
       "jadecourt.words": {
         "type": "Project"
       },

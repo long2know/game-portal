@@ -292,6 +292,9 @@
       "jadecourt.poker": {
         "type": "Project"
       },
+      "jadecourt.solo": {
+        "type": "Project"
+      },
       "jadecourt.words": {
         "type": "Project"
       },
@@ -304,6 +307,7 @@
           "JadeCourt.Chess": "[1.0.0, )",
           "JadeCourt.Games": "[1.0.0, )",
           "JadeCourt.Poker": "[1.0.0, )",
+          "JadeCourt.Solo": "[1.0.0, )",
           "JadeCourt.Words": "[1.0.0, )",
           "Mahjong.Rules": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Sqlite": "[10.0.15, )"

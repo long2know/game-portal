@@ -4,6 +4,7 @@ using System.Threading.RateLimiting;
 using Mahjong.Server;
 using Mahjong.Server.Board;
 using Mahjong.Server.Seated;
+using Mahjong.Server.Solo;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Data.Sqlite;
@@ -40,6 +41,7 @@ if (portalEnabled)
         new BoardRegistry(stockfishPath, services.GetRequiredService<ILogger<BoardRegistry>>()));
     builder.Services.AddSingleton<BoardTables>();
     builder.Services.AddSingleton<SeatedTables>();
+    builder.Services.AddSingleton<SoloTables>();
 }
 
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
@@ -116,6 +118,7 @@ if (portalEnabled)
     BoardApi.Map(app);
     PokerRules.Map(app);
     WordsRules.Map(app);
+    SoloApi.Map(app);
 }
 app.MapGet("/ws", (HttpContext context, Realtime realtime) => realtime.InvokeAsync(context)).RequireRateLimiting("read");
 app.MapGet("/health/live", () => Results.Json(new { status = "live" }, Wire.Json));
