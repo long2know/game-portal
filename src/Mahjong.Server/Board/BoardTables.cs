@@ -1,12 +1,16 @@
 using System.Security.Cryptography;
+using System.Text.Json.Serialization;
 using JadeCourt.Games;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mahjong.Server.Board;
 
 internal sealed record BoardSeat(int Seat, string Name, bool Bot, bool Occupied);
+internal sealed record BoardMotionStep(GameMove Move, GameCell[] Changes);
+internal sealed record BoardTurnMotion(long FromRevision, BoardMotionStep[] Steps);
 internal sealed record BoardTable(string Id, string Game, string Variant, long Revision, string Status,
-    int Seat, string? Invite, BoardSeat[] Seats, GamePosition? Position);
+    int Seat, string? Invite, BoardSeat[] Seats, GamePosition? Position,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BoardTurnMotion? TurnMotion);
 
 internal sealed class BoardFault(int status, string code) : Exception(code)
 {
@@ -43,7 +47,7 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         try { start = game.Start(variant, players); }
         catch (ArgumentException) { throw new BoardFault(400, "invalid_request"); }
 
-        var initial = bots ? FinishTurn(game, start, players, bots, stop) : null;
+        var initial = bots ? FinishTurn(game, start, View(game, start, players), players, null, stop) : null;
 
         await using var db = await factory.CreateDbContextAsync(stop);
         await using var transaction = await db.Database.BeginTransactionAsync(stop);
@@ -136,13 +140,17 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         var position = View(game, checkpoint, table.Players);
         if (position.Status == "finished") throw new BoardFault(400, "game_finished");
         if (position.Turn != seat) throw new BoardFault(400, "not_your_turn");
-        if (!position.Moves.Any(move => move.Id == moveId)) throw new BoardFault(400, "illegal_move");
-        try { checkpoint = game.Apply(checkpoint, moveId); }
+        var move = position.Moves.FirstOrDefault(move => move.Id == moveId) ?? throw new BoardFault(400, "illegal_move");
+        try { checkpoint = game.Apply(checkpoint, move.Id); }
         catch (ArgumentException) { throw new BoardFault(400, "illegal_move"); }
 
-        var next = FinishTurn(game, checkpoint, table.Players, table.Bots, stop);
+        var after = View(game, checkpoint, table.Players);
+        var steps = new List<BoardMotionStep>(table.Bots ? table.Players : 1) { MotionStep(move, position, after) };
+        var next = table.Bots
+            ? FinishTurn(game, checkpoint, after, table.Players, steps, stop)
+            : new TurnResult(checkpoint, after);
         if (!await CommitAsync(db, table, next.Checkpoint, time.GetUtcNow(), stop)) throw Stale();
-        return Project(table, seat, next.Position, table.Revision + 1);
+        return Project(table, seat, next.Position, table.Revision + 1, new(table.Revision, [.. steps]));
     }
 
     private IBoardGame FindGame(string id) => registry.Find(id) ?? throw new BoardFault(400, "invalid_request");
@@ -181,7 +189,8 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
     private BoardTable Read(BoardTableRow table, int seat) => Project(table, seat,
         table.Checkpoint is { } checkpoint ? View(FindGame(table.Game), checkpoint, table.Players) : null, table.Revision);
 
-    private static BoardTable Project(BoardTableRow table, int seat, GamePosition? position, long revision)
+    private static BoardTable Project(BoardTableRow table, int seat, GamePosition? position, long revision,
+        BoardTurnMotion? motion = null)
     {
         var seats = new BoardSeat[table.Players];
         for (var index = 0; index < seats.Length; index++)
@@ -191,15 +200,15 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         foreach (var member in table.Members)
             seats[member.Seat] = new(member.Seat, member.Guest.DisplayName, false, true);
         return new(table.Id, table.Game, table.Variant, revision, position?.Status ?? "waiting", seat,
-            position is null ? table.InviteCode : null, seats, position);
+            position is null ? table.InviteCode : null, seats, position, motion);
     }
 
     private sealed record TurnResult(string Checkpoint, GamePosition Position);
 
-    private TurnResult FinishTurn(IBoardGame game, string checkpoint, int players, bool bots, CancellationToken stop)
+    private TurnResult FinishTurn(IBoardGame game, string checkpoint, GamePosition position, int players,
+        List<BoardMotionStep>? steps, CancellationToken stop)
     {
-        var position = View(game, checkpoint, players);
-        if (!bots || position.Turn is not > 0) return new(checkpoint, position);
+        if (position.Turn is not > 0) return new(checkpoint, position);
         if (!_botWorkers.Wait(0)) throw new BusyException();
         try
         {
@@ -207,9 +216,11 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
             {
                 stop.ThrowIfCancellationRequested();
                 var move = ChooseBotMove(game, checkpoint, position);
-                try { checkpoint = game.Apply(checkpoint, move); }
+                try { checkpoint = game.Apply(checkpoint, move.Id); }
                 catch (ArgumentException) { throw EngineFault(game, "the bot's legal move was rejected"); }
-                position = View(game, checkpoint, players);
+                var after = View(game, checkpoint, players);
+                steps?.Add(MotionStep(move, position, after));
+                position = after;
             }
             if (position.Turn is > 0) throw EngineFault(game, "the turn did not return to the human seat");
             return new(checkpoint, position);
@@ -220,14 +231,22 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         }
     }
 
-    private string ChooseBotMove(IBoardGame game, string checkpoint, GamePosition position)
+    private GameMove ChooseBotMove(IBoardGame game, string checkpoint, GamePosition position)
     {
         string? selected;
         try { selected = game.SelectBotMove(checkpoint); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { selected = null; }
-        if (position.Moves.Any(move => move.Id == selected)) return selected!;
+        if (position.Moves.FirstOrDefault(move => move.Id == selected) is { } legal) return legal;
         log.LogWarning("Board game {Game} bot did not select a legal move; using the first legal move.", game.Definition.Id);
-        return position.Moves[0].Id;
+        return position.Moves[0];
+    }
+
+    private static BoardMotionStep MotionStep(GameMove move, GamePosition before, GamePosition after)
+    {
+        var prior = before.Cells.ToDictionary(cell => cell.Id, StringComparer.Ordinal);
+        var changes = after.Cells.Where(cell => !prior.TryGetValue(cell.Id, out var old)
+            || cell.Owner != old.Owner || cell.Piece != old.Piece).ToArray();
+        return new(move, changes);
     }
 
     private GamePosition View(IBoardGame game, string checkpoint, int players)

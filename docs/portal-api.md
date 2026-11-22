@@ -47,6 +47,14 @@ doesn't return a legal move, the server logs the fallback and applies the first 
 option. `Portal__StockfishPath` is an optional operator filesystem path; Chess can choose a
 legal fallback without a Stockfish process.
 
+Only a successful move response includes `turnMotion: {fromRevision, steps}`. `fromRevision`
+is the accepted prior table revision. The ordered `steps` start with the human move and
+include each bot reply. Each `{move, changes}` contains the canonical `GameMove` (including
+any promotion or jump path) and just the public `GameCell`s whose owner or piece changed in
+that ply. A pass has empty `changes`. Animate only from a matching `fromRevision`, replacing
+cells by ID in step order; the returned `position` is always authoritative. Create, join,
+read, resume and error responses omit `turnMotion`; it is not saved or replayed.
+
 Errors use `{error:{code}}`: `invalid_request`, `illegal_move`, `not_your_turn`,
 `room_not_started`, and `game_finished` (400); `not_authenticated` (401); `forbidden`
 (403); `room_not_found` (404, also for nonmembers or a full/unknown invite); `stale_room`
