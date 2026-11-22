@@ -7,7 +7,7 @@ import { readInvite } from "../host";
 import type { PortalHost } from "../host";
 import { expired, field, gameFrame, invitationField, messageFor } from "./shared";
 
-type Game = "holdem" | "word-tiles";
+type Game = "holdem" | "word-tiles" | "farkle" | "backgammon";
 export type MultiplayerTable<P> = Pick<Table, "id" | "revision" | "status" | "seat" | "seats" | "invite" | "endReason" | "endedBySeat">
   & { position: P | null };
 export interface MatchView<P> {
@@ -16,7 +16,7 @@ export interface MatchView<P> {
 }
 type Options<P, A> = {
   game: Game;
-  endpoint: "poker" | "words";
+  endpoint: "poker" | "words" | "farkle" | "backgammon";
   playerCounts: number[];
   view: (play: (action: A) => void, next: () => void) => MatchView<P>;
 };
