@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Mahjong.Server.Social;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -33,7 +34,7 @@ internal sealed class WorkLane(int capacity)
 }
 
 internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions options, ProtectedIdentity identity,
-    RoomGame game, TimeProvider time, ILogger<Rooms> log)
+    RoomGame game, TimeProvider time, ILogger<Rooms> log, SocialPresence? socialPresence = null)
 {
     private const int RoomLimit = 64;
     private const int ActiveReceiptLimit = 2048;
@@ -373,6 +374,78 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
             SendSnapshot(peer, seat.Value, live.Checkpoint, utc);
     }
 
+    public static async Task<long?> SocialWaitingVersionAsync(MahjongDb db, string roomId, Guid sender, DateTimeOffset utc,
+        CancellationToken stop)
+    {
+        var row = await db.Rooms.AsNoTracking().SingleOrDefaultAsync(r => r.Id == roomId
+            && r.ExpiresAtTicks > utc.UtcTicks && r.Waiting && r.OccupiedSeats < 4, stop);
+        if (row is null) return null;
+        var room = RoomCheckpoint.Read(row);
+        return SocialOpenSeat(room, sender) >= 0 ? room.GameRevision : null;
+    }
+
+    public Task JoinSocialAsync(SocialAcceptance admission, CancellationToken stop) =>
+        Run(admission.Target.TableId, async () =>
+        {
+            // The recipient's durable hint was resolved before entering the room slot and writer.
+            await using var db = await factory.CreateDbContextAsync(stop);
+            await using var transaction = await db.Database.BeginTransactionAsync(stop);
+            var utc = time.GetUtcNow();
+            var receipt = await admission.AuthorizeAsync(db, utc, stop);
+            var row = await db.Rooms.FindAsync([admission.Target.TableId], stop);
+            if (row is null || row.ExpiresAtTicks <= utc.UtcTicks) throw SocialLedger.Missing();
+            var member = await db.Memberships.FindAsync([admission.RecipientId], stop);
+            if (receipt.Accepted)
+            {
+                if (member?.RoomId == row.Id) return true;
+                throw SocialLedger.Missing();
+            }
+
+            RoomRow? expired = null;
+            if (member is not null)
+            {
+                if (member.RoomId == row.Id) throw SocialLedger.AlreadySeated();
+                expired = await db.Rooms.FindAsync([member.RoomId], stop);
+                if (expired is null || expired.ExpiresAtTicks > utc.UtcTicks) throw SocialLedger.AlreadySeated();
+            }
+
+            var room = RoomCheckpoint.Read(row);
+            var seat = SocialOpenSeat(room, admission.SenderId);
+            if (seat < 0 || room.GameRevision != receipt.WaitingVersion) throw SocialLedger.Missing();
+            var guest = await db.Guests.FindAsync([admission.RecipientId], stop) ?? throw SocialLedger.Missing();
+            if (expired is not null)
+            {
+                // Free the unique membership key inside this transaction, with no expiry publication yet.
+                db.Rooms.Remove(expired);
+                await db.SaveChangesAsync(stop);
+            }
+            using var handoff = await admission.StageAsync(db, receipt, stop);
+            SeatHuman(db, room, guest, seat);
+            Touch(row, utc);
+            room.Store(row);
+            await db.SaveChangesAsync(stop);
+            await transaction.CommitAsync(stop);
+            handoff.Commit();
+
+            if (expired is not null) Forget(expired.Id);
+            Register(row, room);
+            Broadcast(room, utc);
+            return true;
+        });
+
+    private static int SocialOpenSeat(RoomCheckpoint room, Guid sender) =>
+        room.Status == "waiting" && room.Seats[room.HostSeat].GuestId == sender ? OpenSeat(room) : -1;
+
+    private static int OpenSeat(RoomCheckpoint room) => Array.FindIndex(room.Seats, chair => chair.IsOpen);
+
+    private static void SeatHuman(MahjongDb db, RoomCheckpoint room, GuestRow guest, int seat)
+    {
+        room.Seats[seat] = Chair.Human(guest.Id, guest.DisplayName);
+        room.ResetReadiness();
+        room.TouchRevision();
+        db.Memberships.Add(new MembershipRow { GuestId = guest.Id, RoomId = room.Id, Seat = seat });
+    }
+
     private async Task<(string? Code, Loaded? Live, int? Seat)> AdmitAsync(MahjongDb db, Guid guestId, Intent intent,
         DateTimeOffset utc)
     {
@@ -396,12 +469,9 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
         {
             var room = live.Checkpoint;
             if (room.Status != "waiting") return ("invalid_state", live, null);
-            var open = Array.FindIndex(room.Seats, chair => chair.IsOpen);
+            var open = OpenSeat(room);
             if (open < 0) return ("room_full", live, null);
-            room.Seats[open] = Chair.Human(guestId, guest.DisplayName);
-            room.ResetReadiness();
-            room.TouchRevision();
-            db.Memberships.Add(new MembershipRow { GuestId = guestId, RoomId = room.Id, Seat = open });
+            SeatHuman(db, room, guest, open);
             return (null, live, open);
         }
         foreach (var expired in await db.Rooms.Where(room => room.ExpiresAtTicks <= utc.UtcTicks)
@@ -640,12 +710,15 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
         await db.Receipts.Where(r => r.ExpiresAtTicks <= cutoff).ExecuteDeleteAsync();
         await db.BoardTables.Where(table => table.ExpiresAtTicks <= utc.UtcTicks).ExecuteDeleteAsync();
         await db.SeatedTables.Where(table => table.ExpiresAtTicks <= utc.UtcTicks).ExecuteDeleteAsync();
+        if (socialPresence is not null)
+            await db.SocialInvites.Where(invite => invite.ExpiresAtTicks <= utc.UtcTicks).ExecuteDeleteAsync();
         await db.Clock.Where(c => c.Id == 1).ExecuteUpdateAsync(setters => setters.SetProperty(c => c.LeasePruneTicks, cutoff));
         await db.Guests.Where(guest => guest.ExpiresAtTicks <= utc.UtcTicks
             && !db.Memberships.Any(member => member.GuestId == guest.Id)
             && !db.BoardMemberships.Any(member => member.GuestId == guest.Id)
             && !db.SeatedMemberships.Any(member => member.GuestId == guest.Id)).ExecuteDeleteAsync();
         await transaction.CommitAsync();
+        socialPresence?.Prune(utc);
         Volatile.Write(ref _leasePruneTicks, cutoff);
         _lastPrune = time.GetTimestamp();
     }

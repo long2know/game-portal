@@ -99,7 +99,7 @@ async function observeCalls(page: Page) {
 function initial(): Snapshot {
   const now = Date.now();
   return {
-    v: 1, type: "snapshot", roomId: "audio-fixture", roomRevision: 1, gameRevision: 1,
+    v: 1, type: "snapshot", roomId: "audioFixtureRoom000001", roomRevision: 1, gameRevision: 1,
     serverTimeUtc: new Date(now).toISOString(),
     room: {
       status: "playing", visibility: "invite", hostSeat: 0, matchHands: 4, paused: false, autoResumeAtUtc: null,
@@ -163,6 +163,9 @@ async function fixture(page: Page, child: string) {
     socket.send(JSON.stringify({ v: 1, type: "lease", lease: "fixture", expiresAtUtc: future, serverTimeUtc: new Date().toISOString() }));
   });
   await page.goto(child);
+  const resume = page.getByRole("button", { name: "Resume your table" });
+  await expect(resume).toBeEnabled();
+  await resume.evaluate(control => (control as HTMLButtonElement).click());
   await expect(page.locator(online)).toBeVisible();
   return {
     choices,

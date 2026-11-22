@@ -138,7 +138,10 @@ export class MusicControl {
 
   private paint(): void {
     const playing = this.ambient?.playing ?? false;
-    text(this.button, playing ? "Music on" : this.canResume ? "Play music" : this.enabled ? "Music paused" : "Music off");
+    const label = playing ? "Music on" : this.canResume ? "Play music" : this.enabled ? "Music paused" : "Music off";
+    text(this.button, label);
+    this.button.title = label;
+    this.button.setAttribute("aria-label", label);
     this.button.setAttribute("aria-pressed", String(playing));
     const message = !this.enabled || playing ? "" :
       this.unavailable || this.ambient?.unavailable ? "Music is unavailable in this browser." :

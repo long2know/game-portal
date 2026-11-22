@@ -56,7 +56,7 @@ internal sealed class BoardTables : Migration
 [DbContext(typeof(MahjongDb))]
 internal sealed class MahjongDbModelSnapshot : ModelSnapshot
 {
-    protected override void BuildModel(ModelBuilder modelBuilder) => SoloSchema.Build(modelBuilder);
+    protected override void BuildModel(ModelBuilder modelBuilder) => SocialSchema.Build(modelBuilder);
 }
 
 internal static class BoardSchema

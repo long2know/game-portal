@@ -1,11 +1,14 @@
 import "./styles.css";
+import { icon } from "../dom";
 import type { Guest } from "../protocol";
 import { apiCode, portalApi } from "./api";
 import { catalog, isBoardId, isExpansionId } from "./catalog";
 import { button, el, link } from "./dom";
 import type { PortalHost, ProfileChange } from "./host";
+import { isInviteGame } from "./invite-handoff";
 import { lobby } from "./lobby";
 import { MusicControl } from "./music";
+import { onlineLobby } from "./social-entry";
 
 const app = document.querySelector<HTMLElement>("#app")!;
 const mount = app.dataset.base ?? "/";
@@ -21,7 +24,9 @@ function rememberGuest(next: Guest): Guest {
     document.documentElement.dataset.reducedMotion = reduced;
     document.dispatchEvent(new Event("court-motion-preference"));
   }
+  const nameChanged = !!guest && guest.displayName !== next.displayName;
   guest = next;
+  if (nameChanged) document.dispatchEvent(new Event("court-display-name"));
   music.configure(next.preferences);
   return next;
 }
@@ -50,9 +55,17 @@ const music = new MusicControl(mount, enabled => changeProfile(({ preferences })
 const brand = link("", mount, "brand");
 brand.setAttribute("aria-label", "Jade Court · All games");
 brand.append(el("span", "brand-tile"), el("span", "brand-name", "Jade Court"));
-const nav = el("nav", "site-nav", music.button, isBoardId(route) || isExpansionId(route) || route === "lantern-run"
+const mahjong = link("", `${mount}mahjong/`, "button");
+mahjong.setAttribute("aria-label", "Mahjong table ↗");
+mahjong.append(el("span", "", "Mahjong", el("span", "wide-nav-label", " table"), " ↗"));
+const socialButton = button("", "button court-lobby-trigger");
+socialButton.append(icon("globe"));
+const onlineGame = isInviteGame(route);
+const localOnly = !onlineGame && route !== "solitaire" && route !== "sudoku";
+const social = onlineLobby(socialButton, { mount, openGuest, saveName: name => changeProfile(() => ({ displayName: name })) }, !onlineGame, localOnly);
+const nav = el("nav", "site-nav", music.button, socialButton, isBoardId(route) || isExpansionId(route) || route === "lantern-run"
   ? link("‹ All games", mount, "button")
-  : link("Mahjong table ↗", `${mount}mahjong/`, "button"));
+  : mahjong);
 nav.setAttribute("aria-label", "Court navigation");
 const main = el("main");
 main.id = "main";
@@ -66,7 +79,7 @@ const footer = el("footer", "court-footer",
   el("span", "footer-mark", "◆"), el("span", "", "Jade Court"), el("span", "", "A place for a good game."));
 app.append(skip, el("div", "shell", el("header", "header", brand, nav, music.note), main, footer));
 
-const host: PortalHost = { main, mount, api, openGuest, changeProfile, forgetGuest: () => { guest = undefined; } };
+const host: PortalHost = { main, mount, api, openGuest, changeProfile, forgetGuest: () => { guest = undefined; }, social };
 async function openGame(name: string, render: () => Promise<unknown>): Promise<void> {
   document.title = `${name} · Jade Court`;
   const progress = el("p", "muted", `Opening ${name}…`);

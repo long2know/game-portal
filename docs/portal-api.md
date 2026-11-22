@@ -23,6 +23,71 @@ original Mahjong installation. Keep the portal's database and keys together acro
 restarts. With `GamePortal__BehindHttpsProxy=true`, the HTTPS edge must preserve the
 public `Host` and `/portal` path as for the existing Mahjong API.
 
+## Private player invites
+
+These endpoints are portal-only. Paths are relative to `BASE_URL` (for example,
+`/portal/api/social/presence`). Each POST requires an existing protected guest cookie,
+the same-origin `Origin` header, and a JSON object of at most 4 KiB. Responses use
+camelCase and `Cache-Control: no-store`. Success is HTTP 200.
+
+| Method and path | Body → result |
+| --- | --- |
+| `POST /api/social/presence` | `{tabId, active, busy, available?}` → `{available, players, incoming, outgoing}` |
+| `POST /api/social/invites` | `{playerId, game, tableId}` → `{id}` |
+| `POST /api/social/invites/{id}/accept` | `{}` → `{game, tableId}` after a committed seat |
+| `POST /api/social/invites/{id}/decline` | `{}` → `{ok:true}` (recipient only) |
+| `POST /api/social/invites/{id}/revoke` | `{}` → `{ok:true}` (sender only) |
+| `POST /api/social/invites/{id}/block` | `{}` → `{ok:true}` (recipient only) |
+
+`tabId` is a random per-document string (1–128 ASCII letters, digits or `-_.~`); `active`,
+`busy` and the optional `available` are booleans. New guests are opted out. Only explicitly
+sending `available` changes the persisted guest preference; heartbeats omit it. A visible
+tab heartbeats every 15 seconds and gets a 45-second lease. `active:false` deactivates that
+tab without renewal; any reported busy state still suppresses discovery until that lease
+expires or the tab returns and reports idle. Discovery requires opt-in, a fresh visible
+tab, and no fresh busy tab. A visible opted-in sender can still browse and invite while busy.
+Inactive and opted-out pulses return empty arrays. The server caps presence at eight tabs
+per guest, 512 leased guests per instance, and 32 players per response.
+
+`players` entries are `{id, displayName}`. The IDs are short-lived, viewer-scoped handles
+(up to 45 seconds), not persistent guest identifiers and not interchangeable with invite IDs.
+A player disappearing or the service restarting invalidates its previous handle. `incoming`
+and `outgoing` entries are `{id, game, displayName, expiresAtUtc}`; the name is always the
+other guest's current profile name, and expiry is UTC ISO 8601. These responses never expose
+guest identities, current games, table IDs, or link credentials.
+
+`game` is one of `mahjong`, `chess`, `go`, `reversi`, `checkers`, `chinese-checkers`,
+`holdem`, `word-tiles`, `farkle`, or `backgammon` (the existing HTTP paths for Hold'em
+and Word Tiles are still `/api/poker` and `/api/words`). Send uses the sender's own
+waiting table ID: the sender must be seated, or be the current host for Mahjong, and
+there must be an open human seat. Sending does not reserve a seat. An identical pending
+send returns the original ID and does not extend its two-minute lifetime. The pending
+limits are eight sent and eight received per guest, three per pair, and 512 per instance.
+
+For a pending invite, accept rechecks the recipient, both opt-ins, any block, the
+recipient's live tab state, and the sender's authority and open seat in the same waiting
+table. It never leaves or resigns from another game. An exact-table seat acquired through
+a share link, another live Mahjong membership for a Mahjong invite, or a busy recipient
+returns `already_seated`.
+For 15 seconds after joining, accepting another otherwise valid pending invite returns
+`already_seated` so the recipient can navigate. This handoff window survives a restart.
+The response identifies only the now-authorized table: use the existing exact member GET
+or authenticated Mahjong WebSocket `sync` to load it. A retry can replay the same result,
+including across restart, for five minutes while the same recipient is still seated at the
+same unexpired table and it has not closed. Later opt-outs or blocks do not invalidate a
+committed receipt, and replay does not add a seat or start a game again. The server prunes
+expired invites and receipts independently of client polling.
+
+Opting out immediately cancels all of that guest's pending requests, across tabs.
+Blocking persists for the guests' lifetime, hides the pair in both directions, and
+cancels their pending requests. Neither action undoes a committed join.
+
+Errors are `{error:{code}}`: `invalid_request` (400, including unsupported slugs),
+`not_authenticated` (401), `forbidden` (403, origin), `invite_unavailable` (404, uniform
+for wrong actors, blocked or opted-out guests, absent/expired tokens or handles, and
+ineligible or closed targets), `already_seated` (409, including busy), and `busy`
+(429, limits or transient contention). No error returns a target or guest identifier.
+
 ## Shared boards
 
 The following paths are relative to the configured mount. JSON properties are camelCase.

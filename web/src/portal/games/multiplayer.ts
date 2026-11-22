@@ -1,10 +1,11 @@
 import type { Guest } from "../../protocol";
-import { apiCode, isLive, mountedJson } from "../api";
+import { ApiError, apiCode, isLive, mountedJson } from "../api";
 import type { Table } from "../api";
 import { Confirmation } from "../confirm";
 import { button, el, text } from "../dom";
 import { readInvite } from "../host";
 import type { PortalHost } from "../host";
+import { rememberTable, tableEntry } from "../invite-handoff";
 import { expired, field, gameFrame, invitationField, messageFor } from "./shared";
 
 type Game = "holdem" | "word-tiles" | "farkle" | "backgammon";
@@ -29,7 +30,7 @@ export class Multiplayer<P, A extends object> {
   private readonly json;
   private readonly path;
   private readonly view;
-  private readonly share = invitationField();
+  private readonly share = invitationField(opener => this.host.social.open(opener, true));
   private readonly confirm = new Confirmation();
   private readonly name = el("input");
   private readonly players = el("select");
@@ -46,6 +47,7 @@ export class Multiplayer<P, A extends object> {
   private readonly match: HTMLElement;
   private invite = readInvite();
   private readonly inviteSetup = this.invite !== null;
+  private acceptedId?: string;
   private guest?: Guest;
   private current?: MultiplayerTable<P>;
   private online = true;
@@ -55,6 +57,7 @@ export class Multiplayer<P, A extends object> {
   private read?: AbortController;
 
   constructor(private readonly host: PortalHost, private readonly options: Options<P, A>) {
+    this.acceptedId = tableEntry(host.mount, options.game)?.tableId;
     this.frame = gameFrame(options.game, "Jade Court table");
     this.path = `api/${options.endpoint}`;
     this.json = mountedJson(host.mount);
@@ -92,6 +95,9 @@ export class Multiplayer<P, A extends object> {
     host.main.append(this.frame.root);
     this.frame.root.append(this.setup, this.match, this.retry, this.confirm.root);
     void this.open();
+    document.addEventListener("court-display-name", () => {
+      void host.openGuest().then(guest => this.remember(guest), () => {});
+    });
     document.addEventListener("visibilitychange", () => document.hidden ? this.pause() : void this.sync());
     window.addEventListener("pagehide", () => this.pause());
     window.addEventListener("pageshow", event => { if (event.persisted) void this.sync(); });
@@ -110,6 +116,11 @@ export class Multiplayer<P, A extends object> {
 
   private show(): void {
     const table = this.current;
+    const openSeat = table?.seats.some(seat => !seat.occupied);
+    this.host.social.update({ ready: !!table || !!this.guest && this.online && !this.busy && !this.acceptedId,
+      busy: !!table && isLive(table),
+      table: table?.status === "waiting" && this.online && !this.busy && table.invite && openSeat
+        ? { game: this.options.game, tableId: table.id } : undefined });
     this.setup.hidden = !!table;
     this.match.hidden = !table;
     this.match.setAttribute("aria-busy", String(this.busy));
@@ -135,6 +146,8 @@ export class Multiplayer<P, A extends object> {
       ? `${item.name || `Seat ${item.seat + 1}`}${item.seat === seat ? " · You" : item.bot ? " · Bot" : ""}`
       : `Open seat ${item.seat + 1}`)));
     this.share.root.hidden = !waiting || !table.invite;
+    this.share.invite.hidden = !openSeat;
+    this.share.invite.disabled = unavailable;
     if (!this.share.root.hidden && table.invite) {
       const invitation = new URL(this.href(), location.origin);
       invitation.hash = new URLSearchParams({ invite: table.invite }).toString();
@@ -152,16 +165,26 @@ export class Multiplayer<P, A extends object> {
     this.online = true;
   }
 
+  private remember(guest: Guest): void {
+    const label = (guest?: Guest) => guest?.displayName && guest.displayName !== "Guest" ? guest.displayName : "";
+    if (this.name.value === label(this.guest)) this.name.value = label(guest);
+    this.guest = guest;
+  }
+
   private async open(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     this.frame.say("Opening your guest session…");
     this.show();
     try {
-      this.guest = await this.host.openGuest();
-      this.name.value = this.guest.displayName === "Guest" ? "" : this.guest.displayName;
+      this.remember(await this.host.openGuest());
       this.online = true;
-      if (this.invite === null) {
+      if (this.acceptedId) {
+        const table = await this.json<MultiplayerTable<P>>(this.tablePath(this.acceptedId));
+        if (table.id !== this.acceptedId || table.status === "closed") throw new ApiError("room_not_found");
+        this.adopt(table);
+        this.frame.heading.focus();
+      } else if (this.invite === null) {
         const { tableId } = await this.json<{ tableId: string | null }>(`${this.path}/resume`);
         if (tableId) {
           const table = await this.json<MultiplayerTable<P>>(this.tablePath(tableId));
@@ -171,8 +194,9 @@ export class Multiplayer<P, A extends object> {
       this.frame.say("");
     } catch (error) {
       const missing = apiCode(error) === "room_not_found";
-      if (!missing) this.offline(error);
-      this.frame.say(missing ? "Your previous table is no longer available. You can start a new one." :
+      if (this.acceptedId || !missing) this.offline(error);
+      this.frame.say(this.acceptedId ? "Couldn’t open the accepted table. Reconnect, or ask your friend for their full invite link." :
+        missing ? "Your previous table is no longer available. You can start a new one." :
         messageFor(error, "Couldn’t open the game. Check your connection and try again."));
     } finally { this.busy = false; this.show(); this.schedule(); }
   }
@@ -216,6 +240,8 @@ export class Multiplayer<P, A extends object> {
       location.reload();
       return;
     }
+    if (this.acceptedId) rememberTable(this.host.mount, this.options.game, null);
+    this.acceptedId = undefined;
     this.current = undefined;
     this.leftLocally = false;
     this.frame.say("");
@@ -263,8 +289,9 @@ export class Multiplayer<P, A extends object> {
       if (apiCode(error) === "room_not_found") {
         this.current = undefined;
         this.confirm.close();
-        this.frame.say("This table is no longer available.");
-        this.online = true;
+        this.frame.say(this.acceptedId ? "The accepted table is no longer available. Reconnect, or ask for a full invite link." :
+          "This table is no longer available.");
+        this.online = !this.acceptedId;
       } else {
         this.offline(error);
         this.frame.say(messageFor(error, "Couldn’t refresh the table. We’ll try again."));

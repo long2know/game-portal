@@ -33,7 +33,7 @@ export function messageFor(error: unknown, fallback: string): string {
   }
 }
 
-export function invitationField() {
+export function invitationField(invitePlayers: (opener: HTMLButtonElement) => void) {
   const input = el("input");
   input.readOnly = true;
   input.spellcheck = false;
@@ -49,9 +49,12 @@ export function invitationField() {
       text(status, "Link selected. Copy it to send your invitation.");
     }
   });
+  const invite = button("Invite players", "button secondary", () => invitePlayers(invite));
   return {
     root: el("section", "feature-panel invite-panel", el("h2", "", "Send the invitation"),
-      el("p", "muted", "Anyone with this link can take an open seat."), field("Invite link", input), copy, status),
+      el("p", "muted", "Anyone with this link can take an open seat."), field("Invite link", input),
+      el("div", "invite-actions", copy, invite), status),
+    invite,
     setValue(value: string) { if (input.value !== value) { input.value = value; text(status, ""); } },
   };
 }

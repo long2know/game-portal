@@ -1,0 +1,69 @@
+.court-lobby-trigger { position: relative; }
+.court-lobby-trigger[data-incoming]:not([data-incoming=""])::after {
+  content: attr(data-incoming);
+  position: absolute; inset: 1px 1px auto auto;
+  min-inline-size: 1.26em; padding: 0 .18em; border-radius: 1em;
+  background: #edca98; color: #2b2218; font: 750 .7rem/1.26 system-ui, sans-serif;
+}
+.court-lobby-live {
+  position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+.court-lobby {
+  position: fixed; inset: 0; margin: auto; padding: 0;
+  inline-size: min(33rem, 100% - 20px);
+  max-block-size: min(45rem, 100dvh - max(20px, env(safe-area-inset-top) + env(safe-area-inset-bottom) + 12px));
+  max-inline-size: calc(100% - env(safe-area-inset-left) - env(safe-area-inset-right) - 16px);
+  overflow: auto; overscroll-behavior: contain;
+  border: 1px solid #788a70; border-radius: 14px;
+  background: #1b3027; color: #f7edd8;
+  box-shadow: 0 14px 48px #08130eba;
+}
+.court-lobby::backdrop { background: #091411b8; }
+.court-lobby-head {
+  position: sticky; inset-block-start: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px clamp(12px, 3vw, 18px); background: #243d31; border-block-end: 1px solid #617360;
+}
+.court-lobby h2, .court-lobby h3 { margin: 0; font: 600 1.44rem/1.14 Georgia, serif; }
+.court-lobby h3 { font-size: 1.08rem; }
+.court-lobby-body { display: grid; gap: 8px; padding: 12px clamp(12px, 3vw, 18px) 16px; }
+.court-lobby p { margin: 0; }
+.court-lobby p:empty { display: none; }
+.court-lobby-muted, .court-lobby-message { font-size: .87rem; line-height: 1.42; }
+.court-lobby-muted { color: #c7d4c5; }
+.court-lobby-message { color: #ffe1ad; }
+.court-lobby-button {
+  justify-self: start;
+  min-block-size: 44px; min-inline-size: 44px;
+  padding: .38rem .65rem; border: 1px solid #728c78; border-radius: 7px;
+  color: inherit; background: #283f34; font-weight: 650; font-size: .85rem; line-height: 1.2;
+  touch-action: manipulation;
+}
+.court-lobby-button.primary { color: #281d12; background: #edca98; border-color: #ffe1ad; }
+.court-lobby-button:hover:not(:disabled, [aria-disabled="true"]) { border-color: #ffe1ad; filter: brightness(1.12); }
+.court-lobby-button[aria-disabled="true"] { opacity: .55; cursor: default; }
+.court-lobby :is(button, input, h3):focus-visible { outline: 2px solid #ffdb9d; outline-offset: 2px; }
+.court-lobby-toggle {
+  display: flex; align-items: center; gap: .6rem;
+  min-block-size: 44px; inline-size: fit-content; cursor: pointer; touch-action: manipulation;
+}
+.court-lobby-toggle input { inline-size: 1.35rem; block-size: 1.35rem; margin: 0; accent-color: #edca98; }
+.court-lobby-profile { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; }
+.court-lobby-profile label { display: grid; gap: 5px; min-inline-size: 0; font-size: .85rem; }
+.court-lobby-profile input {
+  inline-size: 100%; min-inline-size: 0; min-block-size: 44px;
+  padding: .45rem .6rem; border: 1px solid #728c78; border-radius: 7px;
+  background: #132820; color: #f7edd8; font: inherit; font-size: 1rem;
+}
+.court-lobby-section { display: grid; gap: 5px; padding-block-start: 9px; border-block-start: 1px solid #4d6555; }
+.court-lobby-list { display: grid; gap: 5px; list-style: none; margin: 0; padding: 0; }
+.court-lobby-row {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;
+  min-inline-size: 0; padding: 5px 7px; border-radius: 7px; background: #223a30;
+}
+.court-lobby-row strong { overflow-wrap: anywhere; }
+.court-lobby-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+@media (max-height: 390px) and (orientation: landscape) {
+  .court-lobby-head, .court-lobby-body { padding-block: 6px; }
+}

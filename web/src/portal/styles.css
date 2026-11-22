@@ -73,6 +73,8 @@ h1 { letter-spacing: -.036em; }
 .site-nav { display: flex; flex-wrap: wrap; gap: 6px; justify-content: end; margin-inline-start: auto; }
 .site-nav .button { font-size: .82rem; background: transparent; padding-inline: .73rem; }
 .site-nav .music-toggle { color: var(--brass); }
+.site-nav .court-lobby-trigger { padding-inline: 0; color: var(--jade); }
+.site-nav .court-lobby-trigger svg { inline-size: 20px; block-size: 20px; }
 .music-toggle[aria-pressed="true"] { color: var(--jade); background: #28483a; }
 .music-note { flex-basis: 100%; color: var(--brass); font-size: .78rem; text-align: end; }
 .button {
@@ -98,6 +100,7 @@ h1 { letter-spacing: -.036em; }
 .hero-copy h1 { margin-block: .16em .23em; font-size: clamp(3.04rem, 7.1vw, 6.25rem); line-height: .94; }
 .hero-copy h1 em { display: block; color: var(--brass); font-weight: 400; }
 .hero-actions, .setup-actions, .choice-actions, .board-tools { display: flex; flex-wrap: wrap; gap: 9px; }
+.invite-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .hero-actions { margin-block-start: clamp(16px, 2vw, 25px); }
 .hero-plate { min-inline-size: 0; margin: 0; }
 .hero-study {
@@ -464,8 +467,11 @@ h1 { letter-spacing: -.036em; }
   .brand { gap: 4px; }
   .brand-tile { width: 27px; }
   .brand-name { font-size: .96rem; }
-  .site-nav { gap: 5px; }
-  .site-nav .button { font-size: .7rem; padding-inline: .36rem; }
+  .site-nav { gap: 3px; }
+  .site-nav .button { font-size: .7rem; padding: 0 .36rem; }
+  .site-nav .music-toggle { font-size: 0; }
+  .site-nav .music-toggle::before { content: "♪"; font-size: 1.2rem; }
+  .site-nav .wide-nav-label { display: none; }
   .hero-actions .button { font-size: .9rem; padding-inline: .64rem; }
 }
 @media (min-width: 720px) {

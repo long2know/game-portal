@@ -5,6 +5,8 @@ test("the published Jade Court shell shares one local tile emblem with the brows
   page, baseURL, request,
 }, testInfo) => {
   const home = new URL(baseURL!);
+  const social: string[] = [];
+  page.on("request", request => { if (request.url().includes("/api/social/")) social.push(request.url()); });
   await page.setViewportSize({ width: 320, height: 700 });
   await page.goto(new URL("play/reconnect?from=brand", home).href);
   const header = page.getByRole("banner");
@@ -17,6 +19,8 @@ test("the published Jade Court shell shares one local tile emblem with the brows
   const nestedMahjong = await request.get(new URL("mahjong/", home).href);
   await expect(nestedMahjong).toBeOK();
   expect(await nestedMahjong.text()).not.toContain("data-portal-mahjong");
+  await expect(header.getByRole("button", { name: /Online lobby/ })).toHaveCount(0);
+  expect(social).toEqual([]);
   await expect(name).toBeVisible();
   await expect(subtitle).toBeVisible();
   const toolsLeft = (await connection.boundingBox())!.x;
