@@ -18,12 +18,6 @@ internal sealed record BoardTable(string Id, string Game, string Variant, long R
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? EndedBySeat,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BoardResult? Result);
 
-internal sealed class BoardFault(int status, string code) : Exception(code)
-{
-    public int Status { get; } = status;
-    public string Code { get; } = code;
-}
-
 internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardRegistry registry,
     TimeProvider time, ILogger<BoardTables> log)
 {
@@ -37,12 +31,6 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
     private static readonly TimeSpan EndedLifetime = TimeSpan.FromHours(24);
     private readonly SemaphoreSlim _botWorkers = new(4);
 
-    public async Task<GuestRow?> GuestAsync(Guid id, CancellationToken stop)
-    {
-        await using var db = await factory.CreateDbContextAsync(stop);
-        return await db.Guests.AsNoTracking().SingleOrDefaultAsync(g => g.Id == id, stop);
-    }
-
     public async Task<BoardTable> CreateAsync(GuestRow guest, string gameId, string variant, int players, bool bots,
         string? botDifficulty, CancellationToken stop)
     {
@@ -50,12 +38,12 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         if (players is < 2 or > MaxPlayers || !game.Definition.PlayerCounts.Contains(players)
             || !game.Definition.Variants.Any(v => v.Id == variant)
             || (botDifficulty is not null && (gameId != "chess" || !bots || botDifficulty is not ("easy" or StandardDifficulty or "hard"))))
-            throw new BoardFault(400, "invalid_request");
+            throw new PortalFault(400, "invalid_request");
         var difficulty = gameId == "chess" && bots ? botDifficulty ?? StandardDifficulty : null;
 
         string start;
         try { start = game.Start(variant, players); }
-        catch (ArgumentException) { throw new BoardFault(400, "invalid_request"); }
+        catch (ArgumentException) { throw new PortalFault(400, "invalid_request"); }
 
         var initial = bots ? FinishTurn(game, start, View(game, start, players), players, difficulty, null, stop) : null;
 
@@ -65,7 +53,7 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         if (await db.BoardTables.CountAsync(t => t.EndReason == null && t.ExpiresAtTicks > utc.UtcTicks, stop) >= MaxTables
             || await db.BoardMemberships.CountAsync(m => m.GuestId == guest.Id && m.Seat == 0
                 && m.Table.EndReason == null && m.Table.ExpiresAtTicks > utc.UtcTicks, stop) >= MaxOwnedTables)
-            throw new BoardFault(429, "table_limit");
+            throw new PortalFault(429, "table_limit");
 
         var table = new BoardTableRow
         {
@@ -145,15 +133,15 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         var table = await ForMemberAsync(db, guest, id, stop);
         if (revision != table.Revision) throw Stale();
         RequireOpen(table);
-        if (table.Checkpoint is not { } checkpoint) throw new BoardFault(400, "room_not_started");
+        if (table.Checkpoint is not { } checkpoint) throw new PortalFault(400, "room_not_started");
         var seat = table.Members.Single(m => m.GuestId == guest).Seat;
         var game = FindGame(table.Game);
         var position = View(game, checkpoint, table.Players);
-        if (position.Status == "finished") throw new BoardFault(400, "game_finished");
-        if (position.Turn != seat) throw new BoardFault(400, "not_your_turn");
-        var move = position.Moves.FirstOrDefault(move => move.Id == moveId) ?? throw new BoardFault(400, "illegal_move");
+        if (position.Status == "finished") throw new PortalFault(400, "game_finished");
+        if (position.Turn != seat) throw new PortalFault(400, "not_your_turn");
+        var move = position.Moves.FirstOrDefault(move => move.Id == moveId) ?? throw new PortalFault(400, "illegal_move");
         try { checkpoint = game.Apply(checkpoint, move.Id); }
-        catch (ArgumentException) { throw new BoardFault(400, "illegal_move"); }
+        catch (ArgumentException) { throw new PortalFault(400, "illegal_move"); }
 
         var after = View(game, checkpoint, table.Players);
         var steps = new List<BoardMotionStep>(table.Bots ? table.Players : 1) { MotionStep(move, position, after) };
@@ -171,14 +159,14 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         if (revision != table.Revision) throw Stale();
         RequireOpen(table);
         var position = table.Checkpoint is { } checkpoint ? View(FindGame(table.Game), checkpoint, table.Players) : null;
-        if (position?.Status == "finished") throw new BoardFault(400, "game_finished");
+        if (position?.Status == "finished") throw new PortalFault(400, "game_finished");
         if (resign)
         {
-            if (table.Game != "chess") throw new BoardFault(400, "invalid_request");
-            if (position is null) throw new BoardFault(400, "room_not_started");
+            if (table.Game != "chess") throw new PortalFault(400, "invalid_request");
+            if (position is null) throw new PortalFault(400, "room_not_started");
         }
         else if (table.Game == "chess" && position is not null)
-            throw new BoardFault(400, "resign_required");
+            throw new PortalFault(400, "resign_required");
 
         var reason = resign ? "resignation" : "left";
         var seat = table.Members.Single(m => m.GuestId == guest).Seat;
@@ -198,14 +186,14 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
 
     private static void RequireOpen(BoardTableRow table)
     {
-        if (table.EndReason is "left") throw new BoardFault(400, "room_closed");
-        if (table.EndReason is "resignation") throw new BoardFault(400, "game_finished");
+        if (table.EndReason is "left") throw new PortalFault(400, "room_closed");
+        if (table.EndReason is "resignation") throw new PortalFault(400, "game_finished");
     }
 
-    private IBoardGame FindGame(string id) => registry.Find(id) ?? throw new BoardFault(400, "invalid_request");
+    private IBoardGame FindGame(string id) => registry.Find(id) ?? throw new PortalFault(400, "invalid_request");
 
-    private static BoardFault Missing() => new(404, "room_not_found");
-    private static BoardFault Stale() => new(409, "stale_room");
+    private static PortalFault Missing() => new(404, "room_not_found");
+    private static PortalFault Stale() => new(409, "stale_room");
 
     private static IQueryable<BoardTableRow> WithSeats(MahjongDb db) =>
         db.BoardTables.AsNoTracking().AsSingleQuery().Include(t => t.Members).ThenInclude(m => m.Guest);
@@ -326,7 +314,7 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         throw EngineFault(game, "invalid position");
     }
 
-    private BoardFault EngineFault(IBoardGame game, string reason)
+    private PortalFault EngineFault(IBoardGame game, string reason)
     {
         log.LogError("Board game {Game} could not complete the operation: {Reason}.", game.Definition.Id, reason);
         return new(500, "engine_unavailable");

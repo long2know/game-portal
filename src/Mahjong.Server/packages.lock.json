@@ -115,6 +115,9 @@
       "jadecourt.games": {
         "type": "Project"
       },
+      "jadecourt.poker": {
+        "type": "Project"
+      },
       "mahjong.rules": {
         "type": "Project"
       }

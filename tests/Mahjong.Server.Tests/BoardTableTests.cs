@@ -408,7 +408,7 @@ public sealed class BoardTableTests
     internal static Kestrel PortalServer() => new Kestrel().WithSetting("BASE_URL", "/portal")
         .WithSetting("Portal__Enabled", "true");
 
-    private static async Task<User> Guest(Kestrel server, string name)
+    internal static async Task<User> Guest(Kestrel server, string name)
     {
         var guest = new User(server);
         var profile = await Ok(await guest.Request(HttpMethod.Post, "/portal/api/guest", new { displayName = name }));

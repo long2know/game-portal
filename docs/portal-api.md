@@ -1,9 +1,10 @@
-# Jade Court board tables
+# Jade Court game APIs
 
 Set `Portal__Enabled=true` to enable the board API and portal shell (the default is off). With
 `BASE_URL=/portal`, the base for assets, HTTP and WebSocket URLs is `/portal/`, including on
 `/portal/chess/`, `/portal/go/`, `/portal/reversi/`, `/portal/checkers/`, and
-`/portal/chinese-checkers/`. `/portal/mahjong/` and its nested SPA routes serve the existing
+`/portal/chinese-checkers/`, `/portal/holdem/`, `/portal/solitaire/`, `/portal/sudoku/`, and
+`/portal/word-tiles/`. `/portal/mahjong/` and its nested SPA routes serve the existing
 Changsha Mahjong client. The bare routes return a 308 with the query intact; since the
 redirect does not supply a fragment, browsers retain the original fragment. Other shell
 paths return 404. The build publishes `index.html` and `portal.html` outside `wwwroot`.
@@ -16,7 +17,7 @@ original Mahjong installation. Keep the portal's database and keys together acro
 restarts. With `GamePortal__BehindHttpsProxy=true`, the HTTPS edge must preserve the
 public `Host` and `/portal` path as for the existing Mahjong API.
 
-## HTTP contract
+## Shared boards
 
 The following paths are relative to the configured mount. JSON properties are camelCase.
 Call the existing `POST /api/guest` to obtain the protected guest cookie and
@@ -79,3 +80,36 @@ after starting or the last move. Polling and idempotent rejoin do not extend exp
 Each guest can own up to 32 unexpired tables, with a shared limit of 512. Creating a
 new table does not evict earlier tables or change their memberships. Explicitly closed
 or resigned tables remain readable for 24 hours and do not count toward those limits.
+
+## Play-chip Hold’em
+
+The Poker endpoints use the same cookie, mount, same-origin check, body limit, and portal
+read/write quotas as shared boards. These chips have no monetary value: seats receive 1,000
+chips and play at fixed 5/10 blinds; there are no payments, rebuys, or ratings.
+
+| Method and path | Body and result |
+| --- | --- |
+| `POST /api/poker/tables` | `{players, bots}`, with 2–6 seats. `bots: true` populates other seats and starts immediately; otherwise the final guest to join starts play. |
+| `POST /api/poker/join` | `{invite}` seats the caller; a member reusing the invite is returned the same seat. |
+| `GET /api/poker/tables/{id}` | A member's own view of the committed table. |
+| `GET /api/poker/resume` | `{tableId}` for the caller's most recently joined or created, unexpired waiting or playing table; otherwise `null`. |
+| `POST /api/poker/tables/{id}/actions` | `{revision, action:{kind, to?}}`. `kind` is `fold`, `check`, `call`, `bet`, or `raise`; for bet and raise only, `to` is the integer **total on the current street** (not an increment). |
+| `POST /api/poker/tables/{id}/next` | `{revision}`. Any seated guest can deal after a hand settles and before the match is complete. |
+| `POST /api/poker/tables/{id}/leave` | `{revision}` closes a waiting or playing table and revokes its invite. It does not award chips or change a prior settlement. |
+
+The response is `{id, revision, status, seat, seats, invite, position, endReason?}`. Seat rows
+use the board seat shape. Waiting tables have an invite and `position: null`; active and
+terminal tables return no invite. `position` is the engine's [`HoldemView`](holdem-rules.md),
+only with cards and options authorized for the viewer. Card ranks/suits, streets, and other
+engine enums are JSON numbers. Future cards and the private checkpoint never leave SQLite.
+`position.result` reports the settled hand; the wrapper remains `playing` until
+`position.matchWinnerSeat` is set and `status` becomes `finished`. A member closing a table
+sets `status: "closed"` and `endReason: "left"` and may still read it with no legal actions.
+
+Use the **outer** `revision` for writes, not `position.revision`. An accepted write can
+include multiple bounded bot actions but advances the table revision only once. Errors
+include `illegal_action`, `not_your_turn`, `hand_finished` (deal the next hand),
+`hand_in_progress` (cannot deal yet), `room_not_started`, `room_closed`, and `game_finished`
+(400); auth, member lookup, stale revision, and busy errors match boards. Waiting tables
+expire after 24 hours, playing tables after seven days, and closed or finished tables
+after 24 hours. Terminal tables cannot be resumed and do not count toward active limits.
