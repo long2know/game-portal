@@ -50,6 +50,9 @@ function lattice(game: BoardId, { rows, columns, cells }: Position): SVGSVGEleme
     if (rows === 17 && columns === 25) {
       art.append(svg("polygon", {
         points: "12.5,.5 16.5,4.5 24.5,4.5 20.5,8.5 24.5,12.5 16.5,12.5 12.5,16.5 8.5,12.5 .5,12.5 4.5,8.5 .5,4.5 8.5,4.5",
+      }), svg("polygon", {
+        class: "lattice-hub",
+        points: "8.5,4.5 16.5,4.5 20.5,8.5 16.5,12.5 8.5,12.5 4.5,8.5",
       }));
     }
     art.append(svg("path", { d: lines }));

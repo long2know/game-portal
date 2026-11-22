@@ -82,7 +82,6 @@ export function cardFace(card?: { rank: number; suit: Suit }): HTMLElement {
     art.append(index, pipField(rank, suit) ?? courtField(rank, suit, label), mirror);
   } else {
     face.setAttribute("aria-label", "Face-down card");
-    art.append(el("span", "back-mark"));
   }
   face.append(art);
   return face;

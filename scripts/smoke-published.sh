@@ -66,7 +66,7 @@ state="$work/guest.json"
 export TMPDIR="$work/scratch"
 mkdir -- "$TMPDIR"
 server_pid=
-portal_specs=(e2e/portal.spec.ts e2e/board-controls.spec.ts e2e/expansion.spec.ts e2e/dice-games.spec.ts)
+portal_specs=(e2e/portal.spec.ts e2e/board-controls.spec.ts e2e/expansion.spec.ts e2e/dice-games.spec.ts e2e/art-direction.spec.ts)
 
 stop_server() {
   local pid=$server_pid
