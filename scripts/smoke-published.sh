@@ -70,7 +70,7 @@ state="$work/guest.json"
 export TMPDIR="$work/scratch"
 mkdir -- "$TMPDIR"
 server_pid=
-portal_specs=(e2e/portal.spec.ts e2e/mahjong-audio.spec.ts e2e/board-controls.spec.ts e2e/expansion.spec.ts e2e/dice-games.spec.ts e2e/art-direction.spec.ts e2e/lantern-run.spec.ts)
+portal_specs=(e2e/portal.spec.ts e2e/mahjong-audio.spec.ts e2e/board-controls.spec.ts e2e/expansion.spec.ts e2e/dice-games.spec.ts e2e/art-direction.spec.ts e2e/lantern-run.spec.ts e2e/social.spec.ts)
 
 stop_server() {
   local pid=$server_pid
@@ -159,7 +159,7 @@ run_portal_browsers() {
   local spec group browser
   local -a specs=("${portal_specs[@]}")
   if [[ ${mount%/} == /game-portal ]]; then
-    specs=(e2e/dice-games.spec.ts e2e/mahjong-audio.spec.ts e2e/lantern-run.spec.ts)
+    specs=(e2e/dice-games.spec.ts e2e/mahjong-audio.spec.ts e2e/lantern-run.spec.ts e2e/social.spec.ts)
   fi
   for spec in "${specs[@]}"; do
     [[ -s "web/$spec" ]] || { echo "Missing portal browser spec: web/$spec" >&2; return 1; }

@@ -91,6 +91,25 @@ The live tests cover public discovery and retry, private invite admission, two h
 
 **Historical baseline (2026-11-19):** **14/14** browser cases after the server takeover-close fix; a separate **2/2** on a Production host with the default **700 ms** bot delay and **100 ms** server tick. Those results predate the later visual passes. Not every rare action occurs in live samples; deterministic rare cases belong to the [Rules tests](rules.md#reducer-projections-and-verification).
 
+## Cross-game invitations
+
+In the Jade Court portal, open **Online lobby** from the globe in the header or use
+**Invite players** beside a waiting table’s share link. Availability is off until
+you turn on **Available to play**. Save a display name friends recognize; names are
+not unique. Away tabs and guests at an active table are not listed. A waiting host
+can still invite available guests without leaving the table.
+
+The header badge opens the inbox without interrupting the current page. Accepting
+requires an explicit action and opens only the assigned table in that tab. If you
+lose the response, reconnect and retry the same invitation in the lobby. You can
+also ask for the full invite link and join manually. Opening portal Mahjong in
+another tab leaves a saved game alone until you choose **Resume your table**.
+
+`social.spec.ts` exercises Chess, Mahjong and Hold’em under the configured mount.
+`SOCIAL_FIXTURES=1` substitutes the social endpoints for development against an
+older server; guest, game and WebSocket routes still use the app. Run published
+smoke without that flag to verify the integrated social backend.
+
 ## Asset and feedback budget
 
 The frozen Lantern Hall package measures **32,613 gzip bytes** cold, including the favicon, 155 bytes below the **32 KiB** budget. Full play is **58,214 bytes**, plus **638 bytes** for the optional Settings Fullscreen chunk (**58,852 bytes** for all static assets). The Hall and cast load as deferred JS and CSS when entering the table or its waiting room, and the suited-face SVG loads at the first marked face. These are same-origin assets; no font files, audio recordings or video are fetched. The earlier depth and seat-actor build measured **32,682 bytes** cold (86 bytes below budget) and **50,087 bytes** for the full table. The **30,634-byte** cold and **42,429-byte** full-table estimates are historical, from the desktop, tile-art and motion pass before depth and actors. See [asset provenance and the budget breakdown](assets.md#static-asset-budget) for these per-file gzip estimates, not HTTP transfer measurements.

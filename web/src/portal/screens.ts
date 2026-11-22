@@ -30,6 +30,7 @@ export class SetupView {
   private readonly retry = button("Try again", "button secondary");
   private readonly progress = el("p", "setup-progress");
   private readonly nameHint = el("p", "field-hint", "Optional. Remembered in this browser.");
+  private guestName = "";
 
   constructor(game: BoardId, invitation: boolean, submit: (bots: boolean) => void, retry: () => void) {
     const info = catalog[game];
@@ -85,7 +86,9 @@ export class SetupView {
   }
 
   remember(guest: Guest): void {
-    this.name.value = guest.displayName === "Guest" ? "" : guest.displayName;
+    const value = guest.displayName === "Guest" ? "" : guest.displayName;
+    if (this.name.value === this.guestName) this.name.value = value;
+    this.guestName = value;
   }
 
   state(ready: boolean, busy: boolean, canRetry: boolean, message = ""): void {
@@ -124,15 +127,17 @@ export class TableView {
   private readonly seatsSummary = el("section", "match-card seats-card", el("h2", "", "At this table"), this.count, this.seats);
   private readonly inviteInput = el("input");
   private readonly copy = button("Copy invite link", "button primary", () => void this.copyInvite());
+  private readonly onlineInvite = button("Invite players", "button secondary");
   private readonly copied = el("p", "copy-status");
   private readonly share = el("section", "match-card share-card", el("p", "eyebrow", "Private table"),
     el("h2", "", "Send the invitation"), el("p", "muted", "Anyone with this link can take an open seat."),
-    field("Invite link", this.inviteInput), this.copy, this.copied);
+    field("Invite link", this.inviteInput), el("div", "invite-actions", this.copy, this.onlineInvite), this.copied);
   private readonly art: HTMLElement;
   private seatKey = "";
 
   constructor(private readonly game: BoardId, private readonly href: string, send: (move: Move) => void,
-    retry: () => void, newGame: () => void, private readonly end: (table: Table, action: "leave" | "resign") => void) {
+    retry: () => void, newGame: () => void, private readonly end: (table: Table, action: "leave" | "resign") => void,
+    invitePlayers: (opener: HTMLButtonElement) => void) {
     this.heading = el("h1", "", catalog[game].name);
     this.heading.tabIndex = -1;
     this.board = new BoardView(game, send);
@@ -144,6 +149,7 @@ export class TableView {
     this.turn.setAttribute("role", "status");
     this.retry.addEventListener("click", retry);
     this.newGame.addEventListener("click", newGame);
+    this.onlineInvite.addEventListener("click", () => invitePlayers(this.onlineInvite));
     const head = el("header", "match-head",
       el("div", "match-title", el("p", "eyebrow", "Jade Court table"), this.heading, this.variant),
       el("div", "match-state", this.badge, this.note, this.retry));
@@ -221,6 +227,8 @@ export class TableView {
     }
 
     this.share.hidden = status !== "waiting" || !table.invite;
+    this.onlineInvite.hidden = !table.seats.some(item => !item.occupied);
+    this.onlineInvite.disabled = !online || busy;
     if (this.share.hidden) {
       if (this.share.contains(document.activeElement)) this.heading.focus();
       return;

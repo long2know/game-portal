@@ -6,6 +6,7 @@ import type { BoardId } from "./catalog";
 import { el, text } from "./dom";
 import { readInvite } from "./host";
 import type { PortalHost } from "./host";
+import { rememberTable, tableEntry } from "./invite-handoff";
 import { reduceMotion, turnSteps } from "./motion";
 import { SetupView, TableView } from "./screens";
 
@@ -18,9 +19,11 @@ export class GameRoom {
   private definitions: GameDefinition[] = [];
   private current: Table | null = null;
   private invite = readInvite();
+  private acceptedId?: string;
   private setup: SetupView;
   private match: TableView;
   private busy = false;
+  private opened = false;
   private online = true;
   private timer = 0;
   private request: AbortController | null = null;
@@ -29,6 +32,7 @@ export class GameRoom {
 
   constructor(private game: BoardId, private readonly host: PortalHost) {
     const { main } = host;
+    this.acceptedId = tableEntry(host.mount, game)?.tableId;
     this.setup = this.makeSetup();
     this.match = this.makeMatch();
     this.notice.setAttribute("role", "status");
@@ -36,6 +40,9 @@ export class GameRoom {
     main.append(this.notice, this.setup.root, this.match.root);
     this.show();
     void this.open();
+    document.addEventListener("court-display-name", () => {
+      void host.openGuest().then(guest => { this.guest = guest; this.setup.remember(guest); }, () => {});
+    });
     const stopMotion = () => this.stopMotion();
     matchMedia(reduceMotion).addEventListener("change", stopMotion);
     document.addEventListener("court-motion-preference", stopMotion);
@@ -71,7 +78,7 @@ export class GameRoom {
 
   private makeMatch(): TableView {
     return new TableView(this.game, this.gamePath(this.game), move => void this.play(move), () => this.reconnect(),
-      () => this.anotherGame(), (table, action) => void this.end(table, action));
+      () => this.anotherGame(), (table, action) => void this.end(table, action), opener => this.host.social.open(opener, true));
   }
 
   private message(value: string): void {
@@ -80,6 +87,11 @@ export class GameRoom {
   }
 
   private show(reset = false): void {
+    const table = this.current;
+    this.host.social.update({ ready: !!table || this.opened && !this.busy && !this.acceptedId,
+      busy: !!table && isLive(table),
+      table: table?.status === "waiting" && this.online && !this.busy && table.invite && table.seats.some(seat => !seat.occupied)
+        ? { game: this.game, tableId: table.id } : undefined });
     this.setup.root.hidden = !!this.current;
     this.match.root.hidden = !this.current;
     if (this.current) {
@@ -91,6 +103,7 @@ export class GameRoom {
   private async open(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
+    this.opened = false;
     this.message("");
     this.setup.state(false, true, false, "Opening your guest session…");
     let failed = false;
@@ -101,7 +114,11 @@ export class GameRoom {
       this.guest = guest;
       this.setup.setDefinition(this.definition);
       this.setup.remember(guest);
-      if (this.invite === null) {
+      if (this.acceptedId) {
+        const table = await api.read(this.acceptedId);
+        if (table.id !== this.acceptedId || table.game !== this.game || table.status === "closed") throw new ApiError("room_not_found");
+        this.adopt(table);
+      } else if (this.invite === null) {
         const { tableId } = await api.resume(this.game);
         if (tableId) {
           const table = await api.read(tableId);
@@ -109,7 +126,11 @@ export class GameRoom {
         }
       }
     } catch (error) {
-      if (code(error) === "room_not_found") {
+      if (this.acceptedId) {
+        if (code(error) === "not_authenticated") this.host.forgetGuest();
+        failed = true;
+        this.message("Couldn’t open the accepted table. Try again, or ask your friend for their full invite link.");
+      } else if (code(error) === "room_not_found") {
         this.message("Your previous table is no longer available. You can start a new one below.");
       } else {
         if (code(error) === "not_authenticated") this.host.forgetGuest();
@@ -119,8 +140,10 @@ export class GameRoom {
     } finally {
       this.busy = false;
       const ready = !failed && !!this.guest && (this.invite !== null || !!this.definition);
+      this.opened = ready;
       this.setup.state(ready, false, !ready, ready ? "" : "This table isn’t available yet.");
       this.show();
+      if (this.acceptedId && this.current) this.match.heading.focus();
       this.schedule();
     }
   }
@@ -138,6 +161,7 @@ export class GameRoom {
       return;
     }
     this.busy = true;
+    this.show();
     this.message("");
     const variant = this.setup.variant.value;
     const players = Number(this.setup.players.value);
@@ -203,6 +227,8 @@ export class GameRoom {
 
   private anotherGame(): void {
     this.suspend();
+    if (this.acceptedId) rememberTable(this.host.mount, this.game, null);
+    this.acceptedId = undefined;
     this.current = null;
     this.message("");
     this.show();
@@ -257,6 +283,14 @@ export class GameRoom {
       const problem = code(error);
       if (problem === "room_not_found" || problem === "not_authenticated") {
         if (problem === "not_authenticated") this.host.forgetGuest();
+        if (this.acceptedId) {
+          this.suspend();
+          this.current = null;
+          this.message("Couldn’t open the accepted table. Try again, or ask your friend for their full invite link.");
+          this.setup.state(false, false, true);
+          this.show();
+          return false;
+        }
         this.anotherGame();
         this.message(problem === "room_not_found" ? "This table is no longer available. Start another game below." :
           "Your guest session ended. Try again to reconnect.");

@@ -88,8 +88,9 @@ export class TableSession {
       !!this.lease && Date.parse(this.lease.expiresAtUtc) > this.now;
   }
 
-  start(guest: Guest): void {
-    this.savedRoomId = this.roomId = guest.resumeRoomId;
+  start(guest: Guest, restore = true): void {
+    this.savedRoomId = guest.resumeRoomId;
+    this.roomId = restore ? this.savedRoomId : null;
     this.connect();
   }
 
