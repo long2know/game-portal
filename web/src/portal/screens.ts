@@ -1,4 +1,5 @@
-import type { GameDefinition, Guest, Move, Table } from "./api";
+import type { Guest } from "../protocol";
+import type { GameDefinition, Move, Table } from "./api";
 import { side, sideName, tableau } from "./art";
 import { BoardView } from "./board";
 import { boardIds, catalog } from "./catalog";

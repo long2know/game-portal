@@ -1,3 +1,5 @@
+import type { Guest } from "../protocol";
+
 export interface Variant {
   id: string;
   label: string;
@@ -60,9 +62,17 @@ export interface Table {
   position: Position | null;
 }
 
-export interface Guest {
-  displayName: string;
+export interface MotionStep {
+  move: Move;
+  changes: Cell[];
 }
+
+export interface TurnMotion {
+  fromRevision: number;
+  steps: MotionStep[];
+}
+
+export type MoveReply = Table & { turnMotion?: TurnMotion };
 
 export class ApiError extends Error {
   constructor(readonly code: string) { super(code); }
@@ -85,13 +95,13 @@ export function portalApi(mount: string) {
   const tablePath = (id: string) => `api/board/tables/${encodeURIComponent(id)}`;
   return {
     guest: () => json<Guest>("api/guest", "POST", {}),
-    profile: (displayName: string) => json<Guest>("api/profile", "PATCH", { displayName }),
+    profile: (change: Partial<Pick<Guest, "displayName" | "preferences">>) => json<Guest>("api/profile", "PATCH", change),
     games: () => json<{ games: GameDefinition[] }>("api/board/games"),
     create: (game: string, variant: string, players: number, bots: boolean) =>
       json<Table>("api/board/tables", "POST", { game, variant, players, bots }),
     join: (invite: string) => json<Table>("api/board/join", "POST", { invite }),
     resume: (game: string) => json<{ tableId: string | null }>(`api/board/resume?game=${encodeURIComponent(game)}`),
     read: (id: string, signal?: AbortSignal) => json<Table>(tablePath(id), "GET", undefined, signal),
-    move: (id: string, revision: number, moveId: string) => json<Table>(`${tablePath(id)}/moves`, "POST", { revision, moveId }),
+    move: (id: string, revision: number, moveId: string) => json<MoveReply>(`${tablePath(id)}/moves`, "POST", { revision, moveId }),
   };
 }
