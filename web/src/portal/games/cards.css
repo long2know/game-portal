@@ -1,20 +1,33 @@
 .playing-card {
   display: grid; min-inline-size: 0; inline-size: 100%; aspect-ratio: .71;
-  color: #23322a; background: linear-gradient(146deg, #fff5dc, #e6cca0);
-  border: 1px solid #fff3d4; border-radius: clamp(4px, 1vw, 8px);
-  box-shadow: inset 0 0 0 2px #c5a57359, 0 2px #9d8259, 0 4px 8px #08130ea0;
+  container-type: inline-size; isolation: isolate;
+  color: #25291f; background: #f5eddc; border: 1px solid #dfd3b9;
+  border-radius: clamp(4px, 1vw, 7px); box-shadow: 0 1px #9a8261;
   user-select: none;
 }
-.playing-card:is([data-suit="hearts"], [data-suit="diamonds"]) { color: #862f33; }
-.playing-card-art { display: grid; align-content: space-between; justify-items: start; padding: 8%; line-height: 1; }
-.card-rank { font: 700 clamp(.85rem, 3.7vw, 1.65rem)/1 var(--serif); }
-.card-rank::after { content: attr(data-pip); margin-inline-start: .11em; font-size: .64em; }
-.card-suit { justify-self: center; margin-block-end: 14%; font-size: clamp(.85rem, 4vw, 1.85rem); }
-.card-back {
-  color: #f0d7a4;
-  background: repeating-linear-gradient(45deg, #c0c18f21 0 1px, transparent 1px 5px),
-    repeating-linear-gradient(-45deg, #c0c18f2b 0 1px, transparent 1px 5px), #244d40;
-  border-color: #b7a981; box-shadow: inset 0 0 0 3px #264235, inset 0 0 0 4px #b7a98186, 0 2px #102e25, 0 4px 8px #08130ea0;
+.playing-card:is([data-suit="hearts"], [data-suit="diamonds"]) { color: #912e32; }
+.playing-card-art { position: relative; min-block-size: 0; overflow: hidden; }
+.card-rank {
+  position: absolute; inset: 6% auto auto 7%;
+  font: 700 clamp(.66rem, 29cqi, 1.42rem)/1 var(--serif);
 }
-.card-back .playing-card-art { place-content: center; padding: 0; }
-.back-mark { font-size: clamp(.75rem, 3vw, 1.5rem); text-shadow: 0 2px #102e25; }
+.card-rank::after { content: attr(data-pip); margin-inline-start: .06em; font-size: .7em; }
+.card-rank-mirror { inset: auto 7% 6% auto; transform: rotate(180deg); }
+.card-pips, .card-court { position: absolute; inset: 24% 18%; inline-size: 64%; block-size: 52%; }
+.card-court {
+  display: grid; place-items: center; border-block: 1px solid currentColor;
+  font: 600 clamp(.9rem, 56cqi, 2.72rem)/1 var(--serif);
+}
+@container (max-width: 36px) {
+  .card-rank-mirror { display: none; }
+  .card-pips, .card-court { inset-block: 28% 7%; block-size: 65%; }
+}
+.card-back { color: #e2d4aa; background: #234635; }
+.card-back .playing-card-art {
+  display: grid; place-items: center; margin: 7%; border: 1px solid #e2d4aa80;
+  background: repeating-linear-gradient(135deg, #c7d2a724 0 1px, transparent 1px 4px);
+}
+.back-mark {
+  inline-size: 22%; aspect-ratio: 1; border: 1px solid currentColor;
+  background: #234635; transform: rotate(45deg);
+}

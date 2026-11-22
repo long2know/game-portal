@@ -1,31 +1,9 @@
 import type { GameId } from "./catalog";
 import { el, svg } from "./dom";
 
-const profiles: Record<string, [string, string]> = {
-  pawn: [
-    "M24 5a6.1 6.1 0 0 1 3.8 10.9c.1 3.6 1.5 6.9 5 10.8l-1.5 3.5 3.4 3.6 1.3 6.2H12l1.3-6.2 3.4-3.6-1.5-3.5c3.5-3.9 4.9-7.2 5-10.8A6.1 6.1 0 0 1 24 5Z",
-    "M19 27h10m-12 7h14m-8-25a2.8 2.8 0 0 0-2.8 2.8",
-  ],
-  knight: [
-    "M18 8l3.5 3L24 4l4.5 5.7C36 13 39 22.5 34.2 32l3.9 3.5 1.4 4.5h-31l1.7-5.9 5-2.9c.1-4 1.5-7.1 6.2-10l-6.2 2-3.7 3-5-5.6 3-5 8.5-4.2Z",
-    "M25.5 12.5c6.7 3 9.2 8.7 7 15.5M11.5 33.8h24m-16-17.1 2.4-1m-10.7 5.8 1.3-.7",
-  ],
-  bishop: [
-    "M24 4c6.5 5 10 9.3 10 14.3 0 3.8-2.3 6.4-6 7.6l3.7 4.5 3.4 3.6 1.7 6H11.2l1.7-6 3.4-3.6 3.7-4.5c-3.7-1.2-6-3.8-6-7.6C14 13.3 17.5 9 24 4Z",
-    "M23 17.5l6-8m-11.5 21h13m-16 4.2h19",
-  ],
-  rook: [
-    "M9 8h7v5h4.5V8h7v5H32V8h7v13l-5 5v5.8l3.2 3.1 1.6 5.1H9.2l1.6-5.1 3.2-3.1V26l-5-5Z",
-    "M10.3 20.5h27.4m-21.2 5h15m-16.5 7h18m-21.1 3.2h24.2",
-  ],
-  queen: [
-    "M24 3a2.9 2.9 0 0 1 .8 5.7L29 21l5.2-10.2c-1.3-2.9 2.4-5.1 4.7-3.3 1.9 1.5 1.1 4.3-1 4.9l-2.5 13.9-3.5 4.8 4.1 3.5 1.3 5.4H10.7l1.3-5.4 4.1-3.5-3.5-4.8-2.5-13.9c-2.1-.6-2.9-3.4-1-4.9 2.3-1.8 6 .4 4.7 3.3L19 21l4.2-12.3A2.9 2.9 0 0 1 24 3Z",
-    "M13.5 26.4h21m-17.8 5.1h14.6m-17.6 4h20.6",
-  ],
-  king: [
-    "M21.7 3h4.6v4.8h4.8v4.6h-4.8v5.2c6.2-3.2 12.5-.8 12.5 4.6 0 4-2.7 7-6.7 8.8l4.1 3.7 1.7 5.3H10.1l1.7-5.3 4.1-3.7c-4-1.8-6.7-4.8-6.7-8.8 0-5.4 6.3-7.8 12.5-4.6v-5.2h-4.8V7.8h4.8Z",
-    "M14.8 24c1.9 2.6 5.2 3.1 9.2 3.1s7.3-.5 9.2-3.1M17 31h14m-16.8 4.6h19.6",
-  ],
+const chessPieces = new URL("./assets/cburnett.svg?no-inline", import.meta.url).href;
+const chessProfiles: Readonly<Record<string, string>> = {
+  pawn: "P", knight: "N", bishop: "B", rook: "R", queen: "Q", king: "K",
 };
 
 export function side(game: GameId, owner: number): string {
@@ -47,9 +25,8 @@ export function token(game: GameId, owner: number, piece: string): HTMLElement {
   node.dataset.piece = piece;
   node.setAttribute("aria-hidden", "true");
   if (game === "chess") {
-    const shape = svg("svg", { viewBox: "0 0 48 48", class: "chess-form", "aria-hidden": "true" });
-    const [silhouette, engraving] = profiles[piece] ?? profiles.pawn;
-    shape.append(svg("path", { d: silhouette }), svg("path", { d: engraving, class: "engrave" }));
+    const shape = svg("svg", { viewBox: "0 0 45 45", class: "chess-form", "aria-hidden": "true" });
+    shape.append(svg("use", { href: `${chessPieces}#${owner === 0 ? "w" : "b"}${chessProfiles[piece] ?? "P"}` }));
     node.append(shape);
   } else if (game === "checkers" && piece === "king") {
     const shape = svg("svg", { viewBox: "0 0 24 24", class: "checker-crown", "aria-hidden": "true" });
@@ -59,22 +36,55 @@ export function token(game: GameId, owner: number, piece: string): HTMLElement {
   return node;
 }
 
-export function tableau(game: GameId): HTMLElement {
+function tiles(): HTMLElement[] {
+  const bamboo = svg("svg", { viewBox: "0 0 24 32", fill: "none" });
+  bamboo.append(svg("path", {
+    d: "M7 5v22m10-22v22M4 10h6m4 0h6M4 16h6m4 0h6M4 22h6m4 0h6",
+    stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round",
+  }));
+  const dots = svg("svg", { viewBox: "0 0 24 32", fill: "none" });
+  for (const [cx, cy] of [[7, 10], [17, 10], [7, 22], [17, 22]]) {
+    dots.append(svg("circle", { cx, cy, r: 3.6, stroke: cx === 7 ? "#49654a" : "#984338", "stroke-width": 1.8 }));
+  }
+  return [el("span", "art-tile", bamboo), el("span", "art-tile", dots), el("span", "art-tile art-tile-back")];
+}
+
+function studyDie(pips: readonly number[]): HTMLElement {
+  const face = svg("svg", { viewBox: "0 0 24 24", fill: "currentColor" });
+  for (const index of pips) face.append(svg("circle", {
+    cx: 6 + (index % 3) * 6, cy: 6 + Math.floor(index / 3) * 6, r: 1.8,
+  }));
+  return el("span", "study-die", face);
+}
+
+function backgammonStudy(): SVGSVGElement {
+  const board = svg("svg", { viewBox: "0 0 96 64", class: "mini-backgammon" });
+  board.append(svg("rect", { x: 1, y: 1, width: 94, height: 62, rx: 2, fill: "#5a4335" }),
+    svg("path", { d: "M4 4h42v56H4zM50 4h42v56H50z", fill: "#dec299" }));
+  for (let i = 0; i < 12; i++) {
+    const x = 4 + i * 7 + (i >= 6 ? 4 : 0);
+    board.append(svg("path", { d: `M${x} 4h7l-3.5 23zM${x} 60h7l-3.5-23z`, fill: i % 2 ? "#974e3d" : "#59664e" }));
+  }
+  board.append(svg("circle", { cx: 14.5, cy: 8, r: 3.5, fill: "#f7edd6", stroke: "#795740" }),
+    svg("circle", { cx: 14.5, cy: 15.5, r: 3.5, fill: "#f7edd6", stroke: "#795740" }),
+    svg("circle", { cx: 81.5, cy: 55, r: 3.5, fill: "#382d26", stroke: "#dec299" }));
+  return board;
+}
+
+export function tableau(game: GameId | "farkle" | "backgammon", scale: "index" | "table" = "table"): HTMLElement {
   const scene = el("div", "tableau");
   scene.dataset.game = game;
+  scene.dataset.scale = scale;
   scene.setAttribute("aria-hidden", "true");
   const field = el("div", "mini-field");
   const pieces = el("div", "mini-pieces");
   switch (game) {
-    case "mahjong": {
-      const bamboo = svg("svg", { viewBox: "0 0 22 32", fill: "none" });
-      bamboo.append(svg("path", { d: "M6 7v18m10-18v18M3 10l3 2 3-2m4 4 3 2 3-2M3 19l3 2 3-2m4 4 3 2 3-2", stroke: "currentColor", "stroke-width": 2 }));
-      pieces.append(el("span", "art-tile", bamboo), el("span", "art-tile", el("i", "tile-dot"), el("i", "tile-dot"), el("i", "tile-dot")));
+    case "mahjong": pieces.append(...tiles()); break;
+    case "chess":
+      if (scale === "table") pieces.append(token(game, 1, "rook"), token(game, 0, "knight"), token(game, 0, "pawn"));
       break;
-    }
-    case "chess": pieces.append(token(game, 1, "rook"), token(game, 0, "knight"), token(game, 0, "pawn")); break;
     case "go": pieces.append(token(game, 0, "stone"), token(game, 1, "stone"), token(game, 0, "stone")); break;
-    case "reversi": pieces.append(token(game, 1, "disc"), token(game, 0, "disc"), token(game, 1, "disc")); break;
+    case "reversi": pieces.append(token(game, 1, "disc"), token(game, 0, "disc")); break;
     case "checkers": pieces.append(token(game, 0, "man"), token(game, 1, "king")); break;
     case "chinese-checkers": pieces.append(token(game, 3, "peg"), token(game, 0, "peg"), token(game, 1, "peg")); break;
     case "holdem":
@@ -86,6 +96,8 @@ export function tableau(game: GameId): HTMLElement {
       pieces.append(...(game === "sudoku" ? ["2", "7", "4"] : ["J", "A", "D", "E"])
         .map(glyph => el("span", "art-block", glyph)));
       break;
+    case "farkle": pieces.append(studyDie([0, 4, 8]), studyDie([0, 2, 4, 6, 8])); break;
+    case "backgammon": pieces.append(backgammonStudy()); break;
   }
   scene.append(field, pieces);
   return scene;
