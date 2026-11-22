@@ -184,7 +184,9 @@ export class BoardMotion {
         if (this.cleanup !== cleanup) return;
         animations.splice(0).forEach(animation => animation.cancel());
       }
-    } catch { /* Motion is optional; the committed pieces are already in place. */ }
+    } catch (error) {
+      if (this.cleanup === cleanup) console.warn("Board turn animation unavailable.", error);
+    }
     finally {
       if (this.cleanup === cleanup) this.stop();
     }

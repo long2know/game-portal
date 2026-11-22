@@ -84,7 +84,11 @@ export class MusicControl {
         this.pending = undefined;
         this.cache(enabled ? "on" : "off");
       }
-    }, () => this.preferencesUnavailable());
+    }, error => {
+      if (edit !== this.edits) return;
+      console.warn("Could not save guest music settings.", error);
+      this.preferencesUnavailable();
+    });
   }
 
   private unlock(): void {
