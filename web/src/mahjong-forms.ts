@@ -6,7 +6,7 @@ import { setMelds } from "./table";
 import { tileLabel } from "./tile";
 
 export function showCreate(modal: Modal, enter: (payload: Payloads["createRoom"]) => void): HTMLButtonElement {
-  const visibility = el("select", "", el("option", "", "Invite only"), el("option", "", "Public"));
+  const visibility = el("select", "", new Option("Invite only", "invite"), new Option("Public", "public"));
   const hands = el("select", "", el("option", "", "One hand"), el("option", "", "Four hands"));
   const bots = toggle("Fill the other three seats with bots", false);
   const create = submit("Create table");

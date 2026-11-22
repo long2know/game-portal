@@ -98,6 +98,8 @@ In the Jade Court portal, open **Online lobby** from the globe in the header or 
 you turn on **Available to play**. Save a display name friends recognize; names are
 not unique. Away tabs and guests at an active table are not listed. A waiting host
 can still invite available guests without leaving the table.
+In Mahjong that includes both public and invite-only tables; only invite-only
+hosts can copy a private link.
 
 The header badge opens the inbox without interrupting the current page. Accepting
 requires an explicit action and opens only the assigned table in that tab. If you

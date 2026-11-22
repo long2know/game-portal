@@ -284,7 +284,8 @@ class LanternTable {
     this.social?.update({
       ready: !this.handoffFailed && (!!state && state.room.status !== "complete" || this.session.available),
       busy: !!state && state.room.status !== "complete",
-      table: available && state?.room.status === "waiting" && state.self.inviteCode && state.room.seats.some(seat => seat.kind === "open")
+      table: available && state?.room.status === "waiting" && state.room.hostSeat === state.self.seat &&
+        state.room.seats.some(seat => seat.kind === "open")
         ? { game: "mahjong", tableId: state.roomId } : undefined,
     });
     const scene = state?.room.status === "waiting" ? "waiting" : state?.game ? "play" : "home";
@@ -426,7 +427,7 @@ class LanternTable {
     try {
       const { showShareLink } = await import("./mahjong-forms");
       const state = this.session.snapshot;
-      if (state?.room.status !== "waiting" || !state.self.inviteCode || this.modal.root.open) return;
+      if (state?.room.status !== "waiting" || state.room.visibility !== "invite" || !state.self.inviteCode || this.modal.root.open) return;
       showShareLink(this.modal, fromPortal ? mahjongPath : appPath, state.self.inviteCode);
     } catch { this.showNotice("The share link couldn’t load. Please try again."); }
   }

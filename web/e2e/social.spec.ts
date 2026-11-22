@@ -401,69 +401,104 @@ test("a Hold’em handoff reads the Poker member view and keeps the other cards 
   } finally { await guest.context().close(); }
 });
 
-test("a Mahjong accept verifies the exact saved seat without a browsing tab taking it over", async ({ page, browser, baseURL }, info) => {
-  const url = urls(baseURL!);
-  const hostName = `Heron ${info.project.name}`, guestName = `Lotus ${info.project.name}`;
-  const guest = await phone(browser, { width: 740, height: 320 });
-  const legacy = await phone(browser);
-  let share = "";
-  const wire = observeWire(page);
-  const visitorWire = observeWire(guest);
-  const mock = fixture(async (_, visitor) => {
-    // Commit the membership through the existing authorized WS command, but leave the UI handoff to the app.
-    return visitor.evaluate(({ wsPath, invite }) => new Promise<string>((resolve, reject) => {
-      const socket = new WebSocket(wsPath);
-      socket.onerror = () => reject(new Error("Fixture Mahjong connection failed."));
-      socket.onmessage = ({ data }) => {
-        const packet = JSON.parse(data);
-        if (packet.type === "lease") {
-          socket.send(JSON.stringify({ v: 1, type: "command", op: "joinRoom", requestId: crypto.randomUUID(),
-            lease: packet.lease, payload: { inviteCode: invite } }));
-        } else if (packet.type === "ack") {
-          socket.close();
-          if (packet.status === "ok") resolve(packet.roomId);
-          else reject(new Error(packet.error.code));
-        }
-      };
-    }), { wsPath: url("ws").replace(/^http/, "ws"), invite: new URL(share).hash.slice("#invite=".length) });
+for (const visibility of ["invite", "public"] as const) {
+  const kind = visibility === "invite" ? "private" : "public";
+  test(`a ${kind} Mahjong invite opens the exact saved seat without browsing taking it over`, async ({ page, browser, baseURL }, info) => {
+    const url = urls(baseURL!);
+    const hostName = `Heron ${kind} ${info.project.name}`, guestName = `Lotus ${kind} ${info.project.name}`;
+    const guest = await phone(browser, { width: 740, height: 320 });
+    const legacy = visibility === "invite" ? await phone(browser) : undefined;
+    let share = "";
+    const wire = observeWire(page);
+    const visitorWire = observeWire(guest);
+    const mock = fixture(async (_, visitor) => {
+      // Commit through the existing WS join only in fixture mode.
+      const payload = visibility === "public" ? { roomId: wire.snapshots.at(-1)!.roomId } :
+        { inviteCode: new URL(share).hash.slice("#invite=".length) };
+      return visitor.evaluate(({ wsPath, payload }) => new Promise<string>((resolve, reject) => {
+        const socket = new WebSocket(wsPath);
+        socket.onerror = () => reject(new Error("Fixture Mahjong connection failed."));
+        socket.onmessage = ({ data }) => {
+          const packet = JSON.parse(data);
+          if (packet.type === "lease") {
+            socket.send(JSON.stringify({ v: 1, type: "command", op: "joinRoom", requestId: crypto.randomUUID(),
+              lease: packet.lease, payload }));
+          } else if (packet.type === "ack") {
+            socket.close();
+            if (packet.status === "ok") resolve(packet.roomId);
+            else reject(new Error(packet.error.code));
+          }
+        };
+      }), { wsPath: url("ws").replace(/^http/, "ws"), payload });
+    });
+    try {
+      await page.setViewportSize({ width: 740, height: 320 });
+      await Promise.all([mock(page, hostName), mock(guest, guestName)]);
+      if (legacy) await page.addInitScript(() => Object.defineProperty(navigator, "clipboard", {
+        value: { writeText: async () => { throw new Error(); } },
+      }));
+      const tableUrl = url("mahjong/");
+      await Promise.all([page.goto(tableUrl), guest.goto(url("solitaire/"))]);
+      await optIn(page, hostName);
+      await optIn(guest, guestName);
+      await tap(page, "Play with friends");
+      const create = page.getByRole("dialog", { name: "Create a table" });
+      const mode = create.getByLabel("Who can join?");
+      await expect(mode).toHaveValue("invite");
+      if (visibility === "public") await mode.selectOption("public");
+      await create.getByRole("button", { name: "Create table" }).tap();
+      await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
+      const { roomId: id, self } = wire.snapshots.at(-1)!;
+      expect(wire.sent.find(frame => frame.type === "command" && frame.op === "createRoom")).toMatchObject({
+        payload: { visibility, matchHands: 1, fillBots: false },
+      });
+      const shareHint = "Copy one link to share with your friends before starting.";
+      if (legacy) {
+        await expect(page.getByText(shareHint)).toBeVisible();
+        await tap(page, "Invite friends");
+        const sharePanel = page.getByRole("dialog", { name: "Invite friends" });
+        await sharePanel.getByRole("button", { name: "Copy invite link" }).tap();
+        await expect(sharePanel.getByText(/Link selected/)).toBeVisible();
+        share = await sharePanel.getByRole("textbox", { name: "Invite link" }).inputValue();
+        expect(share).toBe(`${tableUrl}#invite=${self.inviteCode}`);
+        expect(self.inviteCode).toMatch(/^[A-Za-z0-9_-]{16}$/);
+        await sharePanel.getByRole("button", { name: "Close dialog" }).tap();
+      } else {
+        expect(self.inviteCode).toBeNull();
+        await expect(button(page, "Invite friends")).toBeHidden();
+        await expect(page.getByText(shareHint)).toBeHidden();
+      }
+
+      await send(page, guestName, { game: "mahjong", tableId: id });
+      await accept(guest, tableUrl, hostName);
+      await expect(guest.getByRole("heading", { name: "Take a seat." })).toBeVisible();
+      await expect(page).toHaveURL(tableUrl);
+      await expect(page.getByRole("heading", { name: guestName, exact: true })).toBeVisible();
+      expect(visitorWire.sent.filter(frame => frame.type === "sync").map(frame => frame.roomId)).toEqual([id]);
+      expect(visitorWire.snapshots.at(-1)).toMatchObject({ roomId: id, room: { visibility }, self: { inviteCode: null } });
+      await expect(button(guest, "Invite players")).toBeHidden();
+      await expect(button(guest, "Invite friends")).toBeHidden();
+      await expect(guest.getByText(shareHint)).toBeHidden();
+      await guest.screenshot({ path: info.outputPath("mahjong-handoff-landscape.png") });
+
+      const otherTab = await guest.context().newPage();
+      const otherWire = observeWire(otherTab);
+      await otherTab.goto(tableUrl);
+      await expect(button(otherTab, "Resume your table")).toBeEnabled();
+      await openLobby(otherTab);
+      expect(otherWire.sent.filter(frame => frame.type === "sync")).toEqual([]);
+      await expect(guest.locator(".connection")).toHaveAttribute("data-status", "online");
+      await otherTab.close();
+
+      if (!legacy) return;
+      await legacy.goto(share);
+      await tap(legacy, "Join");
+      await expect(legacy.getByRole("heading", { name: "Take a seat." })).toBeVisible();
+      await page.getByRole("button", { name: /^Add bot to / }).first().tap();
+      for (const player of [page, guest, legacy]) await tap(player, "Mark ready");
+      await tap(page, "Start match");
+      await expect(guest.locator(".hand-tile")).not.toHaveCount(0);
+      expect(visitorWire.snapshots.at(-1)).toMatchObject({ roomId: id, room: { status: "playing" } });
+    } finally { await Promise.all([guest.context().close(), legacy?.context().close()]); }
   });
-  try {
-    await page.setViewportSize({ width: 740, height: 320 });
-    await Promise.all([mock(page, hostName), mock(guest, guestName)]);
-    await Promise.all([page.goto(url("mahjong/")), guest.goto(url("solitaire/"))]);
-    await optIn(page, hostName);
-    await optIn(guest, guestName);
-    await tap(page, "Play with friends");
-    await page.getByRole("dialog", { name: "Create a table" }).getByRole("button", { name: "Create table" }).tap();
-    await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
-    const id = wire.snapshots.at(-1)!.roomId;
-    await tap(page, "Invite friends");
-    const sharePanel = page.getByRole("dialog", { name: "Invite friends" });
-    share = await sharePanel.getByRole("textbox", { name: "Invite link" }).inputValue();
-    expect(share).toMatch(new RegExp(`/mahjong/#invite=[A-Za-z0-9_-]{16}$`));
-    await sharePanel.getByRole("button", { name: "Close dialog" }).tap();
-    await send(page, guestName, { game: "mahjong", tableId: id });
-    await accept(guest, url("mahjong/"), hostName);
-    await expect(guest.getByRole("heading", { name: "Take a seat." })).toBeVisible();
-    expect(visitorWire.sent.filter(frame => frame.type === "sync").map(frame => frame.roomId)).toEqual([id]);
-    await guest.screenshot({ path: info.outputPath("mahjong-handoff-landscape.png") });
-
-    const otherTab = await guest.context().newPage();
-    const otherWire = observeWire(otherTab);
-    await otherTab.goto(url("mahjong/"));
-    await expect(button(otherTab, "Resume your table")).toBeEnabled();
-    await openLobby(otherTab);
-    expect(otherWire.sent.filter(frame => frame.type === "sync")).toEqual([]);
-    await expect(guest.locator(".connection")).toHaveAttribute("data-status", "online");
-    await otherTab.close();
-
-    await legacy.goto(share);
-    await tap(legacy, "Join");
-    await expect(legacy.getByRole("heading", { name: "Take a seat." })).toBeVisible();
-    await page.getByRole("button", { name: /^Add bot to / }).first().tap();
-    for (const player of [page, guest, legacy]) await tap(player, "Mark ready");
-    await tap(page, "Start match");
-    await expect(guest.locator(".hand-tile")).not.toHaveCount(0);
-    expect(visitorWire.snapshots.at(-1)).toMatchObject({ roomId: id, room: { status: "playing" } });
-  } finally { await Promise.all([guest.context().close(), legacy.context().close()]); }
-});
+}

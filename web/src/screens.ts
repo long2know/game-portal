@@ -180,6 +180,8 @@ export class WaitingRoom {
   private readonly ready: HTMLButtonElement;
   private readonly start: HTMLButtonElement;
   private readonly share: HTMLElement;
+  private readonly shareLink: HTMLButtonElement;
+  private readonly shareHint = el("p", "detail", "Copy one link to share with your friends before starting.");
   private readonly onlineInvite?: HTMLButtonElement;
   private readonly leave: HTMLButtonElement;
   private state: Snapshot | null = null;
@@ -196,9 +198,8 @@ export class WaitingRoom {
     this.start = button("Start match", "btn primary", hooks.start);
     if (hooks.invitePlayers) this.onlineInvite = button("Invite players", "btn secondary",
       () => hooks.invitePlayers!(this.onlineInvite!));
-    this.share = el("div", "row-actions", button("Invite friends", "btn primary", hooks.invite),
-      ...(this.onlineInvite ? [this.onlineInvite] : []),
-      el("p", "detail", "Copy one link to share with your friends before starting."));
+    this.shareLink = button("Invite friends", "btn primary", hooks.invite);
+    this.share = el("div", "row-actions", this.shareLink, ...(this.onlineInvite ? [this.onlineInvite] : []), this.shareHint);
     this.leave = button("Leave table", "btn subtle", hooks.leave);
     const hero = el("div", "room-heading", el("div", "", el("p", "eyebrow", "Waiting room"),
       el("h1", "", "Take a seat."), el("p", "detail", "Four seats are needed to start the match.")), this.leave);
@@ -220,11 +221,12 @@ export class WaitingRoom {
     text(this.match, room.matchHands === 1 ? "One hand" : "Four hands");
     text(this.role, host ? "You’re the host" : "Guest seat");
     this.leave.disabled = !enabled;
-    this.share.hidden = !self.inviteCode;
+    this.shareLink.hidden = this.shareHint.hidden = !host || room.visibility !== "invite" || !self.inviteCode;
     if (this.onlineInvite) {
-      this.onlineInvite.hidden = full;
+      this.onlineInvite.hidden = !host || full;
       this.onlineInvite.disabled = !enabled;
     }
+    this.share.hidden = this.shareLink.hidden && (!this.onlineInvite || this.onlineInvite.hidden);
     this.start.hidden = !host;
     this.start.disabled = !enabled || !allReady;
     this.ready.disabled = !enabled;
