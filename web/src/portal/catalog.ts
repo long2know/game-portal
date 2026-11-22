@@ -4,6 +4,8 @@ export type BoardId = typeof boardIds[number];
 export type ExpansionId = typeof expansionIds[number];
 export type GameId = BoardId | ExpansionId | "mahjong";
 
+const jadeLettersName = "Jade Letters";
+
 export const catalog: Record<GameId, { name: string; seats: string; description: string; invitation: string }> = {
   mahjong: {
     name: "Changsha Mahjong", seats: "4 players",
@@ -51,9 +53,9 @@ export const catalog: Record<GameId, { name: string; seats: string; description:
     invitation: "Play Sudoku",
   },
   "word-tiles": {
-    name: "Word Tiles", seats: "2 players",
+    name: jadeLettersName, seats: "2 players",
     description: "Play crossing words with seven tiles, blanks and premium squares.",
-    invitation: "Set up Word Tiles",
+    invitation: `Set up ${jadeLettersName}`,
   },
   farkle: {
     name: "Farkle", seats: "2–6 players",

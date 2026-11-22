@@ -535,7 +535,7 @@ export async function playExpansion(call, guests) {
   const solo = await seedSolo(call, guests);
   const farkle = await seedFarkle(call, guests);
   const backgammon = await seedBackgammon(call, guests);
-  console.log('Played private Hold’em and Word Tiles with different guests and bots; drew one Solitaire card and marked a unique Sudoku.');
+  console.log('Played private Hold’em and Jade Letters with different guests and bots; drew one Solitaire card and marked a unique Sudoku.');
   console.log('Played Farkle and Backgammon against bots and invited guests; rejected client dice and unauthorized or stale writes.');
   return { poker, words, solo, farkle, backgammon };
 }

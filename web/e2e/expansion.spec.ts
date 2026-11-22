@@ -1,7 +1,10 @@
 import { expect, test } from "@playwright/test";
 import type { Locator, Page, Response } from "@playwright/test";
 
-type Table<P> = { id: string; seat: number; revision: number; status: string; position: P; invite: string | null };
+type Table<P> = {
+  id: string; seat: number; revision: number; status: string; position: P; invite: string | null;
+  seats: { seat: number; name: string; bot: boolean; occupied: boolean }[];
+};
 type Solo<P> = { variant: string; revision: number; position: P };
 type Card = { rank: number; suit: number };
 type Poker = {
@@ -27,7 +30,7 @@ const routes = [
   ["holdem", "Texas Hold’em", "Set up Texas Hold’em", "poker/resume", "holdem", "Play a bot"],
   ["solitaire", "Solitaire", "Play Solitaire", "solo/solitaire", "solitaire", "Deal cards"],
   ["sudoku", "Sudoku", "Play Sudoku", "solo/sudoku", "sudoku", "Start puzzle"],
-  ["word-tiles", "Word Tiles", "Set up Word Tiles", "words/resume", "words", "Play a bot"],
+  ["word-tiles", "Jade Letters", "Set up Jade Letters", "words/resume", "words", "Play a bot"],
   ["farkle", "Farkle", "Set up Farkle", "farkle/resume", "farkle", "Play a bot"],
   ["backgammon", "Backgammon", "Set up Backgammon", "backgammon/resume", "backgammon", "Play a bot"],
 ] as const;
@@ -63,7 +66,8 @@ async function desktopCrop(page: Page, playArea: Locator, path: string) {
 }
 
 const portrait = { width: 320, height: 730 };
-const wordBoard = (page: Page) => page.getByRole("group", { name: "Word Tiles board" });
+const jadeLettersHeading = (page: Page) => page.getByRole("heading", { name: "Jade Letters", level: 1, exact: true });
+const wordBoard = (page: Page) => page.getByRole("group", { name: "Jade Letters board", exact: true });
 const wordRack = (page: Page) => page.getByRole("group", { name: "Your tile rack" });
 const wordSquare = (board: Locator, row: number, column: number, columns: number) =>
   board.locator(`[data-word-index="${row * columns + column}"]`);
@@ -123,12 +127,13 @@ const cardName = (rank: number, suit: string) => `${({ 1: "Ace", 11: "Jack", 12:
 
 test.describe("mounted Jade Court expansion", () => {
   test.beforeEach(async ({ baseURL, page }) => {
-    test.skip(!baseURL || !/^\/portal\/?$/.test(new URL(baseURL).pathname), "Requires the mounted portal runtime.");
+    test.skip(!baseURL || !/^\/(?:game-)?portal\/$/.test(new URL(baseURL).pathname), "Requires the mounted portal runtime.");
     await page.setViewportSize(portrait);
   });
 
   test("catalog links, canonical paths and lazy assets stay isolated", async ({ page, baseURL, request }) => {
     const url = (path = "") => new URL(path, baseURL).href;
+    const mount = new URL(url()).pathname;
     const seen = new Set<string>();
     const errors: string[] = [];
     page.on("request", event => seen.add(new URL(event.url()).pathname));
@@ -141,13 +146,15 @@ test.describe("mounted Jade Court expansion", () => {
     for (const [route, name, linkName, api, chunk, entry] of routes) {
       const bare = await request.get(url(`${route}?from=bookmark`), { maxRedirects: 0 });
       expect(bare.status()).toBe(308);
-      expect(bare.headers().location).toBe(`/portal/${route}/?from=bookmark`);
+      expect(bare.headers().location).toBe(`${mount}${route}/?from=bookmark`);
       seen.clear();
       const opened = watch(page, url(`api/${api}`), "GET");
       const card = page.getByRole("link", { name: linkName, exact: true });
-      await expect(card).toHaveAttribute("href", `/portal/${route}/`);
+      await expect(card).toHaveAttribute("href", `${mount}${route}/`);
+      await expect(card.getByRole("heading", { name, exact: true })).toBeVisible();
       await card.tap();
       await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+      await expect(page).toHaveTitle(`${name} · Jade Court`);
       expect((await opened).ok()).toBe(true);
       await expect(button(page, entry)).toBeEnabled();
       await targets(button(page, entry));
@@ -155,7 +162,7 @@ test.describe("mounted Jade Court expansion", () => {
       expect(featureAssets()).toEqual(expect.arrayContaining([expect.stringMatching(new RegExp(`/assets/${chunk}-[\\w-]+\\.js$`))]));
       expect(featureAssets().filter(path => routes.some(([, , , , other]) =>
         other !== chunk && path.includes(`/assets/${other}-`)))).toEqual([]);
-      expect([...seen].filter(path => !path.startsWith("/portal/"))).toEqual([]);
+      expect([...seen].filter(path => !path.startsWith(mount))).toEqual([]);
       await page.getByRole("link", { name: "‹ All games", exact: true }).tap();
       await expect(page).toHaveURL(url());
     }
@@ -290,14 +297,20 @@ test.describe("mounted Jade Court expansion", () => {
     await expect(page.getByText("Hard · 0 moves", { exact: true })).toBeVisible();
   });
 
-  test("Word Tiles keeps a private draft, submits a real play and resumes after the bot turn", async ({ page, baseURL }, info) => {
+  test("Jade Letters keeps a private draft, scores a word and resumes after the bot turn", async ({ page, baseURL }, info) => {
     const url = (path: string) => new URL(path, baseURL).href;
     const game = url("api/words/tables");
     await page.goto(url("word-tiles/"));
+    await expect(jadeLettersHeading(page)).toBeVisible();
+    await expect(page).toHaveTitle("Jade Letters · Jade Court");
+    await expect(button(page, "Play a bot")).toBeEnabled();
+    await page.screenshot({ path: info.outputPath("jade-letters-setup-320.png"), fullPage: true });
     const create = async () => {
-      const response = watch(page, game);
+      const created = watch(page, game);
       await button(page, "Play a bot").tap();
-      return body<Table<Words>>(await response);
+      const response = await created;
+      expect(response.request().postDataJSON()).toEqual({ players: 2, bots: true });
+      return body<Table<Words>>(response);
     };
     const pick = (table: Table<Words>) => !table.position.board.length ? openingWords(table.position.rack)[0] : undefined;
     let table = await create();
@@ -319,7 +332,11 @@ test.describe("mounted Jade Court expansion", () => {
     const center = wordSquare(board, row, column, columns);
     const neighbor = wordSquare(board, row, column + 1, columns);
     const tile = (id: number) => wordTile(rack, id);
-    expect(table.position).toMatchObject({ variant: "duel", rows: 15, columns: 15, rackSize: 7 });
+    const bot = table.seats[1];
+    expect(table).toMatchObject({ seat: 0, status: "playing", invite: null });
+    expect(bot).toMatchObject({ seat: 1, bot: true, occupied: true });
+    expect(table.position).toMatchObject({ variant: "duel", rows: 15, columns: 15, rackSize: 7, turn: 0, scores: [0, 0] });
+    await expect(jadeLettersHeading(page)).toBeVisible();
     await expect(page.getByText("Duel · 7 tiles")).toBeVisible();
     await expect(board.getByRole("button")).toHaveCount(rows * columns);
     await expect(rack.getByRole("button")).toHaveCount(table.position.rackSize);
@@ -365,24 +382,51 @@ test.describe("mounted Jade Court expansion", () => {
     expect(writes).toEqual([{ revision: table.revision, action: { kind: "place", placements: [
       { row, column, tileId: tiles[0]!.id }, { row, column: column + 1, tileId: tiles[1]!.id },
     ] } }]);
-    expect(play.position.scores[table.seat]).toBe(tiles[0].points + tiles[1].points);
     expect(play.revision).toBe(table.revision + 1);
     expect(play.position.turn).toBe(table.seat);
-    expect(play.position.lastMove).toBeTruthy();
+    expect(play.position.scores[table.seat]).toBe(tiles[0].points + tiles[1].points);
+    expect(play.position.board.filter(cell => cell.seat === table.seat)).toEqual(tiles.map((tile, offset) =>
+      ({ row, column: column + offset, tile, seat: table.seat })));
+    const botCells = play.position.board.filter(cell => cell.seat === bot.seat);
+    const lastMove = play.position.lastMove ?? "";
+    const botScore = play.position.scores[bot.seat];
+    if (lastMove === "Seat 2 passed.") {
+      expect(botCells).toEqual([]);
+      expect(botScore).toBe(0);
+    } else {
+      expect(botCells.length).toBeGreaterThan(0);
+      expect(lastMove).toMatch(new RegExp(`^Seat 2 played [A-Z]+(?:, [A-Z]+)* \\(\\+${botScore}\\)\\.$`));
+    }
+    expect(play.position.board.filter(cell => cell.recent)).toEqual(botCells);
+    expect(play.position.bagCount).toBe(table.position.bagCount - tiles.length - botCells.length);
+    await expect(board.locator("[data-recent]")).toHaveCount(botCells.length);
+    const scoreRow = page.getByRole("list", { name: "Scores and rack sizes" }).getByRole("listitem").nth(bot.seat);
+    await expect(scoreRow).toContainText(bot.name);
+    await expect(scoreRow).toContainText(`${botScore} pts`);
     await expect(center).not.toHaveAttribute("data-draft", "");
     await expect(center).not.toHaveAttribute("data-premium", /.+/);
     await expect(center).toHaveText(`${tiles[0]!.letter}${tiles[0]!.points}`);
-    await expect(page.getByText(`Last move: ${play.position.lastMove}`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`Last move: ${lastMove}`, { exact: true })).toBeVisible();
+    await info.attach("jade-letters-turn", {
+      body: JSON.stringify({
+        humanWord: tiles.map(tile => tile.letter).join(""),
+        botMove: lastMove,
+        scores: play.position.scores,
+        revision: [table.revision, play.revision],
+      }),
+      contentType: "application/json",
+    });
     await button(page, "Center board").tap();
     await page.screenshot({ path: info.outputPath("word-duel-320-committed.png"), fullPage: true });
     const resumed = watch(page, `${game}/${table.id}`, "GET");
     await page.reload();
-    expect((await body<Table<Words>>(await resumed)).position).toEqual(play.position);
+    expect(await body<Table<Words>>(await resumed)).toEqual(play);
+    await expect(jadeLettersHeading(page)).toBeVisible();
     await expect(center).toHaveAccessibleName(new RegExp(tiles[0]!.letter));
     await expect(rack.locator("[data-tile]")).toHaveCount(play.position.rack.length);
   });
 
-  test("Word Tiles Duel scores a real mobile and desktop guest's linked words", async ({ page, browser, baseURL }, info) => {
+  test("Jade Letters Duel scores a real mobile and desktop guest's linked words", async ({ page, browser, baseURL }, info) => {
     const url = (path: string) => new URL(path, baseURL).href;
     const game = url("api/words/tables");
     const desktop = await browser.newContext({ viewport: { width: 1366, height: 900 } });
@@ -399,11 +443,26 @@ test.describe("mounted Jade Court expansion", () => {
         await button(page, "Invite a friend").tap();
         const created = await body<Table<Words>>(await made);
         endpoint = `${game}/${created.id}`;
-        await peer.goto(await page.getByRole("textbox", { name: "Invite link" }).inputValue());
+        await expect(jadeLettersHeading(page)).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Send the invitation", exact: true })).toBeVisible();
+        const invite = new URL(url("word-tiles/"));
+        invite.hash = new URLSearchParams({ invite: created.invite! }).toString();
+        await expect(page.getByRole("textbox", { name: "Invite link" })).toHaveValue(invite.href);
+        invite.search = "?from=friend";
+        const bare = new URL(invite);
+        bare.pathname = bare.pathname.slice(0, -1);
+        await peer.goto(bare.href);
+        await expect(peer).toHaveURL(invite.href);
+        await expect(jadeLettersHeading(peer)).toBeVisible();
+        await expect(peer).toHaveTitle("Jade Letters · Jade Court");
+        await expect(peer.getByRole("heading", { name: "A friend saved you a seat.", exact: true })).toBeVisible();
+        if (attempt === 0) await peer.screenshot({ path: info.outputPath("jade-letters-invite-desktop.png") });
         await peer.getByRole("textbox", { name: "Display name" }).fill("Rowan");
         const joined = watch(peer, url("api/words/join"));
         await button(peer, "Join table").click();
         const visitor = await body<Table<Words>>(await joined);
+        invite.hash = "";
+        await expect(peer).toHaveURL(invite.href);
         const host = await page.request.get(endpoint);
         await expect(host).toBeOK();
         tables = [await host.json() as Table<Words>, visitor];
@@ -485,7 +544,7 @@ test.describe("mounted Jade Court expansion", () => {
     } finally { await desktop.close(); }
   });
 
-  test("Word Tiles assigns and recalls distinct blanks by touch and keyboard", async ({ page, baseURL, browserName }, info) => {
+  test("Jade Letters assigns and recalls distinct Classic blanks by touch and keyboard", async ({ page, baseURL, browserName }, info) => {
     await page.setViewportSize({ width: 390, height: 780 });
     const url = (path: string) => new URL(path, baseURL).href;
     const rackTiles = [
@@ -506,6 +565,8 @@ test.describe("mounted Jade Court expansion", () => {
       await route.fulfill({ status: 400, json: { error: { code: "illegal_action" } } });
     });
     await page.goto(url("word-tiles/"));
+    await expect(jadeLettersHeading(page)).toBeVisible();
+    await expect(page.getByText("Classic · 7 tiles")).toBeVisible();
     const board = wordBoard(page), rack = wordRack(page);
     const center = wordSquare(board, 7, 7, 15), left = wordSquare(board, 7, 6, 15), right = wordSquare(board, 7, 8, 15);
     const first = wordTile(rack, 99), second = wordTile(rack, 100);
@@ -602,7 +663,7 @@ test.describe("mounted Jade Court expansion", () => {
     await expect(right).toHaveText("T0");
   });
 
-  test("Word Tiles resumes a Quick board without premiums or lost tiles", async ({ page, baseURL }) => {
+  test("Jade Letters resumes a Quick board without premiums or lost tiles", async ({ page, baseURL }) => {
     const url = (path: string) => new URL(path, baseURL).href;
     const normal = (letter: string, id: number) => ({ id, letter, points: 1, blank: false });
     const table = wordFixture({
@@ -616,6 +677,7 @@ test.describe("mounted Jade Court expansion", () => {
     await page.route(url("api/words/resume"), route => route.fulfill({ json: { tableId: table.id } }));
     await page.route(url(`api/words/tables/${table.id}`), route => route.fulfill({ json: table }));
     await page.goto(url("word-tiles/"));
+    await expect(jadeLettersHeading(page)).toBeVisible();
     const board = wordBoard(page);
     const center = wordSquare(board, 5, 5, 11);
     await expect(board.getByRole("button")).toHaveCount(121);
@@ -697,7 +759,7 @@ test.describe("mounted Jade Court expansion", () => {
     expect(waiting.status).toBe("waiting");
     const endpoint = `${game}/${waiting.id}`;
     const invitation = new URL(await page.getByRole("textbox", { name: "Invite link" }).inputValue());
-    expect(invitation.pathname).toBe("/portal/holdem/");
+    expect(invitation.pathname).toBe(new URL(url("holdem/")).pathname);
     expect(invitation.hash).toBe(`#${new URLSearchParams({ invite: waiting.invite! })}`);
     const peer = await browser.newContext({ viewport: portrait, hasTouch: true });
     try {

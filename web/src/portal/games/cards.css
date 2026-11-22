@@ -1,8 +1,8 @@
 .playing-card {
   display: grid; min-inline-size: 0; inline-size: 100%; aspect-ratio: .71;
   container-type: inline-size; isolation: isolate;
-  color: #25291f; background: #f5eddc; border: 1px solid #dfd3b9;
-  border-radius: clamp(4px, 1vw, 7px); box-shadow: 0 1px #9a8261;
+  color: #262822; background: linear-gradient(150deg, #fffbeb, #f1e4cc); border: 1px solid #e6d8ba;
+  border-radius: clamp(4px, 1vw, 7px); box-shadow: inset 0 1px #fffdf4, 0 1px #b79b69, 1px 3px 3px #14251e90;
   user-select: none;
 }
 .playing-card:is([data-suit="hearts"], [data-suit="diamonds"]) { color: #912e32; }
@@ -32,12 +32,9 @@
   .card-pips, .card-court { inset-block: 28% 7%; block-size: 65%; }
   .card-court[data-illustrated] { inset-block-end: 7%; block-size: auto; }
 }
-.card-back { color: #e2d4aa; background: #234635; }
+.card-back { color: #e2d4aa; background: #234638; }
 .card-back .playing-card-art {
-  display: grid; place-items: center; margin: 7%; border: 1px solid #e2d4aa80;
-  background: repeating-linear-gradient(135deg, #c7d2a724 0 1px, transparent 1px 4px);
-}
-.back-mark {
-  inline-size: 22%; aspect-ratio: 1; border: 1px solid currentColor;
-  background: #234635; transform: rotate(45deg);
+  display: grid; place-items: center; margin: 5%;
+  background: url("./card-back.svg") center / 100% 100% no-repeat,
+    repeating-linear-gradient(135deg, #c7d2a725 0 1px, transparent 1px 4px);
 }

@@ -19,12 +19,13 @@ export type Point = [number, number];
 type MotionTrace = {
   effect: string; side: string; piece: string; start: Point; path: Point[]; delay: number;
   flipTilt?: number[];
+  started?: boolean; landing?: { center: Point; opacity: number };
   sample?: { center: Point; height: number; opacity: number }; finished?: boolean; cancelled?: boolean;
 };
 export type MotionPage = Window & { motion: MotionTrace[]; holdMotion: boolean };
 
-export async function observeMotion(page: Page) {
-  await page.addInitScript(() => {
+export async function observeMotion(page: Page, sampleAt: "in-flight" | "landing" = "in-flight") {
+  await page.addInitScript(sampleAt => {
     const probe = window as unknown as MotionPage;
     probe.motion = [];
     const animate = Element.prototype.animate;
@@ -58,10 +59,20 @@ export async function observeMotion(page: Page) {
         entry.sample = { center: center(rect), height: rect.height, opacity: Number(getComputedStyle(this).opacity) };
         if (probe.holdMotion) animation.pause();
       };
-      requestAnimationFrame(sample);
-      void animation.finished.then(() => { entry.finished = true; }, () => { entry.cancelled = true; });
+      if (sampleAt === "landing") {
+        void animation.ready.then(() => {
+          entry.started = animation.startTime !== null && Number(effect.getComputedTiming().activeDuration) > 0;
+        }, () => {});
+      } else requestAnimationFrame(sample);
+      void animation.finished.then(() => {
+        entry.finished = true;
+        // The game's cleanup awaits the same promise. Read the attached, filled effect first.
+        if (sampleAt === "landing" && this.isConnected) {
+          entry.landing = { center: center(this.getBoundingClientRect()), opacity: Number(getComputedStyle(this).opacity) };
+        }
+      }, () => { entry.cancelled = true; });
       return animation;
     };
-  });
+  }, sampleAt);
   return () => page.evaluate(() => (window as unknown as MotionPage).motion);
 }

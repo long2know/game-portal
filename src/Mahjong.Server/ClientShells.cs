@@ -3,7 +3,7 @@ namespace Mahjong.Server;
 internal sealed class ClientShells(string baseHref, bool portalEnabled)
 {
     private static readonly string[] ShellMethods = [HttpMethods.Get, HttpMethods.Head];
-    private readonly string? _mahjong = Read("index.html", baseHref);
+    private readonly string? _mahjong = Read("index.html", baseHref, portalEnabled);
     private readonly string? _portal = portalEnabled ? Read("portal.html", baseHref) : null;
 
     public void Map(WebApplication app)
@@ -45,7 +45,7 @@ internal sealed class ClientShells(string baseHref, bool portalEnabled)
         return Results.Content(shell, "text/html; charset=utf-8");
     }
 
-    private static string? Read(string fileName, string baseHref)
+    private static string? Read(string fileName, string baseHref, bool portalMahjong = false)
     {
         var path = Path.Combine(AppContext.BaseDirectory, fileName);
         if (!File.Exists(path)) return null;
@@ -54,7 +54,8 @@ internal sealed class ClientShells(string baseHref, bool portalEnabled)
         if (!html.Contains(marker, StringComparison.Ordinal))
             throw new InvalidOperationException($"The built client {fileName} is missing its data-base marker.");
         // Vite's entry URLs must resolve from the mount even on a nested SPA URL.
-        return html.Replace(marker, $"data-base=\"{baseHref}\"", StringComparison.Ordinal)
+        var mount = $"data-base=\"{baseHref}\"" + (portalMahjong ? " data-portal-mahjong" : "");
+        return html.Replace(marker, mount, StringComparison.Ordinal)
             .Replace("\"./assets/", $"\"{baseHref}assets/", StringComparison.Ordinal);
     }
 }

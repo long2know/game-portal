@@ -13,6 +13,10 @@ test("the published Jade Court shell shares one local tile emblem with the brows
   const connection = header.getByText("Online", { exact: true });
   await expect(connection).toBeVisible();
   await expect(page).toHaveTitle("Jade Court · Changsha Mahjong");
+  expect(await page.locator("#app").getAttribute("data-portal-mahjong")).toBeNull();
+  const nestedMahjong = await request.get(new URL("mahjong/", home).href);
+  await expect(nestedMahjong).toBeOK();
+  expect(await nestedMahjong.text()).not.toContain("data-portal-mahjong");
   await expect(name).toBeVisible();
   await expect(subtitle).toBeVisible();
   const toolsLeft = (await connection.boundingBox())!.x;

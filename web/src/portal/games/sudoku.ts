@@ -43,7 +43,12 @@ function view(play: (action: Action) => void): SoloView<Position> {
   }
 
   function updateSelection(): void {
-    for (const [index, cell] of board.cells.entries()) cell.setAttribute("aria-pressed", String(selected === index));
+    const row = Math.floor(selected / 9), column = selected % 9;
+    for (const [index, cell] of board.cells.entries()) {
+      cell.setAttribute("aria-pressed", String(selected === index));
+      cell.toggleAttribute("data-related", selected >= 0 && selected !== index &&
+        (Math.floor(index / 9) === row || index % 9 === column));
+    }
     for (const control of numbers) control.setAttribute("aria-disabled", String(!enabled || !editable()));
     clear.setAttribute("aria-disabled", String(!enabled || !editable() || !position?.values[selected]));
     hint.setAttribute("aria-disabled", String(!enabled));
