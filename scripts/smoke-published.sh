@@ -76,13 +76,13 @@ start_server() {
   local directory=$1 log=$2
   (
     cd -- "$publish"
-    exec env -u Mahjong__BehindHttpsProxy -u Mahjong__PublicOrigin -u DOTNET_ENVIRONMENT \
-      -u Portal__StockfishPath \
+    # Pin app data and HTTP mode at higher priority than inherited deployment settings.
+    exec env -u Mahjong__PublicOrigin -u DOTNET_ENVIRONMENT -u Portal__StockfishPath \
       ASPNETCORE_ENVIRONMENT="${ASPNETCORE_ENVIRONMENT:-Production}" \
-      Mahjong__DataDirectory="$directory" \
       Portal__Enabled="$portal" \
       BASE_URL="$mount" \
       dotnet ./Mahjong.Server.dll --urls http://127.0.0.1:0 \
+      --GamePortal:DataDirectory "$directory" --GamePortal:BehindHttpsProxy false \
       --Logging:LogLevel:Microsoft.Hosting.Lifetime=Information
   ) > "$log" 2>&1 &
   server_pid=$!

@@ -9,7 +9,8 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       BASE_URL: /portal
       Portal__Enabled: "true"
-      Mahjong__BehindHttpsProxy: "true"
+      GamePortal__DataDirectory: /data
+      GamePortal__BehindHttpsProxy: "true"
     ports:
       - "127.0.0.1:${GAME_PORTAL_HOST_PORT:-8912}:8080"
     volumes:

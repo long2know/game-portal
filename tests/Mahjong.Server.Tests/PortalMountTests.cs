@@ -78,7 +78,10 @@ public sealed class PortalMountTests
     public async Task BoardWritesHonorTheExistingRawHostAndOriginPolicyInPathPreservingProxyMode()
     {
         await using var server = BoardTableTests.PortalServer().InProduction()
-            .WithSetting("Mahjong__BehindHttpsProxy", "true").WithSetting("Mahjong__PublicOrigin", Edge);
+            .WithSetting("Mahjong__BehindHttpsProxy", "false").WithSetting("GamePortal__BehindHttpsProxy", "true")
+            .WithSetting("Mahjong__PublicOrigin", Edge);
+        var portalData = Path.Combine(server.DataDirectory, "portal");
+        server.WithSetting("GamePortal__DataDirectory", portalData);
         await server.StartAsync();
         using var http = Http(server);
         using var enter = new HttpRequestMessage(HttpMethod.Post, Mount + "/api/guest") { Content = JsonContent.Create(new { }) };
@@ -95,6 +98,10 @@ public sealed class PortalMountTests
         Assert.Contains("httponly", attributes);
         Assert.Contains("samesite=lax", attributes);
         Assert.DoesNotContain(attributes, a => a.StartsWith("domain=", StringComparison.Ordinal));
+        Assert.True(File.Exists(Path.Combine(portalData, "mahjong.db")), "The portal database must use GamePortal__DataDirectory.");
+        Assert.NotEmpty(Directory.GetFiles(Path.Combine(portalData, "keys"), "key-*.xml"));
+        Assert.False(File.Exists(Path.Combine(server.DataDirectory, "mahjong.db")));
+        Assert.False(Directory.Exists(Path.Combine(server.DataDirectory, "keys")));
 
         const string create = Mount + "/api/board/tables";
         var chess = new { game = "chess", variant = "standard", players = 2, bots = false };

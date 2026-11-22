@@ -59,6 +59,7 @@ LABEL org.opencontainers.image.title="Jade Court" \
       org.opencontainers.image.source="https://github.com/long2know/game-portal" \
       org.opencontainers.image.version="$BUILD_VERSION" \
       org.opencontainers.image.revision="$SOURCE_COMMIT"
+# Keep /data on the legacy alias so existing Mahjong__DataDirectory overrides still work.
 ENV ASPNETCORE_HTTP_PORTS=8080 \
     BASE_URL=/portal \
     Mahjong__DataDirectory=/data \

@@ -34,7 +34,7 @@ Install the exact [.NET 10 SDK](global.json) and Node.js **26.13.1**. Use a new 
 
 ```bash
 npm --prefix web ci && npm --prefix web run build
-BASE_URL=/portal Portal__Enabled=true Mahjong__DataDirectory="$PWD/artifacts/jade-court-native-data" \
+BASE_URL=/portal Portal__Enabled=true GamePortal__DataDirectory="$PWD/artifacts/jade-court-native-data" \
   dotnet run --project src/Mahjong.Server --no-launch-profile -- --urls http://127.0.0.1:8912
 ```
 
