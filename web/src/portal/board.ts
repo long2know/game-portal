@@ -1,8 +1,9 @@
-import type { Cell, Move, Position } from "./api";
+import type { Cell, MotionStep, Move, Position } from "./api";
 import { sideName, token } from "./art";
 import type { BoardId } from "./catalog";
 import { catalog } from "./catalog";
 import { button, el, svg, text } from "./dom";
+import { BoardMotion } from "./motion";
 
 interface Square {
   cell: Cell;
@@ -70,6 +71,7 @@ export class BoardView {
   private readonly zoomNote = el("p", "board-keys", "Swipe or scroll to see the rest of the board.");
   private readonly cells = new Map<string, Square>();
   private readonly passButtons = new Map<string, HTMLButtonElement>();
+  private readonly motion: BoardMotion;
   private position: Position | null = null;
   private focused: string | null = null;
   private selected: string | null = null;
@@ -80,6 +82,7 @@ export class BoardView {
   private mine = false;
 
   constructor(private readonly game: BoardId, private readonly send: (move: Move) => void) {
+    this.motion = new BoardMotion(game, this.grid);
     this.root.dataset.game = game;
     this.root.setAttribute("aria-label", `${catalog[game].name} playing area`);
     this.grid.setAttribute("role", "group");
@@ -106,7 +109,10 @@ export class BoardView {
     this.mine = mine;
     this.enabled = enabled;
     this.moves = mine ? position.moves : [];
-    if (rebuild) this.build(position);
+    if (rebuild) {
+      this.stopMotion();
+      this.build(position);
+    }
     if (reset || !mine) this.clearSelection();
 
     for (const cell of position.cells) {
@@ -129,6 +135,12 @@ export class BoardView {
     this.showTargets();
     this.showActions();
   }
+
+  replay(before: Position, steps: MotionStep[]): void {
+    if (this.position) void this.motion.replay(before, this.position, steps, id => this.cells.get(id)?.shape);
+  }
+
+  stopMotion(): void { this.motion.stop(); }
 
   private build(position: Position): void {
     this.cells.clear();
@@ -167,6 +179,7 @@ export class BoardView {
   }
 
   private toggleZoom(): void {
+    this.stopMotion();
     const enlarged = this.frame.toggleAttribute("data-enlarged");
     this.zoom.textContent = enlarged ? "Fit board" : "Enlarge board";
     this.zoom.setAttribute("aria-pressed", String(enlarged));

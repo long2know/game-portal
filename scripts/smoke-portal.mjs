@@ -154,11 +154,25 @@ const readTable = async (table, cookie) => (await json(tablePath(table), { cooki
 const play = async (table, cookie) => {
   const moveId = table.position.moves[0]?.id;
   assert(typeof moveId === 'string' && moveId.length > 0, `${table.game} offered no playable move`);
-  const { value } = await json(`${tablePath(table)}/moves`, { cookie, body: { revision: table.revision, moveId } });
-  assert.equal(value.id, table.id, 'Move response changed tables');
-  assert.equal(value.revision, table.revision + 1, 'Move did not commit one revision');
-  assert.notDeepEqual(value.position.cells, table.position.cells, 'Move did not change the board');
-  return value;
+  const { value: { turnMotion, ...committed } } = await json(`${tablePath(table)}/moves`, {
+    cookie, body: { revision: table.revision, moveId },
+  });
+  assert.equal(committed.id, table.id, 'Move response changed tables');
+  assert.equal(committed.revision, table.revision + 1, 'Move did not commit one revision');
+  assert.notDeepEqual(committed.position.cells, table.position.cells, 'Move did not change the board');
+  assert.equal(turnMotion?.fromRevision, table.revision, 'Motion must start at the prior revision');
+  assert.equal(turnMotion.steps[0]?.move.id, moveId, 'Motion must start with the accepted move');
+  assert.equal(turnMotion.steps.at(-1)?.move.id, committed.position.lastMove.id, 'Motion must finish with the last move');
+  const cells = new Map(table.position.cells.map(cell => [cell.id, cell]));
+  for (const { changes } of turnMotion.steps) {
+    for (const cell of changes) {
+      assert(cells.has(cell.id), 'Motion changed an unknown cell');
+      cells.set(cell.id, cell);
+    }
+  }
+  assert.deepEqual(committed.position.cells.map(cell => cells.get(cell.id)), committed.position.cells,
+    'Motion must replay to the committed board');
+  return committed;
 };
 
 const games = await checkApplication();

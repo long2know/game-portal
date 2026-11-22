@@ -29,6 +29,7 @@ public sealed class BoardTableTests
         Assert.Equal("waiting", waiting.Text("status"));
         Assert.Equal(0, Revision(waiting));
         Assert.Equal(JsonValueKind.Null, waiting.GetProperty("position").ValueKind);
+        AssertNoMotion(waiting);
         Assert.Matches("^[a-f0-9]{32}$", invite);
         Assert.NotEqual(id, invite);
         Assert.Equal("Host", waiting.GetProperty("seats")[0].Text("name"));
@@ -49,6 +50,7 @@ public sealed class BoardTableTests
         Assert.Equal(1, joined.GetProperty("seat").GetInt32());
         Assert.Equal("Friend", joined.GetProperty("seats")[1].Text("name"));
         Assert.Null(joined.Text("invite"));
+        AssertNoMotion(joined);
         Assert.Equal(joined.GetRawText(), (await Ok(await peer.Request(HttpMethod.Post, Api + "/join", request))).GetRawText());
         await Error(await stranger.Request(HttpMethod.Post, Api + "/join", request), HttpStatusCode.NotFound, "room_not_found");
         Assert.Equal(id, await Resume(peer, "reversi"));
@@ -66,8 +68,11 @@ public sealed class BoardTableTests
         var success = Assert.Single(attempts, response => response.StatusCode == HttpStatusCode.OK);
         var committed = await Ok(success);
         await Error(Assert.Single(attempts, response => response != success), HttpStatusCode.Conflict, "stale_room");
-        Assert.Equal(2, Revision(committed));
-        Assert.Equal(moves[Array.IndexOf(attempts, success)], Position(committed).At("lastMove", "id").GetString());
+        var winningMove = moves[Array.IndexOf(attempts, success)];
+        Assert.Equal(winningMove, Position(committed).At("lastMove", "id").GetString());
+        var step = Assert.Single(AssertTurnMotion(joined, committed));
+        Assert.True(JsonElement.DeepEquals(LegalMove(joined, winningMove), step.GetProperty("move")));
+        AssertNoMotion(await Ok(await peer.Request(HttpMethod.Post, Api + "/join", request)));
         Assert.Equal(new[] { "bot", "name", "occupied", "seat" },
             committed.GetProperty("seats")[0].EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
         Assert.False(committed.TryGetProperty("checkpoint", out _));
@@ -82,6 +87,7 @@ public sealed class BoardTableTests
         server.SetClockOffset(90_000);
         await server.StartAsync();
         var recovered = await Ok(await host.Request(HttpMethod.Get, table));
+        AssertNoMotion(recovered);
         Assert.Equal(Revision(committed), Revision(recovered));
         Assert.Equal(Position(committed).GetRawText(), Position(recovered).GetRawText());
         Assert.Equal("Renamed Host", recovered.GetProperty("seats")[0].Text("name"));
@@ -90,6 +96,65 @@ public sealed class BoardTableTests
             HttpStatusCode.NotFound, "room_not_found");
         await Error(await host.Request(HttpMethod.Post, table + "/moves", new { revision = 1, moveId = moves[0] }),
             HttpStatusCode.Conflict, "stale_room");
+    }
+
+    [Fact]
+    public async Task ReversiMoveReturnsBothFlipsInOrderWithoutReplayingThemOnRead()
+    {
+        await using var server = PortalServer();
+        await server.StartAsync();
+        var guest = await Guest(server, "Black");
+        var before = await Create(guest, Definition(await Catalog(guest), "reversi"), 2, true);
+        AssertNoMotion(before);
+
+        var path = Api + "/tables/" + before.Text("id");
+        const string moveId = "r2c3";
+        var committed = await Ok(await guest.Request(HttpMethod.Post, path + "/moves",
+            new { revision = Revision(before), moveId }));
+        var steps = AssertTurnMotion(before, committed);
+        Assert.Collection(steps,
+            human =>
+            {
+                Assert.True(JsonElement.DeepEquals(LegalMove(before, moveId), human.GetProperty("move")));
+                AssertDiscs(human, ("r2c3", 0), ("r3c3", 0));
+            },
+            bot =>
+            {
+                Assert.Equal("r2c2", bot.At("move", "id").GetString());
+                Assert.True(JsonElement.DeepEquals(Position(committed).GetProperty("lastMove"), bot.GetProperty("move")));
+                AssertDiscs(bot, ("r2c2", 1), ("r3c3", 1));
+            });
+
+        Assert.Equal(before.Text("id"), await Resume(guest, "reversi"));
+        var read = await Ok(await guest.Request(HttpMethod.Get, path));
+        AssertNoMotion(read);
+        Assert.Equal(Revision(committed), Revision(read));
+        Assert.True(JsonElement.DeepEquals(Position(committed), Position(read)));
+    }
+
+    [Fact]
+    public async Task GoPassIsAnAcceptedPlyWithNoChangedCells()
+    {
+        await using var server = PortalServer();
+        await server.StartAsync();
+        var guest = await Guest(server, "Black");
+        var before = await Create(guest, Definition(await Catalog(guest), "go"), 2, true);
+        var path = Api + "/tables/" + before.Text("id");
+        var committed = await Ok(await guest.Request(HttpMethod.Post, path + "/moves",
+            new { revision = Revision(before), moveId = "pass" }));
+
+        Assert.Collection(AssertTurnMotion(before, committed),
+            pass =>
+            {
+                Assert.True(JsonElement.DeepEquals(LegalMove(before, "pass"), pass.GetProperty("move")));
+                Assert.Empty(pass.GetProperty("changes").EnumerateArray());
+            },
+            bot =>
+            {
+                var placed = Assert.Single(bot.GetProperty("changes").EnumerateArray());
+                Assert.Equal(bot.At("move", "to").GetString(), placed.Text("id"));
+                Assert.Equal(1, placed.GetProperty("owner").GetInt32());
+            });
     }
 
     [Fact]
@@ -121,10 +186,12 @@ public sealed class BoardTableTests
         var path = Api + "/tables/" + solo.Text("id");
         var played = await Ok(await guest.Request(HttpMethod.Post, path + "/moves", new { revision = 0, moveId = "e2e4" }));
         var position = Position(played);
-        Assert.Equal(1, Revision(played));
         Assert.Equal(0, position.GetProperty("turn").GetInt32());
         var botMove = position.GetProperty("lastMove");
         Assert.NotEqual("e2e4", botMove.Text("id"));
+        Assert.Collection(AssertTurnMotion(solo, played),
+            human => Assert.True(JsonElement.DeepEquals(LegalMove(solo, "e2e4"), human.GetProperty("move"))),
+            bot => Assert.True(JsonElement.DeepEquals(botMove, bot.GetProperty("move"))));
         var pieces = position.GetProperty("cells").EnumerateArray().ToArray();
         Assert.Equal(0, Assert.Single(pieces, cell => cell.Text("id") == "e4").GetProperty("owner").GetInt32());
         Assert.Equal(1, Assert.Single(pieces, cell => cell.Text("id") == botMove.Text("to")).GetProperty("owner").GetInt32());
@@ -179,11 +246,50 @@ public sealed class BoardTableTests
             game = definition.Text("id"), variant = definition.GetProperty("variants")[0].Text("id"), players, bots
         }));
 
-    private static async Task<string?> Resume(User guest, string game) =>
-        (await Ok(await guest.Request(HttpMethod.Get, Api + "/resume?game=" + game))).Text("tableId");
+    private static async Task<string?> Resume(User guest, string game)
+    {
+        var response = await Ok(await guest.Request(HttpMethod.Get, Api + "/resume?game=" + game));
+        AssertNoMotion(response);
+        return response.Text("tableId");
+    }
 
     private static JsonElement Position(JsonElement table) => table.GetProperty("position");
     private static long Revision(JsonElement table) => table.GetProperty("revision").GetInt64();
+    private static JsonElement.ArrayEnumerator Cells(JsonElement table) => Position(table).GetProperty("cells").EnumerateArray();
+    private static JsonElement LegalMove(JsonElement table, string id) =>
+        Assert.Single(Position(table).GetProperty("moves").EnumerateArray(), move => move.Text("id") == id);
+
+    private static void AssertNoMotion(JsonElement response) =>
+        Assert.DoesNotContain("turnMotion", response.EnumerateObject().Select(property => property.Name));
+
+    private static JsonElement[] AssertTurnMotion(JsonElement before, JsonElement committed)
+    {
+        Assert.True(committed.TryGetProperty("turnMotion", out var motion), "The committed move is missing turnMotion.");
+        Assert.Equal(Revision(before), motion.GetProperty("fromRevision").GetInt64());
+        Assert.Equal(Revision(before) + 1, Revision(committed));
+        var steps = motion.GetProperty("steps").EnumerateArray().ToArray();
+        var replay = Cells(before).ToDictionary(cell => cell.Text("id"), StringComparer.Ordinal);
+        foreach (var step in steps)
+        foreach (var cell in step.GetProperty("changes").EnumerateArray())
+            replay[cell.Text("id")] = cell;
+        var final = Cells(committed).ToArray();
+        Assert.Equal(final.Length, replay.Count);
+        Assert.All(final, cell =>
+        {
+            var id = cell.Text("id");
+            Assert.True(JsonElement.DeepEquals(cell, replay[id]), $"Replayed cell {id} differs from the committed board.");
+        });
+        return steps;
+    }
+
+    private static void AssertDiscs(JsonElement step, params (string Id, int Owner)[] expected)
+    {
+        var changes = step.GetProperty("changes").EnumerateArray().ToArray();
+        Assert.Equal(expected.OrderBy(cell => cell.Id, StringComparer.Ordinal),
+            changes.Select(cell => (Id: cell.Text("id"), Owner: cell.GetProperty("owner").GetInt32()))
+                .OrderBy(cell => cell.Id, StringComparer.Ordinal));
+        Assert.All(changes, cell => Assert.Equal("disc", cell.Text("piece")));
+    }
 
     private static async Task<JsonElement> Ok(Task<HttpResponseMessage> response) => await Ok(await response);
 
@@ -203,7 +309,9 @@ public sealed class BoardTableTests
         using (response)
         {
             Assert.Equal(status, response.StatusCode);
-            Assert.Equal(code, (await response.Content.ReadFromJsonAsync<JsonElement>()).Error());
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(code, body.Error());
+            AssertNoMotion(body);
         }
     }
 

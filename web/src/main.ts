@@ -308,6 +308,8 @@ class LanternTable {
 
   private modalClosed(): void {
     this.overlayActions = [];
+    this.audio.changed = undefined;
+    this.audio.preview();
   }
 
   private openCreate(): void {
@@ -345,8 +347,15 @@ class LanternTable {
     volume.max = "100";
     volume.value = String(Math.round(preferences.volume * 100));
     const readout = el("span", "", `Volume · ${volume.value}%`);
-    volume.addEventListener("input", () => text(readout, `Volume · ${volume.value}%`));
+    const preview = () => this.audio.preview([music.input.checked, Number(volume.value) / 100]);
+    music.input.addEventListener("change", preview);
+    volume.addEventListener("input", () => {
+      text(readout, `Volume · ${volume.value}%`);
+      preview();
+    });
     const audioNote = el("p", "note", this.audio.note);
+    audioNote.setAttribute("role", "status");
+    this.audio.changed = () => text(audioNote, this.audio.note);
     const save = submit("Save settings");
     const actions = el("div", "row-actions", save);
     const state = this.session.snapshot;
@@ -371,7 +380,7 @@ class LanternTable {
       const prefs: Preferences = { sound: sound.input.checked, music: music.input.checked,
         volume: Number(volume.value) / 100, reducedMotion: motion.input.checked };
       if (prefs.sound || prefs.music) void this.audio.unlock(true);
-      void this.saveSettings(displayName, prefs, form, save, audioNote);
+      void this.saveSettings(displayName, prefs, form, save);
     });
     leave.disabled = !this.session.available;
     this.modal.show("settings", "Settings", form, this.settingsButton);
@@ -379,16 +388,16 @@ class LanternTable {
       () => actions.before(el("p", "note", "Full screen unavailable.")));
   }
 
-  private async saveSettings(name: string, preferences: Preferences, form: HTMLElement, save: HTMLButtonElement, note: HTMLElement): Promise<void> {
+  private async saveSettings(name: string, preferences: Preferences, form: HTMLElement, save: HTMLButtonElement): Promise<void> {
     this.profileBusy = true;
     save.disabled = true;
     this.modal.message("");
     try {
       this.setGuest(await api.profile({ displayName: name, preferences }));
-      if (form.isConnected) {
-        this.modal.message("Settings saved.");
-        text(note, this.audio.note);
+      if (fromPortal) {
+        try { localStorage.setItem(`${appPath}court-music`, preferences.music ? "on" : "off"); } catch { /* Optional. */ }
       }
+      if (form.isConnected) this.modal.message("Settings saved.");
     } catch (error) {
       if (form.isConnected) this.modal.message(error instanceof HttpError ? errorMessage(error.code) : "Couldn’t save settings. Please try again.");
     } finally {
@@ -434,6 +443,7 @@ class LanternTable {
     this.cancelResultReveal();
     const state = this.session.snapshot;
     if (!state?.game?.settlement) return;
+    if (this.modal.kind === "settings") this.modalClosed();
     const complete = state.room.status === "complete";
     const controls: HTMLButtonElement[] = [];
     if (!complete) controls.push(button("Next hand", "btn primary", () => {

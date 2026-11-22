@@ -1,9 +1,12 @@
 import "./styles.css";
+import type { Guest } from "../protocol";
 import { ApiError, portalApi } from "./api";
-import type { GameDefinition, Guest, Move, Table } from "./api";
+import type { GameDefinition, Move, Table, TurnMotion } from "./api";
 import { catalog, isBoardId } from "./catalog";
 import type { BoardId } from "./catalog";
 import { el, link, text } from "./dom";
+import { reduceMotion, turnSteps } from "./motion";
+import { MusicControl } from "./music";
 import { lobby, SetupView, TableView } from "./screens";
 
 const app = document.querySelector<HTMLElement>("#app")!;
@@ -11,14 +14,49 @@ const mount = app.dataset.base ?? "/";
 const route = location.pathname.startsWith(mount) ? location.pathname.slice(mount.length).replace(/\/$/, "") : "";
 const gamePath = (game: BoardId) => `${mount}${game}/`;
 const api = portalApi(mount);
+let guest: Guest | undefined;
+let opening: Promise<Guest> | undefined;
+let profileWrites: Promise<unknown> = Promise.resolve();
 const readInvite = () => new URLSearchParams(location.hash.slice(1)).get("invite");
 const invalidName = /[\u0000-\u001f\u007f-\u009f]/u;
 const pollDelay = 2500;
 
+function rememberGuest(next: Guest): Guest {
+  const reduced = String(next.preferences.reducedMotion);
+  if (document.documentElement.dataset.reducedMotion !== reduced) {
+    document.documentElement.dataset.reducedMotion = reduced;
+    document.dispatchEvent(new Event("court-motion-preference"));
+  }
+  guest = next;
+  music.configure(next.preferences);
+  return next;
+}
+
+function openGuest(refresh = false): Promise<Guest> {
+  return guest && !refresh ? Promise.resolve(guest) : opening ??= api.guest().then(rememberGuest)
+    .finally(() => { opening = undefined; });
+}
+
+function changeProfile(change: (current: Guest) => Parameters<typeof api.profile>[0], refresh = false): Promise<Guest> {
+  const readLatest = refresh && !!guest;
+  const write = profileWrites.then(async () => {
+    try { return rememberGuest(await api.profile(change(await openGuest(readLatest)))); }
+    catch (error) {
+      if (code(error) === "not_authenticated") guest = undefined;
+      throw error;
+    }
+  });
+  profileWrites = write.catch(() => {});
+  return write;
+}
+
+const music = new MusicControl(mount, enabled => changeProfile(({ preferences }) => ({
+  preferences: { ...preferences, music: enabled },
+}), true));
 const brand = link("", mount, "brand");
 brand.setAttribute("aria-label", "Jade Court · All games");
 brand.append(el("span", "brand-tile"), el("span", "brand-name", "Jade Court"));
-const nav = el("nav", "site-nav", isBoardId(route)
+const nav = el("nav", "site-nav", music.button, isBoardId(route)
   ? link("‹ All games", mount, "button")
   : link("Mahjong table ↗", `${mount}mahjong/`, "button"));
 nav.setAttribute("aria-label", "Court navigation");
@@ -32,7 +70,7 @@ skip.addEventListener("click", event => {
 });
 const footer = el("footer", "court-footer",
   el("span", "footer-mark", "◆"), el("span", "", "Jade Court"), el("span", "", "A place for a good game."));
-app.append(skip, el("div", "shell", el("header", "header", brand, nav), main, footer));
+app.append(skip, el("div", "shell", el("header", "header", brand, nav, music.note), main, footer));
 
 function code(error: unknown): string {
   return error instanceof ApiError ? error.code : "";
@@ -50,6 +88,8 @@ class GameRoom {
   private online = true;
   private timer = 0;
   private request: AbortController | null = null;
+  private motionEpoch = 0;
+  private needsBaseline = false;
 
   constructor(private game: BoardId) {
     this.setup = this.makeSetup();
@@ -59,16 +99,22 @@ class GameRoom {
     main.append(this.notice, this.setup.root, this.match.root);
     this.show();
     void this.open();
+    const stopMotion = () => this.stopMotion();
+    matchMedia(reduceMotion).addEventListener("change", stopMotion);
+    document.addEventListener("court-motion-preference", stopMotion);
+    window.addEventListener("resize", stopMotion, { passive: true });
+    window.visualViewport?.addEventListener("resize", stopMotion, { passive: true });
+    for (const event of ["pointerdown", "keydown", "click"]) main.addEventListener(event, stopMotion, true);
     document.addEventListener("visibilitychange", () => {
-      if (document.hidden) this.pause();
+      if (document.hidden) this.suspend();
       else this.reconnect();
     });
-    window.addEventListener("pagehide", () => this.pause());
+    window.addEventListener("pagehide", () => this.suspend());
     window.addEventListener("pageshow", event => { if (event.persisted) this.reconnect(); });
     window.addEventListener("online", () => this.reconnect());
     window.addEventListener("offline", () => {
+      this.suspend();
       if (this.current?.status === "finished") return;
-      this.pause();
       this.online = false;
       this.show();
     });
@@ -109,7 +155,7 @@ class GameRoom {
     this.setup.state(false, true, false, "Opening your guest session…");
     let failed = false;
     try {
-      const [{ games }, guest] = await Promise.all([api.games(), api.guest()]);
+      const [{ games }, guest] = await Promise.all([api.games(), openGuest()]);
       this.definitions = games;
       this.guest = guest;
       this.setup.setDefinition(this.definition);
@@ -122,6 +168,7 @@ class GameRoom {
       if (code(error) === "room_not_found") {
         this.message("Your previous table is no longer available. You can start a new one below.");
       } else {
+        if (code(error) === "not_authenticated") guest = undefined;
         failed = true;
         this.message("Couldn’t open the game. Check your connection and try again.");
       }
@@ -153,7 +200,7 @@ class GameRoom {
     this.setup.state(true, true, false, this.invite ? "Taking your seat…" : "Setting the table…");
     let ready = true;
     try {
-      if (name !== this.guest.displayName) this.guest = await api.profile(name);
+      if (name !== this.guest.displayName) this.guest = await changeProfile(() => ({ displayName: name }));
       this.setup.remember(this.guest);
       const table = this.invite ? await api.join(this.invite) : await api.create(this.game, variant, players, bots);
       if (!isBoardId(table.game)) throw new ApiError("unavailable");
@@ -175,6 +222,7 @@ class GameRoom {
     } catch (error) {
       const problem = code(error);
       ready = problem !== "not_authenticated";
+      if (!ready) guest = undefined;
       this.message(!ready ? "Your guest session ended. Try again to reconnect." :
         problem === "invalid_request" ? "Check your display name and table settings, then try again." :
         problem === "busy" ? "The court is busy. Give it a moment, then try again." :
@@ -188,16 +236,25 @@ class GameRoom {
     }
   }
 
-  private adopt(next: Table): void {
-    if (this.current?.id === next.id && next.revision < this.current.revision) return;
-    const changed = this.current?.id !== next.id || this.current.revision !== next.revision;
+  private adopt(next: Table, epoch?: number, motion?: TurnMotion): void {
+    const prior = this.current;
+    if (prior?.id === next.id && next.revision < prior.revision) return;
+    const changed = prior?.id !== next.id || prior.revision !== next.revision;
+    const steps = prior && epoch === this.motionEpoch && !document.hidden &&
+      document.documentElement.dataset.reducedMotion !== "true" && !matchMedia(reduceMotion).matches
+      ? turnSteps(prior, next, motion) : [];
+    if (changed) {
+      this.match.board.stopMotion();
+      if (prior?.id !== next.id) this.needsBaseline = document.hidden;
+    }
     this.current = next;
     this.online = true;
     this.show(changed);
+    if (prior?.position && steps.length) this.match.board.replay(prior.position, steps);
   }
 
   private anotherGame(): void {
-    this.pause();
+    this.suspend();
     this.current = null;
     this.message("");
     this.show();
@@ -210,6 +267,17 @@ class GameRoom {
     this.request = null;
   }
 
+  private stopMotion(): void {
+    this.motionEpoch++;
+    this.match.board.stopMotion();
+  }
+
+  private suspend(): void {
+    this.needsBaseline = true;
+    this.stopMotion();
+    this.pause();
+  }
+
   private schedule(): void {
     window.clearTimeout(this.timer);
     if (this.current && this.current.status !== "finished" && !document.hidden && !this.busy && !this.request) {
@@ -218,6 +286,8 @@ class GameRoom {
   }
 
   private reconnect(): void {
+    this.needsBaseline = true;
+    this.stopMotion();
     if (this.current?.status !== "finished") void this.sync();
   }
 
@@ -226,22 +296,26 @@ class GameRoom {
     if (!id || document.hidden || this.busy || this.request) return false;
     this.pause();
     const request = new AbortController();
+    const epoch = this.motionEpoch;
     this.request = request;
     try {
       const fresh = await api.read(id, request.signal);
       if (request.signal.aborted) return false;
-      this.adopt(fresh);
+      this.adopt(fresh, this.online && !this.needsBaseline ? epoch : undefined);
+      this.needsBaseline = false;
       return true;
     } catch (error) {
       if (request.signal.aborted) return false;
       const problem = code(error);
       if (problem === "room_not_found" || problem === "not_authenticated") {
+        if (problem === "not_authenticated") guest = undefined;
         this.anotherGame();
         this.message(problem === "room_not_found" ? "This table is no longer available. Start another game below." :
           "Your guest session ended. Try again to reconnect.");
         this.setup.state(problem === "room_not_found", false, problem === "not_authenticated");
         return false;
       }
+      this.stopMotion();
       this.online = false;
       this.show();
       return false;
@@ -257,13 +331,16 @@ class GameRoom {
     const table = this.current;
     if (!table || table.position?.turn !== table.seat || !this.online || this.busy) return;
     this.pause();
+    this.stopMotion();
+    const epoch = this.motionEpoch;
     this.busy = true;
     this.message("");
     this.show();
     let refresh = false;
     let stale = false;
     try {
-      this.adopt(await api.move(table.id, table.revision, move.id));
+      const { turnMotion, ...next } = await api.move(table.id, table.revision, move.id);
+      this.adopt(next, epoch, turnMotion);
     } catch (error) {
       stale = code(error) === "stale_room" || code(error) === "not_your_turn" || code(error) === "illegal_move";
       refresh = true;
@@ -284,4 +361,8 @@ class GameRoom {
 }
 
 if (isBoardId(route)) new GameRoom(route);
-else main.append(lobby(mount));
+else {
+  main.append(lobby(mount));
+  if (music.remembered) void openGuest().catch(() => music.preferencesUnavailable());
+}
+music.restorePending();

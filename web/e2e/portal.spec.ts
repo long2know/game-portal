@@ -1,7 +1,8 @@
 import { gzipSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
-import type { Locator, Page, Response } from "@playwright/test";
-import type { Table } from "../src/portal/api";
+import type { APIRequestContext, Locator, Page, Response } from "@playwright/test";
+import type { Guest } from "../src/protocol";
+import type { MoveReply, Table } from "../src/portal/api";
 
 const boardGames = [
   ["chess", "Chess"], ["go", "Go"], ["reversi", "Reversi"],
@@ -36,6 +37,126 @@ async function fitsPhone(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
 }
 
+type Point = [number, number];
+type MotionTrace = {
+  effect: string; side: string; piece: string; start: Point; path: Point[]; delay: number;
+  flipTilt?: number[];
+  sample?: { center: Point; height: number; opacity: number }; finished?: boolean; cancelled?: boolean;
+};
+type MotionPage = Window & { motion: MotionTrace[]; holdMotion: boolean };
+
+async function observeMotion(page: Page) {
+  await page.addInitScript(() => {
+    const probe = window as unknown as MotionPage;
+    probe.motion = [];
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function (frames, options) {
+      const layer = this.closest<HTMLElement>(".motion-layer");
+      if (!layer) return animate.call(this, frames, options);
+      const origin = layer.getBoundingClientRect();
+      const center = ({ x, y, width, height }: DOMRect): Point =>
+        [x + width / 2 - origin.x, y + height / 2 - origin.y];
+      const start = center(this.getBoundingClientRect());
+      const art = this.querySelector<HTMLElement>(".token")!;
+      const animation = animate.call(this, frames, options);
+      const effect = (animation.effect as KeyframeEffect);
+      const transforms = effect.getKeyframes().map(frame => new DOMMatrix(frame.transform as string | undefined));
+      const entry: MotionTrace = {
+        effect: [...this.classList].find(name => name !== "motion-piece")!.slice("motion-".length),
+        side: art.dataset.side!, piece: art.dataset.piece!, start,
+        path: transforms.map(transform => [start[0] + transform.m41, start[1] + transform.m42]),
+        delay: effect.getTiming().delay!,
+      };
+      if (entry.effect === "flip") entry.flipTilt = transforms.map(transform => transform.m22);
+      probe.motion.push(entry);
+      const sample = () => {
+        if (!this.isConnected || animation.playState === "idle" || animation.playState === "finished") return;
+        const progress = effect.getComputedTiming().progress ?? 0;
+        if (progress < .16 || progress > .85) {
+          requestAnimationFrame(sample);
+          return;
+        }
+        const rect = this.getBoundingClientRect();
+        entry.sample = { center: center(rect), height: rect.height, opacity: Number(getComputedStyle(this).opacity) };
+        if (probe.holdMotion) animation.pause();
+      };
+      requestAnimationFrame(sample);
+      void animation.finished.then(() => { entry.finished = true; }, () => { entry.cancelled = true; });
+      return animation;
+    };
+  });
+  return () => page.evaluate(() => (window as unknown as MotionPage).motion);
+}
+
+async function boardCenters(board: Locator) {
+  return board.evaluate(node => {
+    const origin = node.getBoundingClientRect();
+    return Object.fromEntries([...node.querySelectorAll<HTMLElement>("[data-cell]")].map(cell => {
+      const { x, y, width, height } = cell.getBoundingClientRect();
+      return [cell.dataset.cell!, [x - origin.x + width / 2, y - origin.y + height / 2] as Point];
+    }));
+  });
+}
+
+function expectPoint(actual: Point, expected: Point) {
+  expect(Math.abs(actual[0] - expected[0])).toBeLessThan(.7);
+  expect(Math.abs(actual[1] - expected[1])).toBeLessThan(.7);
+}
+
+type AudioProbe = Window & { audioSignal: () => { running: boolean; rms: number; peak: number; taps: number } };
+
+async function observeAudio(page: Page) {
+  await page.addInitScript(() => {
+    const taps: AnalyserNode[] = [];
+    const connect = AudioNode.prototype.connect;
+    AudioNode.prototype.connect = function (this: AudioNode, destination: AudioNode | AudioParam, ...args: number[]) {
+      if (destination instanceof AudioDestinationNode) {
+        const tap = this.context.createAnalyser();
+        taps.push(tap);
+        Reflect.apply(connect, this, [tap, ...args]);
+        Reflect.apply(connect, tap, [destination]);
+        return destination;
+      }
+      return Reflect.apply(connect, this, [destination, ...args]);
+    } as typeof AudioNode.prototype.connect;
+    (window as unknown as AudioProbe).audioSignal = () => {
+      let rms = 0, peak = 0;
+      for (const tap of taps) {
+        const samples = new Float32Array(tap.fftSize);
+        tap.getFloatTimeDomainData(samples);
+        rms = Math.max(rms, Math.sqrt(samples.reduce((sum, i) => sum + i * i, 0) / samples.length));
+        peak = Math.max(peak, ...samples.map(Math.abs));
+      }
+      return { running: taps.some(tap => tap.context.state === "running"), rms, peak, taps: taps.length };
+    };
+  });
+  return () => page.evaluate(() => (window as unknown as AudioProbe).audioSignal());
+}
+
+async function audible(signal: Awaited<ReturnType<typeof observeAudio>>) {
+  await expect.poll(async () => {
+    const { running, rms, peak } = await signal();
+    return running && rms > .028 && peak < .65;
+  }).toBe(true);
+}
+
+async function simulateVisibility(page: Page, hidden: boolean) {
+  await page.evaluate(hidden => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, hidden);
+}
+
+async function seedPreferences(request: APIRequestContext, base: string, volume = .7): Promise<Guest> {
+  const headers = { Origin: new URL(base).origin };
+  const guest = await request.post(new URL("api/guest", base).href, { headers, data: { displayName: "Bamboo" } });
+  expect(guest.ok()).toBe(true);
+  const profile = await request.patch(new URL("api/profile", base).href,
+    { headers, data: { preferences: { sound: false, music: false, volume, reducedMotion: true } } });
+  expect(profile.ok()).toBe(true);
+  return profile.json();
+}
+
 test.describe("mounted Jade Court portal", () => {
   test.beforeEach(({ baseURL }) => {
     test.skip(!baseURL || !/^\/portal\/?$/.test(new URL(baseURL).pathname), "Requires the published runtime with the portal mounted at /portal/.");
@@ -43,18 +164,32 @@ test.describe("mounted Jade Court portal", () => {
 
   test("lobby presents six real destinations and keeps assets and links at the mount", async ({ page, baseURL, request }, info) => {
     const url = urls(baseURL!);
+    const assets = new Set<string>();
+    page.on("request", event => {
+      if (new URL(event.url()).pathname.startsWith("/portal/assets/")) assets.add(event.url());
+    });
     await page.setViewportSize({ width: 1440, height: 900 });
     const heroStudy = page.waitForResponse(response => /\/portal\/assets\/court-study-[\w-]+\.svg$/.test(new URL(response.url()).pathname));
-    await page.goto(url());
+    const html = (await page.goto(url()))!;
     await expect(page).toHaveTitle("Jade Court · Board Games");
     await expect(page.getByRole("heading", { name: "Find your next move." })).toBeVisible();
     await expect(page.locator("#app")).toHaveAttribute("data-base", "/portal/");
     expect((await heroStudy).ok()).toBe(true);
     await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", /^\/portal\/assets\/jade-court-[\w-]+\.svg$/);
     await expect(page.getByRole("link", { name: "Take a seat", exact: true })).toHaveAttribute("href", "/portal/mahjong/");
+    expect([...assets].map(asset => new URL(asset).pathname)).toEqual(expect.arrayContaining([
+      expect.stringMatching(/\/portal-[\w-]+\.js$/), expect.stringMatching(/\/portal-[\w-]+\.css$/),
+      expect.stringMatching(/\/court-study-[\w-]+\.svg$/), expect.stringMatching(/\/jade-court-[\w-]+\.svg$/),
+    ]));
+    const coldGzip = gzipSync(await html.body()).length + (await Promise.all([...assets].map(async asset =>
+      gzipSync(await (await request.get(asset)).body()).length))).reduce((total, size) => total + size, 0);
+    expect(coldGzip).toBeLessThanOrEqual(24 * 1024);
     await page.screenshot({ path: info.outputPath("lobby-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 320, height: 730 });
     await fitsPhone(page);
+    const music = page.getByRole("button", { name: "Music off", exact: true });
+    await expect(music).toBeInViewport();
+    expect((await music.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await page.screenshot({ path: info.outputPath("lobby-phone.png"), fullPage: true });
 
     for (const [game, name] of boardGames) {
@@ -82,6 +217,7 @@ test.describe("mounted Jade Court portal", () => {
   for (const [game, name] of boardGames) {
     test(`${name}: places a real bot move, aligns keyboard navigation, and resumes`, async ({ page, baseURL }, info) => {
       const url = urls(baseURL!);
+      const motion = await observeMotion(page);
       await page.goto(url(`${game}/`));
       if (game === "go") {
         const size = page.getByRole("combobox", { name: "Variant" });
@@ -133,7 +269,13 @@ test.describe("mounted Jade Court portal", () => {
       const cellIdAt = (row: number, column: number) => position.cells.find(cell => cell.row === row && cell.column === column)?.id;
       const move = (game === "chess"
         ? position.moves.find(move => move.from === cellIdAt(6, 4) && move.to === cellIdAt(5, 4))
-        : position.moves.find(move => move.to !== null && position.moves.filter(candidate => candidate.from === move.from && candidate.to === move.to).length === 1))!;
+        : game === "reversi" ? position.moves.find(move => move.id === "r2c3")
+        : position.moves.find(move => {
+          if (!move.to || position.moves.filter(candidate => candidate.from === move.from && candidate.to === move.to).length !== 1) return false;
+          if (game !== "chinese-checkers") return true;
+          const a = position.cells.find(cell => cell.id === move.from)!, b = position.cells.find(cell => cell.id === move.to)!;
+          return Math.abs(a.row - b.row) > 1 || Math.abs(a.column - b.column) > 2;
+        }))!;
       expect(move, `${game} should offer a playable opening`).toBeDefined();
       const played = receive(page, url(`api/board/tables/${initial.id}/moves`), "POST");
       if (game === "chess") {
@@ -151,9 +293,39 @@ test.describe("mounted Jade Court portal", () => {
       const moveResponse = await played;
       expect(moveResponse.ok()).toBe(true);
       expect(moveResponse.request().postDataJSON()).toEqual({ revision: initial.revision, moveId: move.id });
-      const after = await projected(moveResponse);
+      const after: MoveReply = await moveResponse.json();
       expect(after.revision).toBeGreaterThan(initial.revision);
       expect(after.position!.cells).not.toEqual(position.cells);
+      const steps = after.turnMotion!.steps;
+      expect(after.turnMotion!.fromRevision).toBe(initial.revision);
+      expect(steps[0].move.id).toBe(move.id);
+      expect(steps.length).toBe(initial.seats.length);
+      const playedSteps = steps.filter(({ move }) => move.to !== null);
+      const effect = move.from === null ? "place" : "travel";
+      await expect.poll(async () => (await motion()).filter(entry => entry.effect === effect && entry.sample).length).toBe(playedSteps.length);
+      const visual = await motion();
+      const centers = await boardCenters(board);
+      const travel = visual.filter(entry => entry.effect === effect);
+      for (const [index, entry] of travel.entries()) {
+        const leg = playedSteps[index].move;
+        expectPoint(entry.start, centers[leg.from ?? leg.to!]);
+        expect(entry.sample!.center).not.toEqual(entry.start);
+        if (leg.from)
+          [leg.from, ...leg.via ?? [], leg.to!].forEach((id, i) => expectPoint(entry.path[2 * i], centers[id]));
+      }
+      if (game === "reversi") {
+        const flips = visual.filter(entry => entry.effect === "flip");
+        expect(flips.map(entry => entry.side)).toEqual(["ivory", "onyx", "onyx", "ivory"]);
+        for (const [index, flip] of flips.entries()) {
+          expectPoint(flip.start, centers.r3c3);
+          const [start, end] = flip.flipTilt!;
+          expect(start).toBeCloseTo(index % 2 === 0 ? 1 : 0);
+          expect(end).toBeCloseTo(index % 2 === 0 ? 0 : 1);
+        }
+        // A busy runner can skip sampling a short half-flip even when it finishes.
+        await expect.poll(async () => (await motion()).filter(entry => entry.effect === "flip" && entry.finished).length).toBe(4);
+      }
+      await expect(board.locator(".motion-layer")).toHaveCount(0);
       const last = after.position!.lastMove!;
       await expect(page.getByText(`Last move: ${last.label}`, { exact: true })).toBeVisible();
       if (last.to) await expect(cellById(board, last.to)).toHaveAttribute("data-last", "");
@@ -168,6 +340,7 @@ test.describe("mounted Jade Court portal", () => {
       expect(await (await resumed).json()).toEqual({ tableId: initial.id });
       expect(await projected(await resumedTable)).toMatchObject({ id: initial.id, seat: initial.seat, seats: after.seats });
       await expect(board).toBeVisible();
+      expect(await motion()).toEqual([]);
       await expect(page.getByText("Court Guest", { exact: true })).toBeVisible();
       if (game === "chess") {
         await page.setViewportSize({ width: 1440, height: 900 });
@@ -176,8 +349,114 @@ test.describe("mounted Jade Court portal", () => {
     });
   }
 
+  for (const [game, title, leadIn, chainId] of [
+    ["checkers", "Checkers", ["r5c2>r4c3", "r5c0>r4c1", "r6c1>r5c2", "r5c6>r4c5"], "r6c7>r4c5>r2c7"],
+    ["chinese-checkers", "Chinese Checkers", ["r2c10>r4c8"], "r0c12>r2c10>r4c12"],
+  ] as const) {
+    test(`${title}: follows a real chain in landing order`, async ({ page, context, baseURL }, info) => {
+      const url = urls(baseURL!);
+      const motion = await observeMotion(page);
+      await page.goto(url(`${game}/`));
+      if (game === "chinese-checkers") await page.getByRole("combobox", { name: "Players" }).selectOption("3");
+      const created = receive(page, url("api/board/tables"), "POST");
+      await tap(page, game === "checkers" ? "Play a bot" : "Play with bots");
+      let table = await projected(await created);
+      const endpoint = url(`api/board/tables/${table.id}/moves`);
+      for (const moveId of leadIn) {
+        expect(table.position!.moves.map(move => move.id)).toContain(moveId);
+        const reply = await context.request.post(endpoint, {
+          headers: { Origin: new URL(endpoint).origin }, data: { revision: table.revision, moveId },
+        });
+        expect(reply.ok()).toBe(true);
+        table = await reply.json();
+      }
+      await page.reload();
+      const board = boardOn(page, title);
+      await expect(page.getByText(`Last move: ${table.position!.lastMove!.label}`, { exact: true })).toBeVisible();
+      const chain = table.position!.moves.find(move => move.id === chainId)!;
+      expect(chain.via).toHaveLength(1);
+      const centers = await boardCenters(board);
+      await page.evaluate(() => { (window as unknown as MotionPage).holdMotion = true; });
+      const played = receive(page, endpoint, "POST");
+      await cellById(board, chain.from!).tap();
+      await cellById(board, chain.to!).tap();
+      const response = await played;
+      expect(response.ok()).toBe(true);
+      const reply: MoveReply = await response.json();
+      expect(reply.turnMotion!.steps[0].move).toEqual(chain);
+      await expect.poll(async () => (await motion()).some(entry => entry.effect === "travel" && entry.sample)).toBe(true);
+      const travel = (await motion()).find(entry => entry.effect === "travel")!;
+      [chain.from!, ...chain.via!, chain.to!].forEach((id, i) => expectPoint(travel.path[2 * i], centers[id]));
+      expect(travel.path[1][1]).toBeLessThan((travel.path[0][1] + travel.path[2][1]) / 2);
+      expect(travel.path[3][1]).toBeLessThan((travel.path[2][1] + travel.path[4][1]) / 2);
+      if (game === "checkers") {
+        const captured = (await motion()).filter(entry => entry.effect === "capture");
+        expect(captured).toHaveLength(2);
+        expect(captured[0].delay).not.toBe(captured[1].delay);
+        const removed = reply.turnMotion!.steps[0].changes.filter(cell => cell.owner === null && cell.id !== chain.from);
+        const points = removed.map(cell => centers[cell.id]).sort();
+        captured.map(entry => entry.start).sort().forEach((center, i) => expectPoint(center, points[i]));
+      }
+      const layer = board.locator(".motion-layer");
+      await expect(layer).toHaveAttribute("aria-hidden", "true");
+      await expect(layer).toHaveCSS("pointer-events", "none");
+      await expect(cellById(board, chain.to!)).toHaveAccessibleName(/, (jade peg|red man)$/);
+      await page.screenshot({ path: info.outputPath(`${game}-active-hop.png`), fullPage: true });
+
+      if (game === "chinese-checkers") await page.setViewportSize({ width: 660, height: 314 });
+      // Real input cancels the paused visual copy without disabling final-board controls.
+      const next = reply.position!.moves.find(move => move.from)!;
+      await cellById(board, next.from!).tap();
+      await expect(layer).toHaveCount(0);
+      expect((await motion()).some(entry => entry.effect === "travel" && entry.cancelled)).toBe(true);
+      await expect(cellById(board, next.to!)).toHaveAttribute("data-target", "");
+    });
+  }
+
+  test("movement respects saved and newly toggled system preferences", async ({ page, context, baseURL }) => {
+    const url = urls(baseURL!);
+    await seedPreferences(context.request, url());
+    const motion = await observeMotion(page);
+    await page.goto(url("reversi/"));
+    const created = receive(page, url("api/board/tables"), "POST");
+    await tap(page, "Play a bot");
+    let table = await projected(await created);
+    const endpoint = url(`api/board/tables/${table.id}/moves`);
+    const board = boardOn(page, "Reversi");
+    async function place() {
+      const pending = receive(page, endpoint, "POST");
+      await cellById(board, table.position!.moves[0].to!).tap();
+      const result = await pending;
+      expect(result.ok()).toBe(true);
+      table = await projected(result);
+      await expect(page.getByText(`Last move: ${table.position!.lastMove!.label}`, { exact: true })).toBeVisible();
+    }
+    await place();
+    expect(await motion()).toEqual([]);
+    const profile = await context.request.patch(url("api/profile"), {
+      headers: { Origin: new URL(url()).origin },
+      data: { preferences: { sound: false, music: false, volume: .7, reducedMotion: false } },
+    });
+    expect(profile.ok()).toBe(true);
+    await page.reload();
+    await expect(state(page)).toHaveText("Your turn");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await place();
+    expect(await motion()).toEqual([]);
+
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await expect.poll(() => page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(false);
+    await page.evaluate(() => { (window as unknown as MotionPage).holdMotion = true; });
+    await place();
+    await expect.poll(async () => (await motion()).some(entry => entry.sample)).toBe(true);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(board.locator(".motion-layer")).toHaveCount(0);
+    expect((await motion()).some(entry => entry.cancelled)).toBe(true);
+  });
+
   test("a stale move refreshes the real board without replaying the choice", async ({ page, context, baseURL }) => {
     const url = urls(baseURL!);
+    const motion = await observeMotion(page);
     await page.goto(url("reversi/"));
     const created = receive(page, url("api/board/tables"), "POST");
     await tap(page, "Play a bot");
@@ -205,11 +484,68 @@ test.describe("mounted Jade Court portal", () => {
     await expect(page.getByText(/The table changed\. The board is up to date/)).toBeVisible();
     await expect(page.getByText(`Last move: ${lastMove}`, { exact: true })).toBeVisible();
     expect(movesSent).toEqual([attempted.id]);
+    expect(await motion()).toEqual([]);
+  });
+
+  test("Chess settles skipped revisions, then glides an accepted capture", async ({ page, context, browser, baseURL }) => {
+    const url = urls(baseURL!);
+    const motion = await observeMotion(page);
+    await page.goto(url("chess/"));
+    const created = receive(page, url("api/board/tables"), "POST");
+    await tap(page, "Invite a friend");
+    const waiting = await projected(await created);
+    const tableUrl = url(`api/board/tables/${waiting.id}`);
+    const headers = { Origin: new URL(url()).origin };
+    const peer = await browser.newContext();
+    let unblock: () => void = () => {};
+    try {
+      expect((await peer.request.post(url("api/guest"), { headers, data: {} })).ok()).toBe(true);
+      const joined = await peer.request.post(url("api/board/join"), { headers, data: { invite: waiting.invite } });
+      expect(joined.ok()).toBe(true);
+      let table: Table = await joined.json();
+      await expect(state(page)).toHaveText("Your turn");
+      const gate = new Promise<void>(resolve => { unblock = resolve; });
+      await page.route(tableUrl, async route => {
+        await gate;
+        await route.continue();
+      });
+      for (const [guest, moveId] of [[context, "e2e4"], [peer, "d7d5"]] as const) {
+        const accepted = await guest.request.post(`${tableUrl}/moves`, {
+          headers, data: { revision: table.revision, moveId },
+        });
+        expect(accepted.ok()).toBe(true);
+        table = await accepted.json();
+      }
+      unblock();
+      await expect(page.getByText(`Last move: ${table.position!.lastMove!.label}`, { exact: true })).toBeVisible();
+      expect(await motion()).toEqual([]);
+      const board = boardOn(page, "Chess");
+      const centers = await boardCenters(board);
+      const result = receive(page, `${tableUrl}/moves`, "POST");
+      await cellById(board, "e4").tap();
+      await cellById(board, "d5").tap();
+      expect((await result).ok()).toBe(true);
+      await expect.poll(async () => (await motion()).filter(entry => entry.sample).length).toBe(2);
+      const [mover, captured] = await motion();
+      expect(mover).toMatchObject({ effect: "travel", side: "ivory", piece: "pawn" });
+      expectPoint(mover.start, centers.e4);
+      expectPoint(mover.path.at(-1)!, centers.d5);
+      expect(captured).toMatchObject({ effect: "capture", side: "onyx", piece: "pawn" });
+      expectPoint(captured.start, centers.d5);
+      expect(captured.sample!.opacity).toBeLessThan(1);
+      await expect(board.locator(".motion-layer")).toHaveCount(0);
+      await expect(cellById(board, "d5")).toHaveAccessibleName(/white pawn$/);
+      await expect(cellById(board, "e4")).toHaveAccessibleName(/empty$/);
+    } finally {
+      unblock();
+      await peer.close();
+    }
   });
 
   test("private Go invite joins a second guest, captures, reconnects, and completes by passing", async ({ page, context, browser, baseURL }, info) => {
     const url = urls(baseURL!);
     const copied = await observeClipboard(page);
+    const hostMotion = await observeMotion(page);
     await page.goto(url("go/"));
     await page.getByRole("textbox", { name: "Display name" }).fill("Opal");
     const created = receive(page, url("api/board/tables"), "POST");
@@ -231,6 +567,7 @@ test.describe("mounted Jade Court portal", () => {
     const friendContext = await browser.newContext({ viewport: { width: 380, height: 780 }, isMobile: true, hasTouch: true });
     try {
       const friend = await friendContext.newPage();
+      const friendMotion = await observeMotion(friend);
       const requests: string[] = [];
       friend.on("request", request => requests.push(request.url()));
       await friend.goto(invite.href);
@@ -253,6 +590,8 @@ test.describe("mounted Jade Court portal", () => {
       await expect(state(friend)).toHaveText("Opal’s turn");
       await expect(page.getByRole("textbox", { name: "Invite link" })).toHaveCount(0);
       await expect(page.getByText("2 of 2 seats filled")).toBeVisible();
+      expect(await hostMotion()).toEqual([]);
+      expect(await friendMotion()).toEqual([]);
 
       const endpoint = url(`api/board/tables/${table.id}/moves`);
       const hostBoard = boardOn(page, "Go");
@@ -267,8 +606,13 @@ test.describe("mounted Jade Court portal", () => {
       }
 
       await take(page, () => squareAt(hostBoard, 0, 1).tap());
+      await expect.poll(async () => (await friendMotion()).filter(entry => entry.effect === "place" && entry.sample).length).toBe(1);
+      expectPoint((await friendMotion())[0].start, (await boardCenters(friendBoard)).r0c1);
+      await simulateVisibility(page, true);
       await take(friend, () => squareAt(friendBoard, 0, 0).tap());
+      await simulateVisibility(page, false);
       await expect(squareAt(hostBoard, 0, 0)).toHaveAccessibleName(/white stone$/);
+      expect((await hostMotion()).map(entry => entry.side)).toEqual(["onyx"]);
       await context.setOffline(true);
       await expect(state(page)).toHaveText("Reconnecting…");
       await context.setOffline(false);
@@ -276,11 +620,21 @@ test.describe("mounted Jade Court portal", () => {
       const captured = await take(page, () => squareAt(hostBoard, 1, 0).tap());
       expect(captured.position!.cells.find(cell => cell.row === 0 && cell.column === 0)?.owner).toBeNull();
       await expect(squareAt(friendBoard, 0, 0)).toHaveAccessibleName(/empty$/);
+      for (const [view, trace] of [[hostBoard, hostMotion], [friendBoard, friendMotion]] as const) {
+        await expect.poll(async () => (await trace()).some(entry => entry.effect === "capture" && entry.sample)).toBe(true);
+        const ghost = (await trace()).find(entry => entry.effect === "capture")!;
+        expect(ghost.side).toBe("ivory");
+        expectPoint(ghost.start, (await boardCenters(view)).r0c0);
+        expect(ghost.sample!.opacity).toBeLessThan(1);
+        await expect(view.locator(".motion-layer")).toHaveCount(0);
+      }
+      const beforePasses = [(await hostMotion()).length, (await friendMotion()).length];
       await take(friend, () => tap(friend, "Pass"));
       const finished = await take(page, () => tap(page, "Pass"));
       expect(finished).toMatchObject({ status: "finished", position: { turn: null, scores: expect.any(Array) } });
       await expect(page.getByText("Game over", { exact: true })).toBeVisible();
       await expect(friend.getByText("Game over", { exact: true })).toBeVisible();
+      expect([(await hostMotion()).length, (await friendMotion()).length]).toEqual(beforePasses);
       await expect(state(page)).toHaveText(/won|wins|Draw/);
       await expect(page.getByText(/ pts$/)).toHaveCount(2);
       await page.screenshot({ path: info.outputPath("finished-go-phone.png"), fullPage: true });
@@ -290,6 +644,118 @@ test.describe("mounted Jade Court portal", () => {
       await friendContext.close();
     }
   });
+
+  test("portal music plays on gesture, survives reload, mutes while hidden, and saves without changing other preferences",
+    async ({ page, context, baseURL }, info) => {
+      const url = urls(baseURL!);
+      const guest = await seedPreferences(context.request, url(), .64);
+      const signal = await observeAudio(page);
+      const calls: string[] = [];
+      page.on("request", event => calls.push(new URL(event.url()).pathname));
+      await page.goto(url());
+      await expect(page.getByRole("button", { name: "Music off", exact: true })).toBeVisible();
+      expect(calls.filter(path => path === "/portal/api/guest" || path.includes("/assets/ambient-"))).toEqual([]);
+      expect(await signal()).toMatchObject({ running: false, rms: 0 });
+
+      const saved = receive(page, url("api/profile"), "PATCH");
+      await tap(page, "Music off");
+      const save = await saved;
+      expect(save.ok()).toBe(true);
+      expect(await save.json()).toMatchObject({
+        displayName: guest.displayName, preferences: { ...guest.preferences, music: true },
+      });
+      expect(calls.filter(path => path === "/portal/api/guest")).toHaveLength(1);
+      await audible(signal);
+      await expect(page.getByRole("button", { name: "Music on", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await page.setViewportSize({ width: 660, height: 314 });
+      await page.screenshot({ path: info.outputPath("lobby-music-short-landscape.png") });
+      await simulateVisibility(page, true);
+      await expect.poll(async () => (await signal()).rms).toBeLessThan(.001);
+      await simulateVisibility(page, false);
+      await audible(signal);
+
+      const game = receive(page, url("api/guest"), "POST");
+      await page.goto(url("chess/"));
+      expect(await (await game).json()).toMatchObject({ preferences: { music: true } });
+      const opener = page.getByRole("button", { name: "Play music", exact: true });
+      await expect(opener).toBeVisible();
+      expect(await signal()).toMatchObject({ running: false, rms: 0 });
+      await opener.focus();
+      await page.keyboard.press("Enter");
+      await audible(signal);
+
+      const latest = { ...guest.preferences, music: true, sound: true, volume: .52, reducedMotion: false };
+      expect((await context.request.patch(url("api/profile"), {
+        headers: { Origin: new URL(url()).origin }, data: { displayName: "Willow", preferences: latest },
+      })).ok()).toBe(true);
+      const muted = receive(page, url("api/profile"), "PATCH");
+      await tap(page, "Music on");
+      expect(await (await muted).json()).toMatchObject({
+        displayName: "Willow", preferences: { ...latest, music: false },
+      });
+      await expect.poll(async () => (await signal()).rms).toBeLessThan(.001);
+      await page.reload();
+      await expect(page.getByRole("button", { name: "Music off", exact: true })).toBeVisible();
+      expect(await signal()).toMatchObject({ running: false, rms: 0 });
+
+      await seedPreferences(context.request, url(), 0);
+      await page.goto(url());
+      await tap(page, "Music off");
+      await expect(page.getByText("Music is muted at 0% volume.")).toBeVisible();
+      expect(await signal()).toMatchObject({ rms: 0, taps: 0 });
+    });
+
+  test("Mahjong previews actual music before Save, cancels drafts, and plays saved music only on gesture",
+    async ({ page, context, baseURL }, info) => {
+      const url = urls(baseURL!);
+      const guest = await seedPreferences(context.request, url());
+      const signal = await observeAudio(page);
+      const patches = () => page.evaluate(() => performance.getEntriesByName(location.origin + "/portal/api/profile").length);
+      await page.goto(url("mahjong/"));
+      await expect(page.locator(".connection")).toHaveAttribute("data-status", "online");
+      const settings = page.getByRole("button", { name: "Settings", exact: true });
+      const dialog = page.getByRole("dialog", { name: "Settings" });
+      const music = dialog.getByLabel("Quiet table music", { exact: true });
+      await settings.tap();
+      await expect(music).not.toBeChecked();
+      expect((await signal()).rms).toBe(0);
+      await music.check();
+      await audible(signal);
+      expect(await patches()).toBe(0);
+      await page.screenshot({ path: info.outputPath("mahjong-music-preview.png") });
+      await music.uncheck();
+      await expect.poll(async () => (await signal()).rms).toBeLessThan(.001);
+      await music.check();
+      await audible(signal);
+      await dialog.getByRole("button", { name: "Close dialog" }).tap();
+      await expect(dialog).toHaveCount(0);
+      await expect.poll(async () => (await signal()).rms).toBeLessThan(.001);
+
+      await settings.tap();
+      await expect(music).not.toBeChecked();
+      await music.check();
+      const changed = receive(page, url("api/profile"), "PATCH");
+      await dialog.getByRole("button", { name: "Save settings" }).tap();
+      expect(await (await changed).json()).toMatchObject({
+        displayName: guest.displayName, preferences: { ...guest.preferences, music: true },
+      });
+      await expect(dialog.getByText("Settings saved.")).toBeVisible();
+      await audible(signal);
+      await page.reload();
+      await expect(page.locator(".connection")).toHaveAttribute("data-status", "online");
+      expect(await signal()).toMatchObject({ running: false, rms: 0 });
+      await settings.tap();
+      await expect(music).toBeChecked();
+      await audible(signal);
+      const volume = dialog.getByRole("slider");
+      await volume.focus();
+      await page.keyboard.press("Home");
+      await expect(volume).toHaveValue("0");
+      await expect(dialog.getByText("Music is muted at 0% volume.")).toBeVisible();
+      await expect.poll(async () => (await signal()).rms).toBeLessThan(.001);
+      await dialog.getByRole("button", { name: "Close dialog" }).tap();
+      await audible(signal);
+    });
 
   test("the Mahjong child keeps its cold flagship assets, socket mount, return link and canonical invite", async ({ page, baseURL, request }) => {
     const url = urls(baseURL!);
@@ -312,7 +778,7 @@ test.describe("mounted Jade Court portal", () => {
       expect.stringMatching(/\/index-[\w-]+\.js$/), expect.stringMatching(/\/index-[\w-]+\.css$/),
       expect.stringMatching(/\/jade-court-[\w-]+\.svg$/),
     ]));
-    expect([...assets].every(asset => !/\/(?:portal-|actors-|court-study-|hall-dragon-)/.test(new URL(asset).pathname))).toBe(true);
+    expect([...assets].every(asset => !/\/(?:portal-|actors-|ambient-|court-study-|hall-dragon-)/.test(new URL(asset).pathname))).toBe(true);
     const compressed = await Promise.all([...assets].map(async asset => {
       const response = await request.get(asset);
       expect(response.ok()).toBe(true);

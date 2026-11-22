@@ -1,23 +1,21 @@
 import { defaultPreferences } from "./protocol";
 import type { Preferences } from "./protocol";
+import type { Ambient } from "./portal/ambient";
 import type { TableCue } from "./table";
 
 type Effect = "select" | TableCue;
 
-const chords = [
-  [146.83, 220, 293.66], [130.81, 196, 261.63], [110, 164.81, 261.63], [146.83, 174.61, 220],
-];
-
 export class LanternAudio {
   private context: AudioContext | null = null;
   private effects: GainNode | null = null;
-  private music: GainNode | null = null;
+  private music?: Ambient;
+  private musicLoading = false;
+  private draft?: [boolean, number];
   private noise: AudioBuffer | null = null;
   private readonly voices = new Map<AudioScheduledSourceNode, GainNode>();
   private prefs = defaultPreferences;
-  private musicTimer = 0;
-  private chord = 0;
   private unavailable = false;
+  changed?: () => void;
 
   constructor() {
     const activate = (event: Event) => { if (event.isTrusted) void this.unlock(); };
@@ -30,14 +28,27 @@ export class LanternAudio {
   }
 
   get note(): string {
-    if (this.unavailable) return "Audio is unavailable in this browser; the game remains playable.";
-    if (this.context?.state !== "running") return "Your browser may keep audio muted until you interact with the page.";
-    return "Original synthesized cues and quiet table music. No audio files are downloaded.";
+    const [music, volume] = this.musicChoice;
+    if (this.unavailable || this.music?.unavailable) return "Audio unavailable.";
+    if (music && !volume) return "Music is muted at 0% volume.";
+    if (music && !this.music?.playing)
+      return this.context?.state === "running" ? "Music is paused." : "Tap or press a key to allow sound.";
+    return "Music preview · Save settings to keep changes.";
+  }
+
+  private get musicChoice(): [boolean, number] {
+    return this.draft ?? [this.prefs.music, this.prefs.volume];
+  }
+
+  preview(draft?: [boolean, number]): void {
+    this.draft = draft;
+    if (draft?.[0] && draft[1]) void this.unlock(true);
+    this.updateMusic();
   }
 
   async unlock(explicit = false): Promise<void> {
     if (this.unavailable || this.context?.state === "running" || navigator.userActivation?.isActive === false ||
-      (!explicit && !this.prefs.sound && !this.prefs.music)) return;
+      (!explicit && !this.prefs.sound && !this.musicChoice[0])) return;
     try {
       if (!this.context) {
         const Safari = (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -48,13 +59,12 @@ export class LanternAudio {
         }
         this.context = new Context();
         this.effects = this.context.createGain();
-        this.music = this.context.createGain();
         this.effects.connect(this.context.destination);
-        this.music.connect(this.context.destination);
       }
       await this.context.resume();
       this.updateBuses();
     } catch { /* Autoplay restrictions do not block play. */ }
+    finally { this.changed?.(); }
   }
 
   configure(prefs: Preferences): void {
@@ -117,26 +127,26 @@ export class LanternAudio {
   }
 
   private updateBuses(): void {
-    if (!this.context || !this.effects || !this.music) return;
+    this.updateMusic();
+    if (!this.context || !this.effects) return;
     const visible = !document.hidden;
     if (!this.prefs.sound || !this.prefs.volume || !visible) this.clearEffects();
     this.effects.gain.setTargetAtTime(this.prefs.sound && visible ? this.prefs.volume : 0, this.context.currentTime, .02);
-    this.music.gain.setTargetAtTime(this.prefs.music && visible ? this.prefs.volume : 0, this.context.currentTime, .02);
-    const listening = this.prefs.music && this.prefs.volume > 0 && visible && this.context.state === "running";
-    if (listening && !this.musicTimer) {
-      this.playChord();
-      this.musicTimer = window.setInterval(() => this.playChord(), 2300);
-    } else if (!listening && this.musicTimer) {
-      clearInterval(this.musicTimer);
-      this.musicTimer = 0;
-    }
   }
 
-  private playChord(): void {
-    if (!this.music || this.context?.state !== "running") return;
-    const next = chords[this.chord++ % chords.length];
-    next.forEach((frequency, index) => this.tone(this.music!, frequency, .17 * index, 1.45, .029));
-    this.tone(this.music, next[0] / 2, 0, 1.76, .019);
+  private updateMusic(): void {
+    const [music, volume] = this.musicChoice;
+    const context = this.context;
+    this.music?.setVolume(music ? volume : 0);
+    if (music && volume && context?.state === "running" && !this.musicLoading) {
+      this.musicLoading = true;
+      const url = new URL("./portal/ambient.js?no-inline", import.meta.url).href;
+      void (import(/* @vite-ignore */ url) as Promise<typeof import("./portal/ambient")>).then(({ Ambient }) => {
+        this.music = new Ambient(context, () => this.changed?.());
+        this.updateMusic();
+      }).catch(() => { this.unavailable = true; this.changed?.(); });
+    }
+    this.changed?.();
   }
 
   private tone(bus: AudioNode, frequency: number, wait: number, duration: number, level: number, wave: OscillatorType = "sine"): void {
