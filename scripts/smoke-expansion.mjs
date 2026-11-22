@@ -301,6 +301,147 @@ async function seedWords(call, guests) {
   assert.fail('No playable Word Tiles opening after the public deal/exchange budget');
 }
 
+const roll = { kind: 'roll' };
+const checkDice = (dice, count) => {
+  assert.equal(dice.length, count);
+  assert(dice.every(face => Number.isInteger(face) && face >= 1 && face <= 6), 'Expected server-rolled d6 faces');
+};
+
+async function rejectClientRoll(call, game, table, cookie, outsider) {
+  const path = tablePath(game, table);
+  const body = { revision: table.revision, action: roll };
+  for (const requestOrigin of [null, 'https://unrelated-origin.invalid']) {
+    await call(`${path}/actions`, { cookie, body, requestOrigin, status: 403, error: 'forbidden' });
+  }
+  await call(path, { status: 401, error: 'not_authenticated' });
+  await call(`${path}/actions`, { cookie: outsider, body, status: 404, error: 'room_not_found' });
+  await call(`${path}/actions`, {
+    cookie, body: { ...body, action: { ...roll, dice: [6, 6] } }, status: 400, error: 'invalid_request',
+  });
+  assert.deepEqual(await readSeat(call, game, table, cookie), table, `${game} changed after a rejected roll`);
+}
+
+async function checkStaleRoll(call, game, table, after, cookie) {
+  await call(`${tablePath(game, table)}/actions`, {
+    cookie, body: { revision: table.revision, action: roll }, status: 409, error: 'stale_room',
+  });
+  assert.deepEqual(await readSeat(call, game, after, cookie), after, `${game} re-rolled on a stale revision`);
+}
+
+async function readDicePair(call, game, table, cookies, privateFields) {
+  const pair = await Promise.all(cookies.map(cookie => readSeat(call, game, table, cookie)));
+  const views = pair.map(({ position }) => {
+    inspectProjection(position, new Set([...storageFields, 'seed', 'randomseed', 'rng', 'randomstate']), game);
+    return Object.fromEntries(Object.entries(position).filter(([key]) => !privateFields.includes(key)));
+  });
+  assert.deepEqual(views[0], views[1], `${game} exposed different public dice or boards to the two seats`);
+  return pair;
+}
+
+async function seedFarkle(call, guests) {
+  const { host, visitor, outsider } = guests;
+  const game = 'farkle';
+  let botReply = await createTable(call, game, host, true);
+  assert.equal(botReply.seats[1]?.bot, true, 'Farkle did not seat a bot');
+  let scored = false;
+  for (let attempt = 0; attempt < 24 && !(scored && botReply.position.recentTurns.some(turn => turn.seat === 1)); attempt++) {
+    const { canBank, canRoll, choices, dice, scores, turnPoints } = botReply.position;
+    assert.equal(botReply.position.turn, botReply.seat, 'Farkle did not return control after the bot turn');
+    const choice = choices.toSorted((a, b) => b.points - a.points)[0];
+    const indices = choice ? [...dice.keys()].filter(index => choice.mask & (1 << index)) : [];
+    const action = canBank ? { kind: 'bank' } : canRoll ? roll : { kind: 'keep', dice: indices };
+    botReply = await act(call, game, botReply, host, action);
+    if (action.kind === 'keep') {
+      assert(indices.length > 0 && choice.points > 0, 'Farkle did not offer a scoring keep');
+      assert.equal(botReply.position.turnPoints, turnPoints + choice.points, 'Farkle did not add the kept dice’s points');
+      assert.deepEqual(botReply.position.kept, indices, 'Farkle did not commit the scoring selection');
+      if (indices.length === 1) {
+        assert.equal(choice.points, { 1: 100, 5: 50 }[dice[indices[0]]], 'Wrong single-die score');
+      }
+      scored = true;
+    } else if (action.kind === 'bank') {
+      assert.equal(botReply.position.scores[0], scores[0] + turnPoints, 'Farkle did not bank the unbanked points');
+    }
+  }
+  const bot = botReply.position.recentTurns.find(turn => turn.seat === 1);
+  assert(scored && bot && (bot.kind === 'banked' ? bot.points > 0 : bot.kind === 'farkle' && bot.dice.length > 0),
+    'Farkle did not record both a human scoring keep and a bot turn result');
+
+  const cookies = [host, visitor];
+  let pair = await invitePair(call, game, guests);
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const seat = pair[0].position.turn;
+    const before = pair[seat];
+    assert.equal(before.position.canRoll, true, 'Farkle did not permit the current guest to roll');
+    if (attempt === 0) await rejectClientRoll(call, game, before, cookies[seat], outsider);
+    const after = await act(call, game, before, cookies[seat], roll);
+    if (attempt === 0) await checkStaleRoll(call, game, before, after, cookies[seat]);
+    pair = await readDicePair(call, game, after, cookies, ['choices', 'canRoll', 'canBank']);
+    if (after.position.phase === 'keep') {
+      checkDice(after.position.dice, 6);
+      assert(after.position.choices.length > 0, 'Farkle offered no scoring keep on a playable roll');
+      assert.deepEqual(pair[1 - seat].position.choices, [], 'Farkle offered the other guest scoring actions');
+      assert.equal(pair[1 - seat].position.canRoll || pair[1 - seat].position.canBank, false,
+        'Farkle let the nonacting guest roll or bank');
+      return { botReply, pair };
+    }
+    const bust = after.position.recentTurns[0];
+    assert.deepEqual([bust.kind, bust.seat, bust.points], ['farkle', seat, 0], 'Farkle did not record a bust');
+    checkDice(bust.dice, 6);
+  }
+  assert.fail('No scoring roll across eight naturally dealt Farkle turns');
+}
+
+// Traditional Backgammon points 1–24, with Ivory positive and Umber negative.
+const openingPoints = [
+  -2, 0, 0, 0, 0, 5, 0, 3, 0, 0, 0, -5, 5, 0, 0, 0, -3, 0, -5, 0, 0, 0, 0, 2,
+];
+
+async function seedBackgammon(call, guests) {
+  const { host, visitor, outsider } = guests;
+  const game = 'backgammon';
+  let botReply = await createTable(call, game, host, true);
+  assert.equal(botReply.seats[1]?.bot, true, 'Backgammon did not seat a bot');
+  for (let attempt = 0; attempt < 2 && botReply.position.lastTurn?.seat !== 1; attempt++) {
+    const move = botReply.position.legalActions?.moves[0];
+    assert(move, 'Backgammon did not offer a playable opening');
+    botReply = await act(call, game, botReply, host, { kind: 'move', ...move });
+  }
+  assert.equal(botReply.position.lastTurn?.seat, 1, 'Backgammon did not play the bot’s opening turn');
+  assert.equal(botReply.position.turn, botReply.seat, 'Backgammon did not return control to the human');
+  assert.notDeepEqual(botReply.position.points.map(point => Math.min(point, 0)),
+    openingPoints.map(point => Math.min(point, 0)), 'Backgammon did not move any bot checkers');
+
+  const cookies = [host, visitor];
+  const opening = await invitePair(call, game, guests);
+  const { turn: seat, openingRoll } = opening[0].position;
+  checkDice(openingRoll, 2);
+  assert.notEqual(openingRoll[0], openingRoll[1], 'Backgammon did not break the opening tie');
+  assert.equal(seat, openingRoll[0] > openingRoll[1] ? 0 : 1, 'The higher opening die did not start');
+  const before = opening[seat];
+  assert.deepEqual(before.position.points, openingPoints, 'Backgammon did not set the traditional opening board');
+  assert.equal(opening[1 - seat].position.legalActions, null, 'Backgammon offered a move to both guests');
+  const move = before.position.legalActions.moves[0];
+  const after = await act(call, game, before, cookies[seat], { kind: 'move', ...move });
+  const expected = [...openingPoints];
+  const sign = seat === 0 ? 1 : -1;
+  expected[move.from - 1] -= sign;
+  expected[move.to - 1] += sign;
+  assert.deepEqual(after.position.points, expected, 'The requested checker did not move on the public board');
+  assert.deepEqual(after.position.remaining, before.position.remaining.filter(face => face !== move.die),
+    'Backgammon did not spend exactly the die used by the checker');
+  const last = after.position.legalActions.moves[0];
+  const passed = await act(call, game, after, cookies[seat], { kind: 'move', ...last });
+  const other = await readSeat(call, game, passed, cookies[1 - seat]);
+  assert.equal(other.position.legalActions?.canRoll, true, 'Backgammon did not hand over the turn after the opening');
+  await rejectClientRoll(call, game, other, cookies[1 - seat], outsider);
+  const rolled = await act(call, game, other, cookies[1 - seat], roll);
+  checkDice(rolled.position.dice, 2);
+  assert.deepEqual(rolled.position.points, passed.position.points, 'Backgammon moved checkers while rolling');
+  await checkStaleRoll(call, game, other, rolled, cookies[1 - seat]);
+  return { botReply, pair: await readDicePair(call, game, rolled, cookies, ['legalActions']) };
+}
+
 function checkSolitaireProjection(table) {
   const { tableau } = table.position;
   assert.equal(tableau.length, 7, 'Solitaire did not project seven columns');
@@ -370,12 +511,15 @@ export async function playExpansion(call, guests) {
   const poker = await seedPoker(call, guests);
   const words = await seedWords(call, guests);
   const solo = await seedSolo(call, guests);
+  const farkle = await seedFarkle(call, guests);
+  const backgammon = await seedBackgammon(call, guests);
   console.log('Played private Hold’em and Word Tiles with different guests and bots; drew one Solitaire card and marked a unique Sudoku.');
-  return { poker, words, solo };
+  console.log('Played Farkle and Backgammon against bots and invited guests; rejected client dice and unauthorized or stale writes.');
+  return { poker, words, solo, farkle, backgammon };
 }
 
 export async function resumeExpansion(call, { host, visitor, outsider }, state) {
-  for (const game of ['poker', 'words']) {
+  for (const game of ['poker', 'words', 'farkle', 'backgammon']) {
     const { botReply, pair } = state[game];
     assert.deepEqual(await readSeat(call, game, botReply, host), botReply, `${game} did not restore the bot reply`);
     const resumed = await Promise.all([host, visitor].map(cookie => readSeat(call, game, pair[0], cookie)));
@@ -392,5 +536,5 @@ export async function resumeExpansion(call, { host, visitor, outsider }, state) 
     assert.deepEqual(await call(`api/solo/${game}`, { cookie: visitor }), { table: null },
       `${game} revealed restored progress to another guest`);
   }
-  console.log('Restored the original Hold’em cards, Word Tiles racks, and solo progress without exposing them to a rival guest.');
+  console.log('Restored private cards and racks, committed dice and checker positions, and solo progress without exposing other guest data.');
 }

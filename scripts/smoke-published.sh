@@ -29,10 +29,6 @@ case "$portal" in
       echo "Portal smoke requires SMOKE_PATH_BASE=/portal or /game-portal and a published portal.html" >&2
       exit 1
     fi
-    if [[ ${4:-} == --with-browser && ${mount%/} != /portal ]]; then
-      echo "Portal browser tests require SMOKE_PATH_BASE=/portal" >&2
-      exit 2
-    fi
     if ! cmp -s src/JadeCourt.Words/Lexicon/SCOWL-Copyright.txt "$publish/licenses/SCOWL-2020.12.07.txt"; then
       echo "Missing or changed SCOWL notice: $publish/licenses/SCOWL-2020.12.07.txt" >&2
       exit 1
@@ -70,7 +66,7 @@ state="$work/guest.json"
 export TMPDIR="$work/scratch"
 mkdir -- "$TMPDIR"
 server_pid=
-portal_specs=(e2e/portal.spec.ts e2e/board-controls.spec.ts e2e/expansion.spec.ts)
+portal_specs=(e2e/portal.spec.ts e2e/board-controls.spec.ts e2e/expansion.spec.ts e2e/dice-games.spec.ts)
 
 stop_server() {
   local pid=$server_pid
@@ -157,12 +153,16 @@ run_standalone_browsers() {
 
 run_portal_browsers() {
   local spec group browser
-  for spec in "${portal_specs[@]}"; do
+  local -a specs=("${portal_specs[@]}")
+  if [[ ${mount%/} == /game-portal ]]; then
+    specs=(e2e/dice-games.spec.ts)
+  fi
+  for spec in "${specs[@]}"; do
     [[ -s "web/$spec" ]] || { echo "Missing portal browser spec: web/$spec" >&2; return 1; }
   done
   # Every suite gets fresh data and rate limits on its own loopback server.
   for browser in chromium webkit; do
-    for spec in "${portal_specs[@]}"; do
+    for spec in "${specs[@]}"; do
       group=${spec##*/}
       group=${group%.spec.ts}
       start_server "$work/browser/$browser/$group" "$work/browser-$browser-$group.log"

@@ -3,10 +3,11 @@
 Set `Portal__Enabled=true` to enable the game APIs and portal shell (the default is off). With
 `BASE_URL=/portal`, the base for assets, HTTP and WebSocket URLs is `/portal/`, including on
 `/portal/chess/`, `/portal/go/`, `/portal/reversi/`, `/portal/checkers/`, and
-`/portal/chinese-checkers/`, `/portal/holdem/`, `/portal/solitaire/`, `/portal/sudoku/`, and
-`/portal/word-tiles/`. `/portal/mahjong/` and its nested SPA routes serve the existing
-Changsha Mahjong client. The bare routes return a 308 with the query intact; since the
-redirect does not supply a fragment, browsers retain the original fragment. Other shell
+`/portal/chinese-checkers/`, `/portal/holdem/`, `/portal/solitaire/`, `/portal/sudoku/`,
+`/portal/word-tiles/`, `/portal/farkle/`, and `/portal/backgammon/`. `/portal/mahjong/` and
+its nested SPA routes serve the existing Changsha Mahjong client. The bare routes return
+a 308 with the query intact. Browsers retain the original fragment because the redirect
+does not supply one. Other shell
 paths return 404. The build publishes `index.html` and `portal.html` outside `wwwroot`.
 
 Use a dedicated data volume for the portal (`GamePortal__DataDirectory`, `/data` in the
@@ -137,6 +138,23 @@ coordinates 0–14; the rules enforce the table's actual board, rack, and exchan
 Malformed input returns `invalid_request`; requests that cannot be played can return
 `not_your_turn`, `illegal_action`, or the shared room/revision errors. A bot sees only the
 public position and its own rack and takes at most one turn before the response is committed.
+
+## Farkle and Backgammon
+
+`/api/farkle` (2–6 seats) and `/api/backgammon` (2 seats) follow the same seated table,
+invite, resume, leave, and outer revision contract as Word Tiles. Both support bots and
+private guest invitations; neither has a `/next` route. A roll takes only `{kind: "roll"}`:
+the server chooses the dice and saves the committed position. Requests cannot supply
+faces or a random seed.
+
+- In Farkle, `{kind: "keep", dice: [index, ...]}` selects distinct zero-based indices in the
+  current roll; `{kind: "bank"}` ends the turn and banks its points when allowed.
+  `position.choices` lists the current player's scoring subsets as `{mask, points}`,
+  with bit `i` corresponding to die `i`. A roll with no scoring subset ends the turn.
+- In Backgammon, the server rolls both opening dice and starts the higher seat.
+  `{kind: "move", from, to, die}` uses a move from `position.legalActions.moves`;
+  points are numbered 1–24, with `from: 0` for the bar and `to: 25` for bearing off.
+  `{kind: "pass"}` is allowed only where advertised by `position.legalActions.canPass`.
 
 ## Solitaire and Sudoku
 

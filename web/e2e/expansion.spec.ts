@@ -28,6 +28,8 @@ const routes = [
   ["solitaire", "Solitaire", "Play Solitaire", "solo/solitaire", "solitaire", "Deal cards"],
   ["sudoku", "Sudoku", "Play Sudoku", "solo/sudoku", "sudoku", "Start puzzle"],
   ["word-tiles", "Word Tiles", "Set up Word Tiles", "words/resume", "words", "Play a bot"],
+  ["farkle", "Farkle", "Set up Farkle", "farkle/resume", "farkle", "Play a bot"],
+  ["backgammon", "Backgammon", "Set up Backgammon", "backgammon/resume", "backgammon", "Play a bot"],
 ] as const;
 const button = (page: Page | Locator, name: string | RegExp) => page.getByRole("button", { name, exact: true });
 const watch = (page: Page, url: string, method = "POST") =>
@@ -110,7 +112,8 @@ test.describe("mounted Jade Court expansion", () => {
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(url());
     await expect(page.getByRole("heading", { name: "Find your next move." })).toBeVisible();
-    const featureAssets = () => [...seen].filter(path => /\/assets\/(?:holdem|solitaire|sudoku|words|multiplayer|solo|cards|shared|room)-/.test(path));
+    const featureAssets = () => [...seen].filter(path =>
+      /\/assets\/(?:holdem|solitaire|sudoku|words|farkle|backgammon|multiplayer|solo|cards|shared|room)-/.test(path));
     expect(featureAssets()).toEqual([]);
     for (const [route, name, linkName, api, chunk, entry] of routes) {
       const bare = await request.get(url(`${route}?from=bookmark`), { maxRedirects: 0 });

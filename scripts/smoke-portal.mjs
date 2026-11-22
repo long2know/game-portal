@@ -13,7 +13,7 @@ assert(/^(?:[0-9a-f]{40}|unknown)$/.test(commitSha), 'Expected a full Git SHA or
 const app = new URL(url);
 const { origin, pathname } = app;
 const mount = pathname.slice(0, -1);
-const expansionRoutes = ['holdem', 'solitaire', 'sudoku', 'word-tiles'];
+const expansionRoutes = ['holdem', 'solitaire', 'sudoku', 'word-tiles', 'farkle', 'backgammon'];
 assert(['http:', 'https:'].includes(app.protocol) && ['/portal', '/game-portal'].includes(mount)
   && url === `${origin}${mount}/`,
   'APP_URL must be the HTTP(S) /portal/ or /game-portal/ mount, with no query or fragment');
@@ -65,7 +65,7 @@ async function checkApplication() {
   assert.deepEqual((await json('health/ready')).value, { status: 'ready' });
   assert.deepEqual((await json('health/live')).value, { status: 'live' });
   assert.deepEqual((await json('api/version')).value, { appVersion, protocolVersion: 1, commitSha });
-  const missing = ['no-such-board/', 'assets/infra-smoke-missing.js'];
+  const missing = ['no-such-board/', 'farkle/not-a-table/', 'backgammon/not-a-table/', 'assets/infra-smoke-missing.js'];
   if (app.protocol === 'http:') missing.push('/api/version', '/mahjong/');
   for (const path of missing) {
     const response = await fetchApp(path);
