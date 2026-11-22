@@ -10,7 +10,17 @@ Jade Court tracks original rook rights and calculates full position repetitions 
 
 ## Stockfish as an optional process
 
-The server passes its operator-only `Portal:StockfishPath` to the chess constructor (Compose environment form: `Portal__StockfishPath=/usr/games/stockfish`). The adapter executes the absolute path directly, with no shell or user-supplied commands. It sends the replay-validated UCI history, caps engine threads and hash memory, bounds the request to two seconds before process cleanup, and caps stdout and stderr. Only one engine request per host process runs at a time. The returned move must be in the current authoritative managed legal list. No configured path uses the deterministic managed heuristic silently; a configured path that fails or is busy produces a warning and uses the same heuristic.
+The server passes its operator-only `Portal:StockfishPath` to the chess constructor (Compose environment form: `Portal__StockfishPath=/usr/games/stockfish`). The adapter executes the absolute path directly, with no shell or user-supplied commands. It sends the replay-validated UCI history, caps the engine at one thread and 16 MiB of hash memory, bounds the request to two seconds before process cleanup, and caps stdout and stderr. Only one engine request per host process runs at a time. The returned move must be in the current authoritative managed legal list.
+
+`ChessGame.SelectBotMove(checkpoint, difficulty)` accepts exactly these presets; the existing `IBoardGame` call uses `standard`. Difficulty is not a chess variant or part of the move history.
+
+| Preset | Stockfish UCI skill | Search budget | Deterministic managed fallback |
+| --- | --- | --- | --- |
+| `easy` | 2 | 45 ms | Fourth heuristic-ranked legal move, or the last if fewer are available. |
+| `standard` | Engine default (20 on Stockfish 16) | 100 ms | Existing capture, promotion, centralization, check and castle heuristic. |
+| `hard` | 20 | 400 ms | Considers the 12 highest-ranked legal moves and penalizes the opponent's strongest immediate capture or promotion. |
+
+An unconfigured path uses the matching fallback silently; a configured engine that fails, returns an illegal move, or is busy warns and uses the same fallback. These are bounded strength presets, not Elo ratings, and can pick the same move.
 
 ### Linux/amd64 release pin
 
@@ -36,4 +46,4 @@ JADECOURT_STOCKFISH_TEST_PATH=/usr/games/stockfish \
   --filter FullyQualifiedName~PinnedStockfish
 ```
 
-The test asserts that the engine returns a legal move within a bound and that no fallback warning was emitted. Qualify the **final image** separately: verify the installed version and `Stockfish 16` UCI identity, then play a bot turn through the deployed portal with no fallback warning. A host-level or extracted-binary test alone does not qualify the image.
+The test asserts that all three presets return legal moves within a bound and that no fallback warning was emitted. Qualify the **final image** separately: verify the installed version and `Stockfish 16` UCI identity, then play a bot turn through the deployed portal with no fallback warning. A host-level or extracted-binary test alone does not qualify the image.

@@ -11,7 +11,7 @@ internal sealed class StockfishBot(string executable, Action<string>? warn)
     private const int MaxOutputCharacters = 32_768;
     private const int MaxLineCharacters = 2_048;
 
-    internal string? Select(string history, IReadOnlySet<string> legalMoves)
+    internal string? Select(string history, IReadOnlySet<string> legalMoves, ChessBotPreset preset)
     {
         if (!Path.IsPathFullyQualified(executable))
             return Fallback("the executable path must be absolute");
@@ -21,7 +21,7 @@ internal sealed class StockfishBot(string executable, Action<string>? warn)
         string failure;
         try
         {
-            var move = RequestAsync(history).GetAwaiter().GetResult();
+            var move = RequestAsync(history, preset).GetAwaiter().GetResult();
             if (legalMoves.Contains(move))
                 return move;
             failure = "the engine returned a move that is not legal";
@@ -60,7 +60,7 @@ internal sealed class StockfishBot(string executable, Action<string>? warn)
         return null;
     }
 
-    private async Task<string> RequestAsync(string history)
+    private async Task<string> RequestAsync(string history, ChessBotPreset preset)
     {
         using var deadline = new CancellationTokenSource(Deadline);
         using var process = Process.Start(new ProcessStartInfo
@@ -77,7 +77,7 @@ internal sealed class StockfishBot(string executable, Action<string>? warn)
         using var error = process.StandardError;
 
         var drain = DrainErrorAsync(error, deadline.Token);
-        var exchange = ExchangeAsync(input, output, history, deadline.Token);
+        var exchange = ExchangeAsync(input, output, history, preset, deadline.Token);
         var completed = false;
         try
         {
@@ -102,7 +102,8 @@ internal sealed class StockfishBot(string executable, Action<string>? warn)
         }
     }
 
-    private static async Task<string> ExchangeAsync(Stream input, StreamReader output, string history, CancellationToken token)
+    private static async Task<string> ExchangeAsync(
+        Stream input, StreamReader output, string history, ChessBotPreset preset, CancellationToken token)
     {
         var reader = new UciReader(output);
         await SendAsync(input, "uci", token).ConfigureAwait(false);
@@ -110,13 +111,23 @@ internal sealed class StockfishBot(string executable, Action<string>? warn)
 
         await SendAsync(input, "setoption name Threads value 1", token).ConfigureAwait(false);
         await SendAsync(input, "setoption name Hash value 16", token).ConfigureAwait(false);
+        if (preset == ChessBotPreset.Easy)
+            await SendAsync(input, "setoption name Skill Level value 2", token).ConfigureAwait(false);
+        else if (preset == ChessBotPreset.Hard)
+            await SendAsync(input, "setoption name Skill Level value 20", token).ConfigureAwait(false);
         await SendAsync(input, "isready", token).ConfigureAwait(false);
         while (await reader.ReadLineAsync(token).ConfigureAwait(false) != "readyok") { }
 
         // Replay accepts only canonical UCI coordinates, never arbitrary checkpoint text.
         var position = history.Length == 0 ? "position startpos" : "position startpos moves " + history;
         await SendAsync(input, position, token).ConfigureAwait(false);
-        await SendAsync(input, "go movetime 100", token).ConfigureAwait(false);
+        var search = preset switch
+        {
+            ChessBotPreset.Easy => "go movetime 45",
+            ChessBotPreset.Hard => "go movetime 400",
+            _ => "go movetime 100"
+        };
+        await SendAsync(input, search, token).ConfigureAwait(false);
 
         while (true)
         {

@@ -121,6 +121,8 @@ public sealed class ChessGameTests
         Assert.Equal("d8h4", game.View(mate).LastMove?.Id);
         Assert.Throws<ArgumentException>(() => game.Apply(mate, "e1f2"));
         Assert.Throws<ArgumentException>(() => game.SelectBotMove(mate));
+        Assert.Throws<ArgumentException>(() => new ChessGame().SelectBotMove(mate, "easy"));
+        Assert.Throws<ArgumentException>(() => new ChessGame().SelectBotMove(mate, "hard"));
     }
 
     [Fact]

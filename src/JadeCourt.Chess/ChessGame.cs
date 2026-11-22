@@ -69,8 +69,17 @@ public sealed class ChessGame : IBoardGame
         return $"{checkpoint} {moveId}";
     }
 
-    public string SelectBotMove(string checkpoint)
+    public string SelectBotMove(string checkpoint) => SelectBotMove(checkpoint, "standard");
+
+    public string SelectBotMove(string checkpoint, string difficulty)
     {
+        var preset = difficulty switch
+        {
+            "easy" => ChessBotPreset.Easy,
+            "standard" => ChessBotPreset.Standard,
+            "hard" => ChessBotPreset.Hard,
+            _ => throw new ArgumentException("Chess difficulty must be easy, standard, or hard.", nameof(difficulty))
+        };
         var state = ChessReplay.Load(checkpoint);
         var legal = state.AutomaticDraw is null ? state.LegalMoves().ToArray() : [];
         if (legal.Length == 0)
@@ -81,12 +90,20 @@ public sealed class ChessGame : IBoardGame
             var history = checkpoint.Length == ChessReplay.Version.Length
                 ? "" : checkpoint[(ChessReplay.Version.Length + 1)..];
             var ids = legal.Select(ChessReplay.MoveId).ToHashSet(StringComparer.Ordinal);
-            if (stockfish.Select(history, ids) is { } id)
+            if (stockfish.Select(history, ids, preset) is { } id)
                 return id;
         }
 
-        return ChessReplay.MoveId(legal.OrderByDescending(BotScore)
-            .ThenBy(ChessReplay.MoveId, StringComparer.Ordinal).First());
+        var ranked = legal.Select(move => (Move: move, Id: ChessReplay.MoveId(move), Score: BotScore(move)))
+            .OrderByDescending(candidate => candidate.Score).ThenBy(candidate => candidate.Id, StringComparer.Ordinal)
+            .ToArray();
+        return preset switch
+        {
+            ChessBotPreset.Easy => ranked[Math.Min(3, ranked.Length - 1)].Id,
+            ChessBotPreset.Hard => ranked.Take(12)
+                .MaxBy(candidate => ScoreWithReply(state, candidate.Move, candidate.Score)).Id,
+            _ => ranked[0].Id
+        };
     }
 
     private static int Seat(PieceColor color) => color == PieceColor.White ? 0 : 1;
@@ -111,6 +128,31 @@ public sealed class ChessGame : IBoardGame
         var promotion = move.Promotion is { } promoted ? 8 * (Value(promoted.Type.AsChar) - 100) : 0;
         var centralize = DistanceFromCenter(move.OriginalPosition) - DistanceFromCenter(move.NewPosition);
         return capture + promotion + 6 * centralize + (move.IsCheck ? 35 : 0) + (move.IsCastling ? 100 : 0);
+    }
+
+    private static int ScoreWithReply(ChessReplay state, Move move, int score)
+    {
+        var board = state.Board;
+        if (!board.Move(move))
+            throw new InvalidOperationException("Chess validation and execution disagreed.");
+
+        try
+        {
+            if (board.IsEndGame)
+                return (board.Turn == PieceColor.White ? board.WhiteKingChecked : board.BlackKingChecked)
+                    ? 100_000 : 0;
+
+            var threat = state.LegalMoves().Select(reply =>
+                (reply.CapturedPiece is { } captured ? 10 * Value(captured.Type.AsChar) : 0) +
+                (reply.Promotion is { } promoted ? 8 * (Value(promoted.Type.AsChar) - 100) : 0))
+                .DefaultIfEmpty().Max();
+            return score - threat;
+        }
+        finally
+        {
+            // Only the local board is simulated; authoritative history and draw state are untouched.
+            board.Cancel();
+        }
     }
 
     private static int DistanceFromCenter(Position p) => Math.Abs(2 * p.X - 7) + Math.Abs(2 * p.Y - 7);
