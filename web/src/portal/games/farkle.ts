@@ -180,7 +180,7 @@ function match(play: (action: Action) => void): MatchView<Position> {
     const tied = winners.length > 1;
     text(round, phase === "finished" ? "Game complete" : finalStarter === null ? "Race to 10,000" : "Final round");
     text(turn, phase === "finished" ?
-      tied ? `${winners.map(seat => nameAt(current, seat)).join(" · ")} share the win` :
+      tied ? "Tied for the win" :
         winners[0] === current.seat ? "You win" : `${nameAt(current, winners[0])} wins` :
       active === current.seat ? "Your turn" : `${nameAt(current, active!)}’s turn`);
     text(unbanked, format(position.turnPoints));
@@ -188,16 +188,17 @@ function match(play: (action: Action) => void): MatchView<Position> {
       `${finalStarter === current.seat ? "You started" : `${nameAt(current, finalStarter)} started`} the final round. Everyone else gets one last turn.`);
     scores.replaceChildren(...current.seats.map(item => {
       const isMine = item.seat === current.seat;
+      const winner = winners.includes(item.seat);
       const bar = el("span", "farkle-score-line");
       bar.setAttribute("aria-hidden", "true");
       bar.style.setProperty("--banked", `${Math.min(100, totals[item.seat] / 100)}%`);
       const row = el("li", "",
         el("div", "farkle-score-row", el("span", "farkle-player",
           el("strong", "", isMine ? "You" : item.name || `Seat ${item.seat + 1}`),
-          ...(item.bot ? [el("small", "", "Bot")] : [])),
+          ...(winner ? [el("small", "", "Winner")] : [])),
         el("span", "farkle-total", format(totals[item.seat]))), bar);
       if (item.seat === active) row.setAttribute("aria-current", "true");
-      row.toggleAttribute("data-winner", winners.includes(item.seat));
+      row.toggleAttribute("data-winner", winner);
       return row;
     }));
 

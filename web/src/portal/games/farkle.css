@@ -95,7 +95,7 @@
   box-shadow: 0 3px 0 #b98d54, 0 0 0 2px #ffe4a9, 0 6px 10px #192f2780;
 }
 .farkle-die[aria-pressed="true"] { transform: translateY(-3px); }
-.farkle-die:focus-visible { outline: 3px solid #fff9e8; outline-offset: 4px; }
+.farkle-die:focus-visible { outline: 2px solid #fff9e8; outline-offset: 2px; }
 .farkle-pips {
   display: grid;
   grid-template: repeat(3, minmax(0, 1fr)) / repeat(3, minmax(0, 1fr));
@@ -250,7 +250,7 @@
 }
 @media (max-width: 370px) {
   .farkle-tray { grid-template-columns: repeat(3, minmax(0, 1fr)); max-inline-size: 12.75rem; gap: .62rem; }
-  .farkle-purse dt { max-inline-size: 8ch; }
+  .farkle-purse dt { max-inline-size: 6rem; }
   .farkle-values > div { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: no-preference) {
