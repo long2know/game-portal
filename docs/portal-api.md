@@ -119,15 +119,24 @@ after 24 hours. Terminal tables cannot be resumed and do not count toward active
 The Word Tiles table routes, invite behavior, response shape, and outer revision rules match
 Poker under `/api/words` instead of `/api/poker`. Create with `{players: 2, bots}`; there is no
 `/next` route. `position` is the [typed `WordView`](word-tiles-rules.md), including sparse
-board cells, scores, bag count, seat rack sizes, and the caller's own rack only. Neither the
-other rack nor bag order is returned. A finished game cannot be changed.
+board cells, scores, bag count, seat rack sizes, and the caller's own rack only. New deals have
+`variant: "classic"` (15×15, `rackSize: 7`); existing 11×11 tables remain `"quick"` (`rackSize: 6`).
+`premiums` gives the original map as `{row,column,kind}` entries (`double-letter`, `triple-letter`,
+`double-word`, `triple-word`); Quick has none. Derive which premiums have been used from occupied
+cells. `exchangeLimit` is the number of tiles the caller may exchange now, or `0` if unavailable.
+Tiles include `blank`; a blank shows `letter: "?"` in the rack and its assigned uppercase letter
+on the board, with zero points either way. Neither the other rack nor bag order is returned.
+A finished game cannot be changed.
 
 Write `POST /api/words/tables/{id}/actions` with `{revision, action}`. The action is
 `{kind: "pass"}`, `{kind: "exchange", exchange: [tileId, ...]}`, or
-`{kind: "place", placements: [{row, column, tileId}, ...]}`. Coordinates are zero-based
-and IDs must be in the caller's current rack. The host can return `not_your_turn`,
-`illegal_action`, or the shared room/revision errors. A bot sees only its own rack and the
-public board, and takes at most one turn before the response is committed.
+`{kind: "place", placements: [{row, column, tileId, letter?}, ...]}`. Coordinates are zero-based
+and IDs must be distinct and in the caller's current rack. Set `letter` to one uppercase `A`–`Z`
+for a blank only; omit it for other tiles. The request parser accepts arrays of 1–7 tiles and
+coordinates 0–14; the rules enforce the table's actual board, rack, and exchange limits.
+Malformed input returns `invalid_request`; requests that cannot be played can return
+`not_your_turn`, `illegal_action`, or the shared room/revision errors. A bot sees only the
+public position and its own rack and takes at most one turn before the response is committed.
 
 ## Solitaire and Sudoku
 

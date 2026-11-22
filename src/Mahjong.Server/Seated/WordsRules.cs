@@ -5,6 +5,8 @@ namespace Mahjong.Server.Seated;
 
 internal static class WordsRules
 {
+    private const int MaxTurnTiles = 7;
+    private const int MaxCoordinate = 14;
     private static readonly WordGame Engine = new();
     public static readonly SeatedRules Game = new("words", 2, 2, Start, View);
 
@@ -38,7 +40,7 @@ internal static class WordsRules
     {
         var view = Engine.View(checkpoint, seat);
         return !playing && view.Status == "playing"
-            ? view with { Turn = null, Status = "finished", Detail = "Table closed." } : view;
+            ? view with { Turn = null, Status = "finished", Detail = "Table closed.", ExchangeLimit = 0 } : view;
     }
 
     private static bool ReadAction(JsonElement body, out WordAction action)
@@ -51,7 +53,7 @@ internal static class WordsRules
                 return true;
             case "exchange" when Wire.Fields(body, "kind", "exchange"):
                 var ids = body.Get("exchange");
-                if (ids.ValueKind != JsonValueKind.Array || ids.GetArrayLength() is < 1 or > 3) return false;
+                if (ids.ValueKind != JsonValueKind.Array || ids.GetArrayLength() is < 1 or > MaxTurnTiles) return false;
                 var exchange = new int[ids.GetArrayLength()];
                 var number = 0;
                 foreach (var id in ids.EnumerateArray())
@@ -63,17 +65,22 @@ internal static class WordsRules
                 return true;
             case "place" when Wire.Fields(body, "kind", "placements"):
                 var entries = body.Get("placements");
-                if (entries.ValueKind != JsonValueKind.Array || entries.GetArrayLength() is < 1 or > 6) return false;
+                if (entries.ValueKind != JsonValueKind.Array || entries.GetArrayLength() is < 1 or > MaxTurnTiles) return false;
                 var placements = new WordPlacement[entries.GetArrayLength()];
                 var index = 0;
                 foreach (var entry in entries.EnumerateArray())
                 {
-                    if (!Wire.Fields(entry, "row", "column", "tileId")
-                        || !entry.Get("row").Int(out var row) || row is < 0 or >= 11
-                        || !entry.Get("column").Int(out var column) || column is < 0 or >= 11
+                    if (!Wire.Fields(entry, "row", "column", "tileId", "letter")
+                        || !entry.Get("row").Int(out var row) || row is < 0 or > MaxCoordinate
+                        || !entry.Get("column").Int(out var column) || column is < 0 or > MaxCoordinate
                         || !entry.Get("tileId").Int(out var tileId) || tileId <= 0)
                         return false;
-                    placements[index++] = new(row, column, tileId);
+                    var designation = entry.Get("letter");
+                    var letter = designation.AsString();
+                    if (designation.ValueKind != JsonValueKind.Undefined &&
+                        (letter is not { Length: 1 } || letter[0] is < 'A' or > 'Z'))
+                        return false;
+                    placements[index++] = new(row, column, tileId, letter);
                 }
                 action = new("place", Placements: placements);
                 return true;

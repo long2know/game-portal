@@ -19,7 +19,8 @@ public sealed class WordGameTests
         foreach (var checkpoint in new[] { first, second })
         {
             var state = WordCheckpoint.Load(checkpoint);
-            Assert.Equal(Enumerable.Range(1, WordTiles.Count), state.Racks[0]
+            Assert.Equal(2, state.Version);
+            Assert.Equal(Enumerable.Range(1, 100), state.Racks[0]
                 .Concat(state.Racks[1]).Concat(state.Bag).Order());
         }
     }
@@ -27,12 +28,14 @@ public sealed class WordGameTests
     [Fact]
     public void ProjectsOnlyTheViewerRackOnTheExactWireAndRestoresWithoutSharedState()
     {
-        var game = Deal("CATERS", "PIONDB", "FOX");
-        var start = game.Start();
+        var (game, start) = Start("CATERS", "PIONDB", "FOX");
         var zero = game.View(start, 0);
         var one = game.View(start, 1);
         var spectator = game.View(start, null);
         Assert.Equal((11, 11, 0, "playing", 50), (zero.Rows, zero.Columns, zero.Turn, zero.Status, zero.BagCount));
+        Assert.Equal(("quick", 6, 3, 0), (zero.Variant, zero.RackSize, zero.ExchangeLimit, one.ExchangeLimit));
+        Assert.Empty(zero.Premiums);
+        Assert.All(zero.Rack, tile => Assert.False(tile.Blank));
         Assert.Equal([6, 6], zero.RackSizes);
         Assert.Equal([0, 0], zero.Scores);
         Assert.Empty(zero.Board);
@@ -66,11 +69,12 @@ public sealed class WordGameTests
             var projection = recovered.View(checkpoint, viewer);
             var json = JsonSerializer.SerializeToNode(projection, Wire)!.AsObject();
             Assert.Equal(
-                ["bagCount", "board", "columns", "detail", "lastMove", "rack", "rackSizes", "rows", "scores",
-                    "status", "turn", "winners"], json.Select(field => field.Key).Order(StringComparer.Ordinal));
+                ["bagCount", "board", "columns", "detail", "exchangeLimit", "lastMove", "premiums", "rack", "rackSize",
+                    "rackSizes", "rows", "scores", "status", "turn", "variant", "winners"],
+                json.Select(field => field.Key).Order(StringComparer.Ordinal));
             Assert.Equal(["column", "row", "seat", "tile"],
                 json["board"]![0]!.AsObject().Select(field => field.Key).Order(StringComparer.Ordinal));
-            Assert.Equal(["id", "letter", "points"],
+            Assert.Equal(["blank", "id", "letter", "points"],
                 json["board"]![0]!["tile"]!.AsObject().Select(field => field.Key).Order(StringComparer.Ordinal));
 
             var rackIds = json["rack"]!.AsArray().Select(tile => tile!["id"]!.GetValue<int>()).ToArray();
@@ -85,6 +89,35 @@ public sealed class WordGameTests
         Assert.Equal("ERSFOX", Letters(recovered.View(checkpoint, 0)));
         Assert.Equal([4, 0], recovered.View(checkpoint, 0).Scores);
         Assert.Equal("CATERS", Letters(game.View(start, 0)));
+    }
+
+    [Fact]
+    public void PlaysAReleasedVersionOneSaveAndWritesBackTheOldFormat()
+    {
+        // Captured shape and tile IDs from the version-1 engine after an opening CAT.
+        const string fixture = """
+            {"version":1,"turn":1,"racks":[[12,43,47,18,37,59],[40,22,36,33,10,6]],"bag":[2,3,4,5,7,9,11,13,14,15,16,17,19,20,21,23,24,25,26,27,28,29,30,31,32,34,35,38,39,41,42,44,45,46,48,49,50,52,53,54,55,56,57,58,60,61,62],"board":[{"row":5,"column":4,"tileId":8,"seat":0},{"row":5,"column":5,"tileId":1,"seat":0},{"row":5,"column":6,"tileId":51,"seat":0}],"scores":[4,0],"dryTurns":0,"last":{"kind":"place","count":3,"words":["CAT"],"points":4}}
+            """;
+        var game = new WordGame();
+        Assert.Equal(fixture, WordCheckpoint.Load(fixture).Save());
+        var view = game.View(fixture, 1);
+        Assert.Equal(("quick", 11, 6, 47, "PIONDB"), (view.Variant, view.Rows, view.RackSize, view.BagCount, Letters(view)));
+        Assert.Equal([new(8, "C", 2), new(1, "A", 1), new WordTile(51, "T", 1)], view.Board.Select(cell => cell.Tile));
+        Assert.Empty(game.View(fixture, null).Rack);
+        Assert.Equal(Pass, game.SelectBotMove(game.View(fixture, 0)));
+        Assert.Throws<InvalidOperationException>(() => game.Apply(fixture, 1, Along(view, 11, 4, "PI")));
+
+        var predicted = game.SelectBotMove(view);
+        Assert.Equal("place", predicted.Kind);
+        Assert.All(predicted.Placements!, placement => Assert.Null(placement.Letter));
+        Assert.True(game.View(game.Apply(fixture, 1, predicted), null).Scores[1] > 0);
+
+        var after = game.Apply(fixture, 1, Along(view, 4, 5, "PI"));
+        Assert.Equal([4, 12], game.View(after, null).Scores);
+        using var saved = JsonDocument.Parse(after);
+        Assert.Equal(1, saved.RootElement.GetProperty("version").GetInt32());
+        Assert.All(saved.RootElement.GetProperty("board").EnumerateArray(), cell =>
+            Assert.False(cell.TryGetProperty("letter", out _)));
     }
 
     [Fact]
@@ -284,7 +317,7 @@ public sealed class WordGameTests
     {
         var (game, checkpoint) = Start("CATERS", "PIONDB");
         var version = JsonNode.Parse(checkpoint)!;
-        version["version"] = 2;
+        version["version"] = 3;
         Assert.Throws<InvalidDataException>(() => game.View(version.ToJsonString(), null));
 
         var inventory = JsonNode.Parse(checkpoint)!;
@@ -348,7 +381,7 @@ public sealed class WordGameTests
             Assert.Contains(move.Kind, new[] { "pass", "place" });
             checkpoint = recovered.Apply(checkpoint, seat, move);
             var after = recovered.View(checkpoint, null);
-            Assert.Equal(WordTiles.Count, after.BagCount + after.Board.Length + after.RackSizes.Sum());
+            Assert.Equal(62, after.BagCount + after.Board.Length + after.RackSizes.Sum());
             if (move.Placements is { } played)
             {
                 placements++;
@@ -372,23 +405,14 @@ public sealed class WordGameTests
 
     private static (WordGame Game, string Checkpoint) Start(string first, string second, string draws = "")
     {
-        var game = Deal(first, second, draws);
-        return (game, game.Start());
-    }
-
-    private static WordGame Deal(string first, string second, string draws)
-    {
         Assert.Equal((6, 6), (first.Length, second.Length));
         var available = AllTiles();
-        var known = Take(available, first + second + draws);
+        int[][] racks = [Take(available, first), Take(available, second)];
+        var known = Take(available, draws);
         var tail = available.ToArray();
         new Random(281).Shuffle(tail);
-        int[] deal = [.. known, .. tail];
-        return new WordGame(WordLexicon.Default, tiles =>
-        {
-            if (tiles.Length == deal.Length)
-                deal.CopyTo(tiles, 0);
-        });
+        return (new WordGame(WordLexicon.Default, _ => { }),
+            new WordCheckpoint(1, 0, racks, [.. known, .. tail], [], [0, 0], 0, null).Save());
     }
 
     private static string NearEnd(string first, string second, string draw)
@@ -407,11 +431,11 @@ public sealed class WordGameTests
         return new WordCheckpoint(1, 0, racks, bag, board, [9, 20], 1, new("pass", 0, null, 0)).Save();
     }
 
-    private static List<int> AllTiles() => Enumerable.Range(1, WordTiles.Count).ToList();
+    private static List<int> AllTiles() => Enumerable.Range(1, WordTiles.Quick.Count).ToList();
 
     private static int[] Take(List<int> available, string letters) => letters.Select(letter =>
     {
-        var id = available.First(id => WordTiles.Get(id).Letter[0] == letter);
+        var id = available.First(id => WordTiles.Quick.Get(id).Letter[0] == letter);
         available.Remove(id);
         return id;
     }).ToArray();

@@ -19,10 +19,10 @@ internal sealed class WordLexicon
         while (source.ReadLine() is { } word)
         {
             if (!IsEntry(word) || string.CompareOrdinal(previous, word) >= 0)
-                throw new InvalidDataException("The Word Tiles lexicon must contain sorted, unique A–Z words of length 2–11.");
+                throw new InvalidDataException($"The Word Tiles lexicon must contain sorted, unique A–Z words of length 2–{WordTiles.MaxSize}.");
             var node = lexicon.Root;
             foreach (var letter in word)
-                node = node.Add(letter);
+                node = node.Add(letter, word.Length);
             node.MarkWord();
             previous = word;
         }
@@ -30,7 +30,7 @@ internal sealed class WordLexicon
     }
 
     internal static bool IsEntry(string word) =>
-        word.Length is >= 2 and <= WordTiles.Size && word.All(letter => letter is >= 'A' and <= 'Z');
+        word.Length is >= 2 and <= WordTiles.MaxSize && word.All(letter => letter is >= 'A' and <= 'Z');
 
     internal bool Contains(ReadOnlySpan<char> word)
     {
@@ -62,9 +62,20 @@ internal sealed class WordLexicon
     internal sealed class Node
     {
         private Node?[]? children;
+        private int shortestWord = int.MaxValue;
         internal bool IsWord { get; private set; }
-        internal Node? Step(char letter) => children?[letter - 'A'];
-        internal Node Add(char letter) => (children ??= new Node?[26])[letter - 'A'] ??= new Node();
+
+        // On Quick, skip prefixes that were absent before the lexicon grew past eleven letters.
+        internal Node? Step(char letter, int maxLength = WordTiles.MaxSize) =>
+            children?[letter - 'A'] is { } child && child.shortestWord <= maxLength ? child : null;
+
+        internal Node Add(char letter, int wordLength)
+        {
+            var child = (children ??= new Node?[26])[letter - 'A'] ??= new Node();
+            child.shortestWord = Math.Min(child.shortestWord, wordLength);
+            return child;
+        }
+
         internal void MarkWord() => IsWord = true;
     }
 }

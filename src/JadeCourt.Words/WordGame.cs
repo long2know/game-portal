@@ -17,11 +17,12 @@ public sealed class WordGame
 
     public string Start()
     {
-        var tiles = Enumerable.Range(1, WordTiles.Count).ToArray();
+        var rules = WordTiles.Classic;
+        var tiles = Enumerable.Range(1, rules.Count).ToArray();
         shuffle(tiles);
-        return new WordCheckpoint(WordCheckpoint.CurrentVersion, 0,
-            [tiles[..WordTiles.RackSize], tiles[WordTiles.RackSize..(2 * WordTiles.RackSize)]],
-            tiles[(2 * WordTiles.RackSize)..], [], [0, 0], 0, null).Save();
+        return new WordCheckpoint(rules.Version, 0,
+            [tiles[..rules.RackSize], tiles[rules.RackSize..(2 * rules.RackSize)]],
+            tiles[(2 * rules.RackSize)..], [], [0, 0], 0, null).Save();
     }
 
     public WordView View(string checkpoint, int? viewerSeat)
@@ -29,12 +30,17 @@ public sealed class WordGame
         if (viewerSeat is { } seat)
             ValidateSeat(seat);
         var state = WordCheckpoint.Load(checkpoint);
+        var rules = state.Rules;
+        var finished = state.Finished;
         int[] winners = [];
         string? detail = null;
-        if (state.Finished)
+        if (finished)
         {
+            var left = state.Racks.Select(rack => rack.Sum(id => rules.Get(id).Points)).ToArray();
             for (var i = 0; i < 2; i++)
-                state.Scores[i] -= state.Racks[i].Sum(id => WordTiles.Get(id).Points);
+                state.Scores[i] -= left[i];
+            if (rules.IsClassic && state.WentOut)
+                state.Scores[1 - state.Turn] += left[state.Turn];
 
             winners = state.Scores[0].CompareTo(state.Scores[1]) switch
             {
@@ -44,15 +50,18 @@ public sealed class WordGame
             };
             detail = state.WentOut
                 ? "A seat emptied its rack with no tiles left to draw."
-                : "Four turns without a placement.";
+                : rules.IsClassic ? "Six consecutive scoreless turns." : "Four turns without a placement.";
         }
 
-        return new WordView(WordTiles.Size, WordTiles.Size, state.Finished ? null : state.Turn,
-            state.Finished ? "finished" : "playing", winners, detail,
+        return new WordView(rules.Size, rules.Size, finished ? null : state.Turn,
+            finished ? "finished" : "playing", winners, detail,
             state.Board.OrderBy(cell => cell.Row).ThenBy(cell => cell.Column)
-                .Select(cell => new WordCell(cell.Row, cell.Column, WordTiles.Get(cell.TileId), cell.Seat)).ToArray(),
-            viewerSeat is { } viewer ? state.Racks[viewer].Select(WordTiles.Get).ToArray() : [],
-            state.Scores, state.Racks.Select(rack => rack.Length).ToArray(), state.Bag.Length, DescribeLast(state));
+                .Select(cell => new WordCell(cell.Row, cell.Column, rules.Placed(cell.TileId, cell.Letter), cell.Seat)).ToArray(),
+            viewerSeat is { } viewer ? state.Racks[viewer].Select(rules.Get).ToArray() : [],
+            state.Scores, state.Racks.Select(rack => rack.Length).ToArray(), state.Bag.Length, DescribeLast(state),
+            rules.Variant, rules.RackSize, rules.ProjectPremiums(),
+            !finished && viewerSeat == state.Turn ? rules.ExchangeLimit(state.Racks[state.Turn].Length, state.Bag.Length) : 0)
+        { ViewerSeat = viewerSeat };
     }
 
     public string Apply(string checkpoint, int seat, WordAction action)
@@ -67,9 +76,9 @@ public sealed class WordGame
 
         var next = action switch
         {
-            { Kind: "place", Placements: { Length: >= 1 and <= WordTiles.RackSize } placements, Exchange: null }
+            { Kind: "place", Placements: { } placements, Exchange: null }
                 => Place(state, seat, placements),
-            { Kind: "exchange", Placements: null, Exchange: { Length: >= 1 and <= WordTiles.ExchangeLimit } exchange }
+            { Kind: "exchange", Placements: null, Exchange: { } exchange }
                 => Exchange(state, seat, exchange),
             { Kind: "pass", Placements: null, Exchange: null } => state with
                 { DryTurns = state.DryTurns + 1, Last = new("pass", 0, null, 0) },
@@ -86,34 +95,40 @@ public sealed class WordGame
 
     private WordCheckpoint Place(WordCheckpoint state, int seat, WordPlacement[] placements)
     {
+        var rules = state.Rules;
+        if (placements.Length < 1 || placements.Length > rules.RackSize)
+            throw new InvalidOperationException($"Place between 1 and {rules.RackSize} tiles.");
         if (placements.Any(placement => placement is null))
             throw new InvalidOperationException("A placement is missing its tile or coordinates.");
         var used = RequireOwnedTiles(state.Racks[seat], placements.Select(placement => placement.TileId));
 
-        var board = new WordBoard(lexicon);
+        var board = new WordBoard(rules, lexicon);
         foreach (var cell in state.Board)
-            board.LoadTile(WordBoard.Index(cell.Row, cell.Column), cell.TileId);
+            board.LoadTile(board.Index(cell.Row, cell.Column), rules.Placed(cell.TileId, cell.Letter));
         var play = board.Score(placements);
 
         var remaining = state.Racks[seat].Where(id => !used.Contains(id)).ToArray();
-        var draw = Math.Min(WordTiles.RackSize - remaining.Length, state.Bag.Length);
+        var draw = Math.Min(rules.RackSize - remaining.Length, state.Bag.Length);
         state.Racks[seat] = [.. remaining, .. state.Bag[..draw]];
         state.Scores[seat] += play.Points;
         return state with
         {
-            Board = [.. state.Board, .. placements.Select(p => new WordCheckpoint.PlacedTile(p.Row, p.Column, p.TileId, seat))],
+            Board = [.. state.Board, .. placements.Select(p => new WordCheckpoint.PlacedTile(p.Row, p.Column, p.TileId, seat, p.Letter))],
             Bag = state.Bag[draw..],
-            DryTurns = 0,
+            DryTurns = play.Points > 0 ? 0 : state.DryTurns + 1,
             Last = new("place", placements.Length, play.Words, play.Points)
         };
     }
 
     private WordCheckpoint Exchange(WordCheckpoint state, int seat, int[] exchange)
     {
-        if (exchange.Length > state.Bag.Length)
-            throw new InvalidOperationException("There are not enough tiles in the bag for that exchange.");
-        var returned = RequireOwnedTiles(state.Racks[seat], exchange);
+        var rules = state.Rules;
         var rack = state.Racks[seat];
+        if (exchange.Length < 1 || exchange.Length > rules.MaxExchange)
+            throw new InvalidOperationException($"Exchange between 1 and {rules.MaxExchange} tiles.");
+        if (exchange.Length > rules.ExchangeLimit(rack.Length, state.Bag.Length))
+            throw new InvalidOperationException("There are not enough tiles in the bag or rack for that exchange.");
+        var returned = RequireOwnedTiles(rack, exchange);
         state.Racks[seat] = [.. rack.Where(id => !returned.Contains(id)), .. state.Bag[..exchange.Length]];
         int[] bag = [.. state.Bag[exchange.Length..], .. rack.Where(returned.Contains)];
         shuffle(bag);
