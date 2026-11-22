@@ -1,23 +1,46 @@
 import { defaultPreferences } from "./protocol";
 import type { Preferences } from "./protocol";
-import type { Ambient } from "./portal/ambient";
-import type { TableCue } from "./table";
+import type { Callouts } from "./callouts";
+import type { Ambient, BarPlayer } from "./portal/ambient";
+import type { Effect, TileSounds } from "./table-sounds";
 
-type Effect = "select" | TableCue;
+type Soundtrack = "still" | "bamboo";
+export type CallVoice = "off" | "mixed" | "lower" | "higher";
+export interface AudioChoices { track: Soundtrack; voice: CallVoice }
+type MusicChoice = [enabled: boolean, volume: number, track: Soundtrack];
 
 export class LanternAudio {
   private context: AudioContext | null = null;
   private effects: GainNode | null = null;
   private music?: Ambient;
   private musicLoading = false;
-  private draft?: [boolean, number];
-  private noise: AudioBuffer | null = null;
-  private readonly voices = new Map<AudioScheduledSourceNode, GainNode>();
+  private musicFailed = false;
+  private bamboo?: BarPlayer;
+  private bambooLoading = false;
+  private bambooFailed = false;
+  private draft?: MusicChoice;
+  private callouts?: Callouts;
+  private callsLoading = false;
+  private callsFailed = false;
+  private atTable = false;
+  private cues?: TileSounds;
+  private cuesLoading = false;
+  private pendingCue?: () => void;
   private prefs = defaultPreferences;
   private unavailable = false;
+  choices: AudioChoices = { track: "still", voice: "off" };
   changed?: () => void;
 
-  constructor() {
+  constructor(private readonly key?: string) {
+    if (key) {
+      try {
+        const [track, voice] = localStorage.getItem(key)?.split(":") ?? [];
+        this.choices = {
+          track: track === "bamboo" ? "bamboo" : "still",
+          voice: voice === "mixed" || voice === "lower" || voice === "higher" ? voice : "off",
+        };
+      } catch { /* Storage is optional. */ }
+    }
     const activate = (event: Event) => { if (event.isTrusted) void this.unlock(); };
     // Touch and pen grant activation on release, not pointerdown.
     window.addEventListener("pointerdown", event => { if (event.pointerType === "mouse") activate(event); }, { passive: true });
@@ -27,20 +50,37 @@ export class LanternAudio {
     document.addEventListener("visibilitychange", () => this.updateBuses());
   }
 
+  get deviceChoices(): boolean { return !!this.key; }
+
+  saveChoices(choices: AudioChoices): boolean {
+    if (!this.key) return true;
+    if (this.choices.voice !== choices.voice) this.callouts?.stop();
+    this.choices = choices;
+    try {
+      localStorage.setItem(this.key, `${choices.track}:${choices.voice}`);
+      return true;
+    } catch { return false; }
+  }
+
   get note(): string {
-    const [music, volume] = this.musicChoice;
-    if (this.unavailable || this.music?.unavailable) return "Audio unavailable.";
+    const [music, volume, track] = this.musicChoice;
+    if (this.unavailable) return "Audio unavailable.";
+    if (music && (this.musicFailed || this.music?.unavailable)) return "Music is unavailable.";
+    if (music && track === "bamboo" && this.bambooFailed) return "Bamboo by the Xiang is unavailable.";
     if (music && !volume) return "Music is muted at 0% volume.";
+    const voice = this.choices.voice;
+    if (voice !== "off" && (this.callsFailed || this.callouts?.unavailable(voice)))
+      return "Spoken calls are unavailable. Table cues still play.";
     if (music && !this.music?.playing)
       return this.context?.state === "running" ? "Music is paused." : "Tap or press a key to allow sound.";
-    return "Music preview · Save settings to keep changes.";
+    return music ? "Music preview · Save settings to keep changes." : "Turn on music to preview. Save settings to keep changes.";
   }
 
-  private get musicChoice(): [boolean, number] {
-    return this.draft ?? [this.prefs.music, this.prefs.volume];
+  private get musicChoice(): MusicChoice {
+    return this.draft ?? [this.prefs.music, this.prefs.volume, this.choices.track];
   }
 
-  preview(draft?: [boolean, number]): void {
+  preview(draft?: MusicChoice): void {
     this.draft = draft;
     if (draft?.[0] && draft[1]) void this.unlock(true);
     this.updateMusic();
@@ -60,6 +100,7 @@ export class LanternAudio {
         this.context = new Context();
         this.effects = this.context.createGain();
         this.effects.connect(this.context.destination);
+        this.context.addEventListener("statechange", () => this.updateBuses());
       }
       await this.context.resume();
       this.updateBuses();
@@ -73,125 +114,99 @@ export class LanternAudio {
     this.updateBuses();
   }
 
+  setTableActive(active: boolean): void {
+    if (active === this.atTable) return;
+    this.atTable = active;
+    this.updateTableSound();
+  }
+
   play(effect: Effect): void {
-    const bus = this.effects;
-    if (!bus || this.context?.state !== "running" || !this.prefs.sound || !this.prefs.volume || document.hidden) return;
-    this.clearEffects();
-    switch (effect) {
-      case "select":
-        this.strike(0, 2450, .024, .085);
-        this.tone(bus, 740, 0, .045, .045, "triangle");
-        break;
-      case "draw":
-        this.strike(0, 1060, .072, .065);
-        this.tone(bus, 340, .034, .09, .09, "triangle");
-        this.tone(bus, 680, .039, .1, .07);
-        break;
-      case "discard":
-        this.strike(0, 1850, .033, .16);
-        this.tone(bus, 490, 0, .085, .12, "triangle");
-        this.tone(bus, 1330, .006, .045, .06);
-        break;
-      case "call":
-        this.strike(0, 1610, .045, .13);
-        this.strike(.06, 2340, .035, .12);
-        this.tone(bus, 554.37, .04, .18, .07, "triangle");
-        this.tone(bus, 830.61, .1, .25, .09);
-        break;
-      case "turn":
-        this.tone(bus, 392, 0, .17, .08, "triangle");
-        this.tone(bus, 587.33, .074, .2, .08);
-        break;
-      case "win":
-        [392, 493.88, 587.33, 783.99].forEach((frequency, index) => {
-          this.tone(bus, frequency, index * .085, .39, .105);
-          this.tone(bus, frequency * 2.01, index * .085, .21, .027, "triangle");
-        });
-        break;
-      case "exhausted":
-        this.tone(bus, 293.66, 0, .32, .09, "triangle");
-        this.tone(bus, 196, .12, .43, .11);
-        break;
+    if (!this.tableAudible) return;
+    this.clearCues();
+    const call = effect === "win" ? "hu" : effect === "chi" || effect === "peng" ? effect : undefined;
+    const voice = this.choices.voice;
+    if (call && voice !== "off") {
+      if (this.callouts?.play(voice, call)) return;
+      this.callouts?.stop();
+    }
+    if (this.cues) this.cues.play(effect);
+    else {
+      const expires = performance.now() + 250;
+      this.pendingCue = () => {
+        if (performance.now() < expires && this.tableAudible) this.cues?.play(effect);
+      };
     }
   }
 
   clearEffects(): void {
-    if (!this.context) return;
-    const now = this.context.currentTime;
-    for (const [source, envelope] of this.voices) {
-      envelope.gain.cancelScheduledValues(now);
-      envelope.gain.setTargetAtTime(0, now, .005);
-      source.stop(now + .02);
-    }
-    this.voices.clear();
+    this.callouts?.stop();
+    this.clearCues();
+  }
+
+  private clearCues(): void {
+    this.pendingCue = undefined;
+    this.cues?.clear();
   }
 
   private updateBuses(): void {
     this.updateMusic();
+    this.updateTableSound();
     if (!this.context || !this.effects) return;
-    const visible = !document.hidden;
-    if (!this.prefs.sound || !this.prefs.volume || !visible) this.clearEffects();
-    this.effects.gain.setTargetAtTime(this.prefs.sound && visible ? this.prefs.volume : 0, this.context.currentTime, .02);
+    this.effects.gain.setTargetAtTime(this.prefs.sound && !document.hidden ? this.prefs.volume : 0, this.context.currentTime, .02);
   }
 
   private updateMusic(): void {
-    const [music, volume] = this.musicChoice;
+    const [music, volume, track] = this.musicChoice;
     const context = this.context;
-    this.music?.setVolume(music ? volume : 0);
-    if (music && volume && context?.state === "running" && !this.musicLoading) {
+    if (music && volume && context?.state === "running" && !document.hidden && !this.musicLoading) {
       this.musicLoading = true;
       const url = new URL("./portal/ambient.js?no-inline", import.meta.url).href;
       void (import(/* @vite-ignore */ url) as Promise<typeof import("./portal/ambient")>).then(({ Ambient }) => {
         this.music = new Ambient(context, () => this.changed?.());
         this.updateMusic();
-      }).catch(() => { this.unavailable = true; this.changed?.(); });
+      }).catch(() => { this.musicFailed = true; this.changed?.(); });
+    }
+    if (music && volume && track === "bamboo" && context?.state === "running" && !document.hidden && !this.bambooLoading) {
+      this.bambooLoading = true;
+      void import("./bamboo").then(({ bamboo }) => {
+        this.bamboo = bamboo(context);
+        this.updateMusic();
+      }).catch(() => { this.bambooFailed = true; this.updateMusic(); });
+    }
+    if (!music || !volume || this.bambooFailed && track === "bamboo") this.music?.setVolume(0);
+    else if (track === "still" || this.bamboo) {
+      this.music?.setTrack(track === "bamboo" ? this.bamboo : undefined);
+      this.music?.setVolume(volume);
     }
     this.changed?.();
   }
 
-  private tone(bus: AudioNode, frequency: number, wait: number, duration: number, level: number, wave: OscillatorType = "sine"): void {
-    const context = this.context!;
-    const oscillator = context.createOscillator();
-    oscillator.type = wave;
-    oscillator.frequency.value = frequency;
-    this.voice(oscillator, bus, wait, duration, level, .012);
+  private get tableAudible(): boolean {
+    return this.atTable && this.prefs.sound && this.prefs.volume > 0 && !document.hidden && this.context?.state === "running";
   }
 
-  private strike(wait: number, frequency: number, duration: number, level: number): void {
-    const context = this.context!;
-    if (!this.noise) {
-      this.noise = context.createBuffer(1, Math.ceil(context.sampleRate * .09), context.sampleRate);
-      const samples = this.noise.getChannelData(0);
-      for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+  private updateTableSound(): void {
+    if (!this.tableAudible) {
+      this.clearEffects();
+      return;
     }
-    const source = context.createBufferSource();
-    source.buffer = this.noise;
-    const band = context.createBiquadFilter();
-    band.type = "bandpass";
-    band.frequency.value = frequency;
-    band.Q.value = .95;
-    this.voice(source, this.effects!, wait, duration, level, .002, band);
-  }
-
-  private voice(source: AudioScheduledSourceNode, bus: AudioNode, wait: number, duration: number, level: number,
-    attack: number, filter?: BiquadFilterNode): void {
-    const context = this.context!;
-    const gain = context.createGain();
-    const time = context.currentTime + wait;
-    gain.gain.setValueAtTime(.0001, time);
-    gain.gain.exponentialRampToValueAtTime(level, time + attack);
-    gain.gain.exponentialRampToValueAtTime(.0001, time + duration);
-    source.connect(filter ?? gain);
-    filter?.connect(gain);
-    gain.connect(bus);
-    if (bus === this.effects) this.voices.set(source, gain);
-    source.addEventListener("ended", () => {
-      this.voices.delete(source);
-      source.disconnect();
-      filter?.disconnect();
-      gain.disconnect();
-    }, { once: true });
-    source.start(time);
-    source.stop(time + duration);
+    const bus = this.effects!, voice = this.choices.voice;
+    if (!this.cuesLoading) {
+      this.cuesLoading = true;
+      void import("./table-sounds").then(({ TileSounds }) => {
+        this.cues = new TileSounds(bus);
+        this.pendingCue?.();
+        this.pendingCue = undefined;
+      }).catch(() => { this.pendingCue = undefined; });
+    }
+    if (voice === "off") return;
+    if (this.callouts) this.callouts.prepare(voice);
+    else if (!this.callsLoading) {
+      this.callsLoading = true;
+      void import("./callouts").then(({ Callouts }) => {
+        this.callouts = new Callouts(bus, () => this.changed?.());
+        this.updateTableSound();
+      }).catch(() => { this.callsFailed = true; this.changed?.(); });
+    }
   }
 }

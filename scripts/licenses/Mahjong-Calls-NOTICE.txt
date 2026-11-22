@@ -1,0 +1,15 @@
+Jade Court Mahjong call audio
+
+These original clips were rendered offline for Jade Court using eSpeak NG 1.52.0.
+Thanks to Jonathan Duddington and the eSpeak NG contributors.
+eSpeak NG: https://github.com/espeak-ng/espeak-ng/tree/1.52.0
+Tool license (GPL-3.0-or-later): https://github.com/espeak-ng/espeak-ng/blob/1.52.0/COPYING
+
+The Mandarin voices use the stock cmn language data and the m3 and f2
+formant variants. The English Chow clip uses en-us+m3. These clips are
+not a Changsha dialect performance. No synthesis engine, voice files,
+dictionary, or upstream recordings are distributed.
+
+The rendered clips and their recipe are under GPL-3.0 (see LICENSE).
+To regenerate them, use scripts/render-mahjong-calls.sh with eSpeak NG and
+FFmpeg as described in docs/assets.md in the Jade Court source distribution.

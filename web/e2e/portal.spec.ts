@@ -41,13 +41,23 @@ function expectPoint(actual: Point, expected: Point) {
   expect(Math.abs(actual[1] - expected[1])).toBeLessThan(.7);
 }
 
-type AudioProbe = Window & { audioSignal: () => { running: boolean; rms: number; peak: number; taps: number } };
+type AudioProbe = Window & {
+  audioSignal: () => { running: boolean; rms: number; peak: number; taps: number; breaths: number; rooms: number };
+};
 
 async function observeAudio(page: Page) {
   await page.addInitScript(() => {
     const taps: AnalyserNode[] = [];
+    const echoes = new Set<DelayNode>();
+    let breaths = 0;
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (...args: Parameters<typeof start>) {
+      if (this.loop) breaths++;
+      start.apply(this, args);
+    };
     const connect = AudioNode.prototype.connect;
     AudioNode.prototype.connect = function (this: AudioNode, destination: AudioNode | AudioParam, ...args: number[]) {
+      if (this instanceof DelayNode) echoes.add(this);
       if (destination instanceof AudioDestinationNode) {
         const tap = this.context.createAnalyser();
         taps.push(tap);
@@ -57,6 +67,11 @@ async function observeAudio(page: Page) {
       }
       return Reflect.apply(connect, this, [destination, ...args]);
     } as typeof AudioNode.prototype.connect;
+    const disconnect = AudioNode.prototype.disconnect;
+    AudioNode.prototype.disconnect = function (this: AudioNode, ...args: unknown[]) {
+      Reflect.apply(disconnect, this, args);
+      if (this instanceof DelayNode) echoes.delete(this);
+    } as typeof AudioNode.prototype.disconnect;
     (window as unknown as AudioProbe).audioSignal = () => {
       let rms = 0, peak = 0;
       for (const tap of taps) {
@@ -65,16 +80,16 @@ async function observeAudio(page: Page) {
         rms = Math.max(rms, Math.sqrt(samples.reduce((sum, i) => sum + i * i, 0) / samples.length));
         peak = Math.max(peak, ...samples.map(Math.abs));
       }
-      return { running: taps.some(tap => tap.context.state === "running"), rms, peak, taps: taps.length };
+      return { running: taps.some(tap => tap.context.state === "running"), rms, peak, taps: taps.length, breaths, rooms: echoes.size };
     };
   });
   return () => page.evaluate(() => (window as unknown as AudioProbe).audioSignal());
 }
 
-async function audible(signal: Awaited<ReturnType<typeof observeAudio>>) {
+async function audible(signal: Awaited<ReturnType<typeof observeAudio>>, floor = .028) {
   await expect.poll(async () => {
     const { running, rms, peak } = await signal();
-    return running && rms > .028 && peak < .65;
+    return running && rms > floor && peak < .65;
   }).toBe(true);
 }
 
@@ -674,29 +689,50 @@ test.describe("mounted Jade Court portal", () => {
       const url = urls(baseURL!);
       const guest = await seedPreferences(context.request, url());
       const signal = await observeAudio(page);
+      const optional: string[] = [];
+      page.on("request", request => {
+        if (/\/(?:ambient|bamboo|callouts|table-sounds)-|\.(mp3|wav)$/.test(new URL(request.url()).pathname))
+          optional.push(request.url());
+      });
       const patches = () => page.evaluate(() => performance.getEntriesByName(location.origin + "/portal/api/profile").length);
       await page.goto(url("mahjong/"));
       await expect(page.locator(".connection")).toHaveAttribute("data-status", "online");
       const settings = page.getByRole("button", { name: "Settings", exact: true });
       const dialog = page.getByRole("dialog", { name: "Settings" });
       const music = dialog.getByLabel("Quiet table music", { exact: true });
+      const track = dialog.getByRole("combobox", { name: "Soundtrack", exact: true });
+      const bamboo = async (prior = 0) => {
+        await expect.poll(async () => (await signal()).breaths).toBeGreaterThan(prior);
+        await audible(signal, .016);
+      };
       await settings.tap();
       await expect(music).not.toBeChecked();
-      expect((await signal()).rms).toBe(0);
+      await expect(track).toHaveValue("still");
+      expect(optional).toEqual([]);
+      expect(await signal()).toMatchObject({ rms: 0, breaths: 0 });
       await music.check();
       await audible(signal);
+      const still = await signal();
+      expect(still.breaths).toBe(0);
+      expect(optional.every(asset => !asset.includes("/bamboo-"))).toBe(true);
+      await track.selectOption({ label: "Bamboo by the Xiang" });
+      await bamboo();
+      expect(await signal()).toMatchObject({ taps: still.taps, rooms: 1 });
       expect(await patches()).toBe(0);
       await page.screenshot({ path: info.outputPath("mahjong-music-preview.png") });
       await music.uncheck();
       await expect.poll(async () => (await signal()).rms).toBeLessThan(.001);
+      const previousPreview = (await signal()).breaths;
       await music.check();
-      await audible(signal);
+      await bamboo(previousPreview);
       await dialog.getByRole("button", { name: "Close dialog" }).tap();
       await expect(dialog).toHaveCount(0);
       await expect.poll(async () => (await signal()).rms).toBeLessThan(.001);
 
       await settings.tap();
       await expect(music).not.toBeChecked();
+      await expect(track).toHaveValue("still");
+      await track.selectOption("bamboo");
       await music.check();
       const changed = receive(page, url("api/profile"), "PATCH");
       await dialog.getByRole("button", { name: "Save settings" }).tap();
@@ -704,13 +740,30 @@ test.describe("mounted Jade Court portal", () => {
         displayName: guest.displayName, preferences: { ...guest.preferences, music: true },
       });
       await expect(dialog.getByText("Settings saved.")).toBeVisible();
-      await audible(signal);
+      await bamboo();
+      optional.length = 0;
       await page.reload();
       await expect(page.locator(".connection")).toHaveAttribute("data-status", "online");
-      expect(await signal()).toMatchObject({ running: false, rms: 0 });
+      expect(await signal()).toMatchObject({ running: false, rms: 0, breaths: 0 });
+      expect(optional).toEqual([]);
       await settings.tap();
       await expect(music).toBeChecked();
+      await expect(track).toHaveValue("bamboo");
+      await bamboo();
+      const savedTrack = await signal();
+      await track.selectOption("still");
       await audible(signal);
+      expect(await signal()).toMatchObject({ breaths: savedTrack.breaths, taps: savedTrack.taps, rooms: 1 });
+      await dialog.getByRole("button", { name: "Close dialog" }).tap();
+      await bamboo(savedTrack.breaths);
+      expect(await signal()).toMatchObject({ taps: savedTrack.taps, rooms: 1 });
+      await simulateVisibility(page, true);
+      await expect.poll(async () => (await signal()).rms).toBeLessThan(.001);
+      const hidden = await signal();
+      expect(hidden.rooms).toBe(0);
+      await simulateVisibility(page, false);
+      await bamboo(hidden.breaths);
+      await settings.tap();
       const volume = dialog.getByRole("slider");
       await volume.focus();
       await page.keyboard.press("Home");
@@ -718,7 +771,7 @@ test.describe("mounted Jade Court portal", () => {
       await expect(dialog.getByText("Music is muted at 0% volume.")).toBeVisible();
       await expect.poll(async () => (await signal()).rms).toBeLessThan(.001);
       await dialog.getByRole("button", { name: "Close dialog" }).tap();
-      await audible(signal);
+      await audible(signal, .016);
     });
 
   test("the Mahjong child keeps its cold flagship assets, socket mount, return link and canonical invite", async ({ page, baseURL, request }) => {
@@ -742,7 +795,8 @@ test.describe("mounted Jade Court portal", () => {
       expect.stringMatching(/\/index-[\w-]+\.js$/), expect.stringMatching(/\/index-[\w-]+\.css$/),
       expect.stringMatching(/\/jade-court-[\w-]+\.svg$/),
     ]));
-    expect([...assets].every(asset => !/\/(?:portal-|actors-|ambient-|court-study-|hall-dragon-|holdem-|solitaire-|sudoku-|words-|multiplayer-|solo-|cards-|shared-|room-)/.test(new URL(asset).pathname))).toBe(true);
+    expect([...assets].filter(asset =>
+      /\/(?:portal|actors|ambient|bamboo|callouts|table-sounds|settings|court-study|hall-dragon|holdem|solitaire|sudoku|words|multiplayer|solo|cards|shared|room)-|\.mp3$/.test(new URL(asset).pathname))).toEqual([]);
     const compressed = await Promise.all([...assets].map(async asset => {
       const response = await request.get(asset);
       expect(response.ok()).toBe(true);

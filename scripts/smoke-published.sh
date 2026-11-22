@@ -33,6 +33,10 @@ case "$portal" in
       echo "Missing or changed SCOWL notice: $publish/licenses/SCOWL-2020.12.07.txt" >&2
       exit 1
     fi
+    if ! cmp -s scripts/licenses/Mahjong-Calls-NOTICE.txt "$publish/licenses/Mahjong-Calls-NOTICE.txt"; then
+      echo "Missing or changed Mahjong calls notice: $publish/licenses/Mahjong-Calls-NOTICE.txt" >&2
+      exit 1
+    fi
     runtime=scripts/smoke-portal.mjs
     ;;
   false) runtime=scripts/smoke-runtime.mjs ;;
@@ -66,7 +70,7 @@ state="$work/guest.json"
 export TMPDIR="$work/scratch"
 mkdir -- "$TMPDIR"
 server_pid=
-portal_specs=(e2e/portal.spec.ts e2e/board-controls.spec.ts e2e/expansion.spec.ts e2e/dice-games.spec.ts e2e/art-direction.spec.ts)
+portal_specs=(e2e/portal.spec.ts e2e/mahjong-audio.spec.ts e2e/board-controls.spec.ts e2e/expansion.spec.ts e2e/dice-games.spec.ts e2e/art-direction.spec.ts)
 
 stop_server() {
   local pid=$server_pid
@@ -155,7 +159,7 @@ run_portal_browsers() {
   local spec group browser
   local -a specs=("${portal_specs[@]}")
   if [[ ${mount%/} == /game-portal ]]; then
-    specs=(e2e/dice-games.spec.ts)
+    specs=(e2e/dice-games.spec.ts e2e/mahjong-audio.spec.ts)
   fi
   for spec in "${specs[@]}"; do
     [[ -s "web/$spec" ]] || { echo "Missing portal browser spec: web/$spec" >&2; return 1; }
