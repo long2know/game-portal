@@ -1,26 +1,19 @@
 import { gzipSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
-import type { APIRequestContext, Locator, Page, Response } from "@playwright/test";
+import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import type { Guest } from "../src/protocol";
 import type { MoveReply, Table } from "../src/portal/api";
+import { fitsPhone, observeMotion, projected, receive, state, tap, urls } from "./portal-support";
+import type { MotionPage, Point } from "./portal-support";
 
 const boardGames = [
   ["chess", "Chess"], ["go", "Go"], ["reversi", "Reversi"],
   ["checkers", "Checkers"], ["chinese-checkers", "Chinese Checkers"],
 ] as const;
 
-const portal = (baseURL: string) => new URL("/portal/", baseURL);
-const urls = (baseURL: string) => (path = "") => new URL(path, portal(baseURL)).href;
-const projected = (response: Response) => response.json() as Promise<Table>;
 const squareAt = (board: Locator, row: number, column: number) => board.locator(`[data-row="${row}"][data-column="${column}"]`);
 const cellById = (board: Locator, id: string) => board.locator(`[data-cell=${JSON.stringify(id)}]`);
-const state = (page: Page) => page.locator(".turn-text");
 const boardOn = (page: Page, name: string) => page.getByRole("group", { name: `${name} board`, exact: true });
-const tap = (page: Page, name: string | RegExp) => page.getByRole("button", { name, exact: true }).tap();
-
-function receive(page: Page, url: string, method: string) {
-  return page.waitForResponse(response => response.url() === url && response.request().method() === method);
-}
 
 type ClipboardPage = typeof window & { clipboardWrites: string[] };
 
@@ -31,61 +24,6 @@ async function observeClipboard(page: Page) {
     Object.defineProperty(navigator, "clipboard", { value: { writeText: async (value: string) => { writes.push(value); } } });
   });
   return () => page.evaluate(() => (window as ClipboardPage).clipboardWrites);
-}
-
-async function fitsPhone(page: Page) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
-}
-
-type Point = [number, number];
-type MotionTrace = {
-  effect: string; side: string; piece: string; start: Point; path: Point[]; delay: number;
-  flipTilt?: number[];
-  sample?: { center: Point; height: number; opacity: number }; finished?: boolean; cancelled?: boolean;
-};
-type MotionPage = Window & { motion: MotionTrace[]; holdMotion: boolean };
-
-async function observeMotion(page: Page) {
-  await page.addInitScript(() => {
-    const probe = window as unknown as MotionPage;
-    probe.motion = [];
-    const animate = Element.prototype.animate;
-    Element.prototype.animate = function (frames, options) {
-      const layer = this.closest<HTMLElement>(".motion-layer");
-      if (!layer) return animate.call(this, frames, options);
-      const origin = layer.getBoundingClientRect();
-      const center = ({ x, y, width, height }: DOMRect): Point =>
-        [x + width / 2 - origin.x, y + height / 2 - origin.y];
-      const start = center(this.getBoundingClientRect());
-      const art = this.querySelector<HTMLElement>(".token")!;
-      const animation = animate.call(this, frames, options);
-      const effect = (animation.effect as KeyframeEffect);
-      const transforms = effect.getKeyframes().map(frame => new DOMMatrix(frame.transform as string | undefined));
-      const entry: MotionTrace = {
-        effect: [...this.classList].find(name => name !== "motion-piece")!.slice("motion-".length),
-        side: art.dataset.side!, piece: art.dataset.piece!, start,
-        path: transforms.map(transform => [start[0] + transform.m41, start[1] + transform.m42]),
-        delay: effect.getTiming().delay!,
-      };
-      if (entry.effect === "flip") entry.flipTilt = transforms.map(transform => transform.m22);
-      probe.motion.push(entry);
-      const sample = () => {
-        if (!this.isConnected || animation.playState === "idle" || animation.playState === "finished") return;
-        const progress = effect.getComputedTiming().progress ?? 0;
-        if (progress < .16 || progress > .85) {
-          requestAnimationFrame(sample);
-          return;
-        }
-        const rect = this.getBoundingClientRect();
-        entry.sample = { center: center(rect), height: rect.height, opacity: Number(getComputedStyle(this).opacity) };
-        if (probe.holdMotion) animation.pause();
-      };
-      requestAnimationFrame(sample);
-      void animation.finished.then(() => { entry.finished = true; }, () => { entry.cancelled = true; });
-      return animation;
-    };
-  });
-  return () => page.evaluate(() => (window as unknown as MotionPage).motion);
 }
 
 async function boardCenters(board: Locator) {
@@ -492,172 +430,6 @@ test.describe("mounted Jade Court portal", () => {
     await expect(page.getByText(`Last move: ${lastMove}`, { exact: true })).toBeVisible();
     expect(movesSent).toEqual([attempted.id]);
     expect(await motion()).toEqual([]);
-  });
-
-  test("a waiting table closes on Leave and cannot be rejoined or resumed", async ({ page, browser, baseURL }) => {
-    const url = urls(baseURL!);
-    await page.setViewportSize({ width: 320, height: 730 });
-    await page.goto(url("chess/"));
-    const created = receive(page, url("api/board/tables"), "POST");
-    await tap(page, "Invite a friend");
-    const response = await created;
-    expect(response.request().postDataJSON()).not.toHaveProperty("botDifficulty");
-    const waiting = await projected(response);
-    const invitation = await page.getByRole("textbox", { name: "Invite link" }).inputValue();
-    const leave = page.getByRole("button", { name: "Leave table", exact: true });
-    expect((await leave.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-    await leave.tap();
-    const dialog = page.getByRole("dialog", { name: "Leave table?" });
-    await expect(dialog).toHaveAccessibleDescription(/can’t be resumed/);
-    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(leave).toBeFocused();
-    await expect(state(page)).toHaveText("Waiting for players");
-    await leave.tap();
-    const closed = receive(page, url(`api/board/tables/${waiting.id}/leave`), "POST");
-    await dialog.getByRole("button", { name: "Leave table" }).tap();
-    const result = await closed;
-    expect(result.request().postDataJSON()).toEqual({ revision: waiting.revision });
-    expect(await projected(result)).toMatchObject({ status: "closed", endedBySeat: waiting.seat, endReason: "left" });
-    await expect(state(page)).toHaveText("Table closed");
-    await expect(page.getByText("You left the table.", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Chess", exact: true })).toBeFocused();
-    const peer = await browser.newContext();
-    try {
-      const visitor = await peer.newPage();
-      await visitor.goto(invitation);
-      await visitor.getByRole("button", { name: "Join table" }).click();
-      await expect(visitor.getByText(/invitation couldn’t be accepted/)).toBeVisible();
-      await expect(visitor).toHaveURL(invitation);
-    } finally { await peer.close(); }
-    const resumed = receive(page, url("api/board/resume?game=chess"), "GET");
-    await page.reload();
-    expect(await (await resumed).json()).toEqual({ tableId: null });
-    const difficulty = page.getByRole("combobox", { name: "Bot difficulty", exact: true });
-    await expect(difficulty).toBeEnabled();
-    await expect(difficulty).toHaveValue("standard");
-    for (const [id, label] of [["easy", "Easy"], ["hard", "Hard"]]) {
-      await difficulty.selectOption(id);
-      const restarted = receive(page, url("api/board/tables"), "POST");
-      await tap(page, "Play a bot");
-      const restartedResponse = await restarted;
-      const botTable = await projected(restartedResponse);
-      expect(botTable).toMatchObject({ status: "playing", botDifficulty: id });
-      expect(botTable.id).not.toBe(waiting.id);
-      expect(restartedResponse.request().postDataJSON()).toHaveProperty("botDifficulty", id);
-      const variant = page.getByText(`Standard · 2 players · ${label} bot`, { exact: true });
-      await expect(variant).toBeVisible();
-      await page.reload();
-      await expect(variant).toBeVisible();
-      await tap(page, "Resign");
-      await page.getByRole("dialog", { name: "Resign?" }).getByRole("button", { name: "Resign" }).tap();
-      await expect(page.getByText("You resigned.", { exact: true })).toBeVisible();
-      await tap(page, "Set up another game");
-    }
-    await fitsPhone(page);
-  });
-
-  test("a visiting player’s stale Leave refreshes before closing a live private game", async ({ page, context, browser, baseURL }, info) => {
-    const url = urls(baseURL!);
-    await page.goto(url("reversi/"));
-    await page.getByLabel("Display name").fill("Host");
-    const created = receive(page, url("api/board/tables"), "POST");
-    await tap(page, "Invite a friend");
-    const waiting = await projected(await created);
-    const path = url(`api/board/tables/${waiting.id}`);
-    const peer = await browser.newContext({ viewport: { width: 320, height: 730 }, hasTouch: true });
-    try {
-      const visitor = await peer.newPage();
-      const motion = await observeMotion(visitor);
-      await visitor.goto(await page.getByRole("textbox", { name: "Invite link" }).inputValue());
-      await visitor.getByLabel("Display name").fill("Visitor");
-      const joined = receive(visitor, url("api/board/join"), "POST");
-      await tap(visitor, "Join table");
-      const table = await projected(await joined);
-      await expect(state(page)).toHaveText("Your turn");
-      const host = await (await context.request.get(path)).json() as Table;
-      const move = host.position!.moves[0];
-      await visitor.route(`${path}/leave`, async route => {
-        const changed = await context.request.post(`${path}/moves`, {
-          headers: { Origin: new URL(path).origin },
-          data: { revision: host.revision, moveId: move.id },
-        });
-        expect(changed.ok()).toBe(true);
-        await route.continue();
-      }, { times: 1 });
-      const close = async () => {
-        await tap(visitor, "Leave table");
-        const dialog = visitor.getByRole("dialog", { name: "Leave table?" });
-        await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
-        await dialog.getByRole("button", { name: "Leave table" }).tap();
-      };
-      const stale = receive(visitor, `${path}/leave`, "POST");
-      await close();
-      const rejected = await stale;
-      expect(rejected.status()).toBe(409);
-      expect(rejected.request().postDataJSON()).toEqual({ revision: table.revision });
-      await expect(visitor.getByText("The table is up to date. Check it before ending the game again.")).toBeVisible();
-      await expect(visitor.getByText(`Last move: ${move.label}`, { exact: true })).toBeVisible();
-      expect(await motion()).toEqual([]);
-      const ended = receive(visitor, `${path}/leave`, "POST");
-      await close();
-      const result = await ended;
-      expect(result.request().postDataJSON()).toEqual({ revision: table.revision + 1 });
-      const terminal = await projected(result);
-      expect(terminal).toMatchObject({ status: "closed", endedBySeat: table.seat, endReason: "left" });
-      await expect(state(visitor)).toHaveText("Table closed");
-      await expect(visitor.getByText("You left the table.", { exact: true })).toBeVisible();
-      await expect(page.getByText("Visitor left the table.", { exact: true })).toBeVisible();
-      await expect(visitor.getByRole("button", { name: "Leave table", exact: true })).toHaveCount(0);
-      await fitsPhone(visitor);
-      await visitor.screenshot({ path: info.outputPath("leave-visitor-320.png"), fullPage: true });
-      await visitor.reload();
-      await expect(visitor.getByRole("button", { name: "Invite a friend" })).toBeEnabled();
-      await page.reload();
-      await expect(page.getByRole("button", { name: "Invite a friend" })).toBeEnabled();
-    } finally { await peer.close(); }
-  });
-
-  test("browsing away preserves private Chess, while a non-turn resignation records a loss", async ({ page, browser, baseURL }, info) => {
-    const url = urls(baseURL!);
-    await page.goto(url("chess/"));
-    await page.getByLabel("Display name").fill("Ivory");
-    await tap(page, "Invite a friend");
-    const peer = await browser.newContext({ viewport: { width: 320, height: 730 }, hasTouch: true });
-    try {
-      const visitor = await peer.newPage();
-      await visitor.goto(await page.getByRole("textbox", { name: "Invite link" }).inputValue());
-      await visitor.getByLabel("Display name").fill("Onyx");
-      const joined = receive(visitor, url("api/board/join"), "POST");
-      await tap(visitor, "Join table");
-      const table = await projected(await joined);
-      expect(table.position?.turn).not.toBe(table.seat);
-      await expect(state(visitor)).toHaveText("Ivory’s turn");
-      await visitor.getByRole("link", { name: "‹ All games", exact: true }).tap();
-      await expect(visitor).toHaveURL(url());
-      const resumed = receive(visitor, url("api/board/resume?game=chess"), "GET");
-      await visitor.getByRole("link", { name: "Set up Chess" }).tap();
-      expect(await (await resumed).json()).toEqual({ tableId: table.id });
-      await expect(state(visitor)).toHaveText("Ivory’s turn");
-      await expect(visitor.getByRole("button", { name: "Leave table", exact: true })).toHaveCount(0);
-      await tap(visitor, "Resign");
-      const dialog = visitor.getByRole("dialog", { name: "Resign?" });
-      await expect(dialog).toHaveAccessibleDescription(/records a loss/);
-      await visitor.screenshot({ path: info.outputPath("resign-dialog-320.png") });
-      const sent = receive(visitor, url(`api/board/tables/${table.id}/resign`), "POST");
-      await dialog.getByRole("button", { name: "Resign" }).tap();
-      const response = await sent;
-      expect(response.request().postDataJSON()).toEqual({ revision: table.revision });
-      expect(await projected(response)).toMatchObject({
-        status: "finished", result: { cause: "resignation", loserSeat: table.seat, winnerSeat: table.position!.turn },
-      });
-      await expect(state(visitor)).toHaveText("Ivory wins.");
-      await expect(visitor.getByText("You resigned.", { exact: true })).toBeVisible();
-      await expect(state(page)).toHaveText("You won.");
-      await expect(page.getByText("Onyx resigned.", { exact: true })).toBeVisible();
-      await visitor.reload();
-      await expect(visitor.getByRole("button", { name: "Invite a friend" })).toBeEnabled();
-    } finally { await peer.close(); }
   });
 
   test("Chess settles skipped revisions, then glides an accepted capture", async ({ page, context, browser, baseURL }) => {
