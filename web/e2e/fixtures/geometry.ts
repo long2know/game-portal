@@ -82,7 +82,6 @@ export type FeedbackWindow = typeof window & {
     paint: (kind: Frame, live?: boolean) => TableCue | undefined;
     interrupt: () => void;
     mute: () => void;
-    audioReady: () => boolean;
   };
 };
 
@@ -120,7 +119,6 @@ if (params.has("feedback")) {
     },
     interrupt() { table.clearEffects(); audio?.clearEffects(); },
     mute() { audio?.configure({ ...defaultPreferences, sound: false }); },
-    audioReady: () => audio?.note.startsWith("Original synthesized") === true,
   };
 }
 

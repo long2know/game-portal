@@ -336,6 +336,7 @@ test("settlement follows initial OS motion settings and changes to saved prefere
 type AudioTrace = {
   starts: { id: number; noise: boolean }[];
   stops: { id: number; when: number }[];
+  context?: AudioContext;
 };
 type AudioWindow = FeedbackWindow & { fixtureAudio: AudioTrace; webkitAudioContext?: typeof AudioContext };
 
@@ -345,6 +346,11 @@ test("original tile and call cues obey unlock, replacement and mute", async ({ p
     const trace: AudioTrace = { starts: [], stops: [] };
     scope.fixtureAudio = trace;
     const context = (scope.AudioContext ?? scope.webkitAudioContext)!.prototype;
+    const resume = context.resume;
+    Object.defineProperty(context, "resume", { configurable: true, value(this: AudioContext) {
+      trace.context = this;
+      return resume.call(this);
+    } });
     let serial = 0;
     for (const method of ["createOscillator", "createBufferSource"] as const) {
       const original: (this: AudioContext) => AudioScheduledSourceNode = context[method];
@@ -373,7 +379,7 @@ test("original tile and call cues obey unlock, replacement and mute", async ({ p
   });
   expect(locked).toBe(0);
   await page.getByRole("button", { name: "Enable fixture sound" }).tap();
-  await expect.poll(() => page.evaluate(() => (window as AudioWindow).feedbackFixture.audioReady())).toBe(true);
+  await expect.poll(() => page.evaluate(() => (window as AudioWindow).fixtureAudio.context?.state)).toBe("running");
 
   const playback = await page.evaluate(() => {
     const { feedbackFixture: audio, fixtureAudio: trace } = window as AudioWindow;
