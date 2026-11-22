@@ -79,6 +79,12 @@ jobs:
           SMOKE_PLAYWRIGHT_OUTPUT_DIR: test-results/portal
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/portal
         run: bash scripts/smoke-published.sh artifacts/publish "$BUILD_VERSION" "$SOURCE_COMMIT" --with-browser
+      - name: Verify the custom portal mount with trusted loopback TLS
+        env:
+          Portal__Enabled: 'true'
+          SMOKE_PATH_BASE: /game-portal
+          SMOKE_HTTPS: 'true'
+        run: bash scripts/smoke-published.sh artifacts/publish "$BUILD_VERSION" "$SOURCE_COMMIT"
       - name: Preserve browser evidence and failure logs
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

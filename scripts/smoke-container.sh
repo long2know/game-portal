@@ -150,6 +150,11 @@ docker exec "$container" bash -ec '
   grep -Fx readyok <<< "$response"
   grep -Eq "^bestmove [a-h][1-8][a-h][1-8][qrbn]?( |$)" <<< "$response"
 '
+if ! docker exec "$container" cat /app/licenses/SCOWL-2020.12.07.txt \
+    | cmp -s src/JadeCourt.Words/Lexicon/SCOWL-Copyright.txt -; then
+  echo "Missing or changed SCOWL notice: /app/licenses/SCOWL-2020.12.07.txt" >&2
+  exit 1
+fi
 node scripts/smoke-portal.mjs seed "$origin/portal/" "$version" "$revision" "$work/guest-portal.json"
 portal_log=$(docker logs "$container" 2>&1)
 if grep -F 'Stockfish unavailable:' <<< "$portal_log"; then

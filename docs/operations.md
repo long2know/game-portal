@@ -143,7 +143,7 @@ The `proxy_pass` URL has **no trailing slash**: Nginx sends `/portal/...` unchan
 
 The app checks exactly one matching HTTPS `Origin` on guest writes, moves, and WebSocket upgrades. The proxy must pass the supplied `Origin`, not invent it. Guest cookies are host-only, `Secure`, `HttpOnly`, `SameSite=Lax`, with `Path=/portal`; don't rewrite their path or domain. No app hostname, proxy IP, JWT, CORS, or forwarded-headers configuration is needed. Do not enable `ASPNETCORE_FORWARDEDHEADERS_ENABLED` or set `Mahjong__TrustedProxies__*` with this mode. It does not authenticate the proxy or encrypt its HTTP hop: restrict that hop to your trusted proxy. Apps sharing an origin are not a security boundary; use a separate origin if the other apps aren't trusted.
 
-On an isolated staging deployment, run `node scripts/smoke-portal.mjs seed https://YOUR-HOST/portal/ <version> <full-commit> <new-state-file>` against the edge. It creates disposable guests/tables and checks cookie scope and HTTPS flags, allowed and rejected `Origin` values, `/portal/ws` upgrades, and actual play. Use a trusted certificate (or add the staging CA via `NODE_EXTRA_CA_CERTS`), not disabled certificate verification. Delete the smoke state file afterward; don't log cookies or access tokens.
+From the matching source checkout, run `node scripts/smoke-portal.mjs seed https://YOUR-HOST/portal/ <version> <full-commit> <new-state-file>` only against an isolated staging deployment. It creates disposable guests and plays real games over the configured mount (also supports `/game-portal/`). After restarting only that staging instance, use `resume` in place of `seed` with the same state file to check restored play. Use a trusted certificate (or add the staging CA via `NODE_EXTRA_CA_CERTS`), not disabled certificate verification. Delete the smoke state file afterward; don't log cookies or invite codes.
 
 ## Stop, back up, update, and restore
 
@@ -204,8 +204,8 @@ Check version and readiness, then reconnect from a browser with its original coo
 
 CI uses pinned action/tool and base-image versions, locked dependencies, and two read-only gates:
 
-- **Application:** Original Mahjong Rules/Server tests plus the JadeCourt.Games and JadeCourt.Chess tests in NuGet locked mode. Playwright runs Chromium and WebKit against the same native publish: the original root and `/mahjong` specs have `Portal__Enabled=false`; the dedicated `/portal` spec uses `Portal__Enabled=true` and the chess fallback with no configured native engine.
-- **Image:** Build Linux/amd64, smoke the **exact local image ID** and inspect runtime identity/architecture/entrypoint, non-root execution, no SDK or Node, and writable isolated volumes. Test the original root and `/mahjong` cold shell under the unchanged 32 KiB gzip budget and real WebSocket play and restore. Test `/portal` defaults, a separate 24 KiB shell budget, pinned Stockfish, real guest/Chess bot/Reversi invite moves, route/cookie boundaries and retained state after recreation. No runtime test means no promotion.
+- **Application:** Run all locked .NET test suites, including Poker, Solo, and Words. Chromium and WebKit test the same native publish; the original root and `/mahjong` specs keep `Portal__Enabled=false`. The portal specs run only at `/portal` with the built-in Chess fallback, using fresh data and rate limits for each spec and browser. The public-path smoke also tests `/game-portal/` over trusted loopback TLS.
+- **Image:** Smoke the **exact Linux/amd64 image ID**, non-root runtime, pinned Stockfish and bundled notices. Keep the 32 KiB Mahjong and 24 KiB portal cold shell budgets. Play Chess with a non-default bot preset and Reversi with an invited guest, then verify resign and leave. Play Hold’em and Word Tiles with bots and distinct guests, verify private hands and racks, and resume a draw-one Solitaire move and a mark in a uniquely solvable Sudoku after recreation. Both jobs must pass before any promotion.
 
 For local use, publish from a clean checkout with the pinned SDK and Node after building the client with `npm --prefix web ci && npm --prefix web run build`:
 
@@ -221,9 +221,11 @@ dotnet publish src/Mahjong.Server/Mahjong.Server.csproj -c Release --no-restore 
 Portal__Enabled=false bash scripts/smoke-published.sh "$publish" "$version" "$revision"
 SMOKE_PATH_BASE=/mahjong Portal__Enabled=false bash scripts/smoke-published.sh "$publish" "$version" "$revision"
 SMOKE_PATH_BASE=/portal Portal__Enabled=true bash scripts/smoke-published.sh "$publish" "$version" "$revision"
+SMOKE_PATH_BASE=/game-portal Portal__Enabled=true SMOKE_HTTPS=true \
+  bash scripts/smoke-published.sh "$publish" "$version" "$revision"
 ```
 
-Add `--with-browser` after installing the exact Playwright Chromium/WebKit dependencies to run browser cases too. On a host with a working Docker daemon, run the actual image gate:
+Add `--with-browser` to the HTTP commands after installing the pinned Playwright Chromium/WebKit browsers. The TLS smoke uses OpenSSL to create an isolated, short-lived loopback certificate trusted only for that run; it does not change proxy or deployment settings. On a host with a working Docker daemon, run the actual image gate:
 
 ```bash
 docker compose --env-file /dev/null config --quiet
@@ -236,4 +238,4 @@ Only a push to `main` in `long2know/game-portal` can publish. Both read-only gat
 
 ### Artifact licenses and provenance
 
-Native publish and the image include the project's [GPL v3 license](../LICENSE) and the [runtime notices](../scripts/licenses/THIRD-PARTY.txt) plus the bundled Chess notices. The image uses the Ubuntu Noble universe amd64 `stockfish=16-1build1` package. APT verifies the signed Ubuntu release metadata for both binary and source, then the build checks their pinned SHA-256 values. The exact corresponding source (including Noble’s package patches) and copyright are in `/usr/share/doc/stockfish/`; see [engine provenance, upstream mirrors and license details](portal-engines.md). The base image retains its runtime licenses. If redistributing, provide corresponding source as required by the GPL.
+Native publish and the image include the project's [GPL v3 license](../LICENSE), the [runtime notices](../scripts/licenses/THIRD-PARTY.txt), Chess notices and `licenses/SCOWL-2020.12.07.txt` for the embedded Word Tiles lexicon. The image uses the Ubuntu Noble universe amd64 `stockfish=16-1build1` package. APT verifies the signed Ubuntu release metadata for both binary and source, then the build checks their pinned SHA-256 values. The exact corresponding source (including Noble’s package patches) and copyright are in `/usr/share/doc/stockfish/`; see [engine provenance, upstream mirrors and license details](portal-engines.md). The base image retains its runtime licenses. If redistributing, provide corresponding source as required by the GPL.
