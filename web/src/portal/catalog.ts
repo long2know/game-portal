@@ -52,7 +52,7 @@ export const catalog: Record<GameId, { name: string; seats: string; description:
   },
   "word-tiles": {
     name: "Word Tiles", seats: "2 players",
-    description: "Turn a rack of letters into crossing words on a shared board.",
+    description: "Play crossing words with seven tiles, blanks and premium squares.",
     invitation: "Set up Word Tiles",
   },
 };
