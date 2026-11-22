@@ -16,10 +16,10 @@ const premiumMarks = {
 } as const;
 type Premium = keyof typeof premiumMarks;
 type Position = {
-  variant: "classic" | "quick"; rackSize: number; exchangeLimit: number;
+  variant: "duel" | "classic" | "quick"; rackSize: number; exchangeLimit: number;
   rows: number; columns: number; turn: number | null; status: string; winners: number[]; detail: string | null;
   premiums: { row: number; column: number; kind: Premium }[];
-  board: { row: number; column: number; tile: Tile; seat: number }[]; rack: Tile[];
+  board: { row: number; column: number; tile: Tile; seat: number; recent?: boolean }[]; rack: Tile[];
   scores: number[]; rackSizes: number[]; bagCount: number; lastMove: string | null;
 };
 type Action = { kind: "place"; placements: Placement[] } | { kind: "pass" } | { kind: "exchange"; exchange: number[] };
@@ -57,7 +57,7 @@ function view(play: (action: Action) => void): MatchView<Position> {
   rackHeading.tabIndex = -1;
   const variant = el("p", "eyebrow");
   const turn = el("p", "feature-status");
-  const last = el("p", "feature-hint");
+  const last = el("p", "word-last");
   const detail = el("p", "feature-hint");
   const bag = el("p", "word-bag");
   const scores = el("ul", "word-scores");
@@ -67,7 +67,7 @@ function view(play: (action: Action) => void): MatchView<Position> {
   const hint = el("p", "feature-hint");
   hint.setAttribute("role", "status");
   const instructions = el("p", "feature-hint",
-    "Cross the center to open; join a word next. Swipe to pan, or use arrows and Enter.");
+    "Swipe to pan, or use arrows and Enter.");
   instructions.id = "word-board-help";
   const recenter = button("Center board", "button small secondary", () => {
     centerBoard();
@@ -128,10 +128,11 @@ function view(play: (action: Action) => void): MatchView<Position> {
     }
   });
   const root = el("div", "feature-stack word-layout",
-    el("section", "feature-panel word-felt", el("div", "word-meta", turn, bag), scores,
-      el("div", "word-meta", instructions, recenter), pan, legend),
-    el("section", "feature-panel word-actions", el("div", "word-meta", rackHeading, variant), rack, hint,
-      el("div", "feature-controls", submit, recall, exchangeToggle, pass), last, detail, rules),
+    el("section", "feature-panel word-felt", el("div", "word-meta", turn, el("div", "word-tools", bag, recenter)),
+      scores, pan),
+    el("section", "feature-panel word-actions", el("div", "word-meta", rackHeading, variant), rack,
+      el("div", "feature-controls", submit, recall, exchangeToggle, pass), hint, last, detail,
+      el("div", "word-key", legend, rules, instructions)),
     picker);
   // The shared room can hide the match without showing a new position.
   const visibility = new MutationObserver(() => {
@@ -217,14 +218,19 @@ function view(play: (action: Action) => void): MatchView<Position> {
     text(detail, position.detail ?? "");
     detail.hidden = !position.detail;
     text(bag, `Bag: ${position.bagCount}`);
-    const classic = mode === "classic";
-    text(variant, `${classic ? "Classic" : "Quick"} · ${rackSize} tiles`);
-    legend.hidden = !classic;
-    text(rules, classic
-      ? "Letter premiums multiply the tile; word premiums multiply the word. Each counts only on first use. Play all seven at once for +50. Blanks are worth 0."
+    const quick = mode === "quick";
+    text(variant, `${mode === "duel" ? "Duel" : quick ? "Quick" : "Classic"} · ${rackSize} tiles`);
+    legend.hidden = quick;
+    text(rules, !quick
+      ? `Open through the center. Use each premium once; play all seven tiles for +${mode === "duel" ? 35 : 50}. Blanks are worth 0.`
       : "Open across the center, then connect to letters on the board. Quick uses six tiles and no premium squares.");
-    scores.replaceChildren(...table.seats.map(item => el("li", "", el("strong", "", nameAt(table!, item.seat)),
-      el("span", "", `${position!.scores[item.seat]} pts · ${position!.rackSizes[item.seat]} tiles`))));
+    scores.replaceChildren(...table.seats.map(item => {
+      const score = el("li", "", el("strong", "word-score-name", nameAt(table!, item.seat)),
+        el("span", "word-score-value", String(position!.scores[item.seat]), el("small", "", " pts")),
+        el("span", "word-score-rack", `${position!.rackSizes[item.seat]} tiles`));
+      score.toggleAttribute("data-active", position!.turn === item.seat);
+      return score;
+    }));
 
     if (!grid || newBoard) {
       center = Math.floor(rows / 2) * columns + Math.floor(columns / 2);
@@ -254,15 +260,17 @@ function view(play: (action: Action) => void): MatchView<Position> {
       const isCenter = index === center;
       cell.toggleAttribute("data-center", isCenter && !tile);
       cell.toggleAttribute("data-draft", !!drafted);
+      cell.toggleAttribute("data-recent", !!current?.recent);
       cell.setAttribute("aria-disabled", String(!canPlay || exchangeMode || !!current || (!drafted && selected === undefined)));
       if (premium) cell.dataset.premium = premium;
       else cell.removeAttribute("data-premium");
       const coordinate = `Row ${Math.floor(index / columns) + 1}, column ${index % columns + 1}`;
-      const label = `${coordinate}, ${tile ? `${tileName(tile)}${drafted ? ", draft" : ""}` :
+      const label = `${coordinate}, ${tile ? `${tileName(tile)}${drafted ? ", draft" : current?.recent ? ", last play" : ""}` :
         `${isCenter ? "center, " : ""}empty${premium ? `, ${premiumMarks[premium][1].toLowerCase()}` : ""}`}`;
       if (cell.getAttribute("aria-label") !== label) {
         cell.setAttribute("aria-label", label);
-        cell.replaceChildren(tile ? tileArt(tile) : premium ? premiumMarks[premium][0] : isCenter ? "START" : "");
+        cell.replaceChildren(tile ? tileArt(tile) : premium ? premiumMarks[premium][0] :
+          isCenter ? mode === "duel" ? el("span", "word-start", "✦") : "START" : "");
       }
     }
     const active = document.activeElement;

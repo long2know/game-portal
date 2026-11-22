@@ -299,12 +299,8 @@ public sealed class ClassicWordGameTests
         var tail = available.ToArray();
         new Random(421).Shuffle(tail);
         int[] deal = [.. known, .. tail];
-        var game = new WordGame(lexicon ?? WordLexicon.Default, tiles =>
-        {
-            if (tiles.Length == deal.Length)
-                deal.CopyTo(tiles, 0);
-        });
-        return (game, game.Start());
+        var game = new WordGame(lexicon ?? WordLexicon.Default, _ => { });
+        return (game, new WordCheckpoint(2, 0, [deal[..7], deal[7..14]], deal[14..], [], [0, 0], 0, null).Save());
     }
 
     private static string BoardPosition(string first, string second, (int Row, int Column, char Letter)[] cells)

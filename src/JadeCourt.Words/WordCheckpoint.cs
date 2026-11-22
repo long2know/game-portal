@@ -24,7 +24,8 @@ internal sealed record WordCheckpoint(
 
     internal WordTiles Rules => WordTiles.ForVersion(Version)!;
     internal bool WentOut => Bag.Length == 0 && (Racks[0].Length == 0 || Racks[1].Length == 0);
-    internal bool Finished => WentOut || DryTurns == Rules.DryTurnLimit;
+    internal bool Finished => WentOut || (DryTurns == Rules.DryTurnLimit && (!Rules.IsDuel || Scores[0] != 0 || Scores[1] != 0));
+    internal int NextDryTurn => Math.Min(DryTurns + 1, Rules.DryTurnLimit);
 
     internal string Save() => JsonSerializer.Serialize(this, Options);
 
@@ -48,7 +49,7 @@ internal sealed record WordCheckpoint(
             state.Turn is < 0 or > 1 || state.DryTurns < 0 || state.DryTurns > rules.DryTurnLimit ||
             state.Bag is null || state.Board is null ||
             state.Scores is not { Length: 2 } || state.Scores.Any(score => score < 0 ||
-                score > (rules.IsClassic ? state.Board.Length : rules.Count) * rules.MaxTurnScore) ||
+                score > (rules.UsesPremiumRules ? state.Board.Length : rules.Count) * rules.MaxTurnScore) ||
             state.Racks is not { Length: 2 } || state.Racks.Any(rack => rack is null || rack.Length > rules.RackSize) ||
             state.Bag.Length > 0 && state.Racks.Any(rack => rack.Length != rules.RackSize) ||
             state.Racks[0].Length + state.Racks[1].Length + state.Bag.Length + state.Board.Length != rules.Count ||
@@ -72,9 +73,9 @@ internal sealed record WordCheckpoint(
         }
         if (state.Board.Length == 1 || state.Board.Length > 0 && !occupied[occupied.Length / 2] ||
             state.Board.Length == 0 && state.Scores.Any(score => score != 0) ||
-            rules.IsClassic && state.Board.Length > 0 && !ConnectedToCenter(occupied, rules.Size, state.Board.Length) ||
+            rules.UsesPremiumRules && state.Board.Length > 0 && !ConnectedToCenter(occupied, rules.Size, state.Board.Length) ||
             state.WentOut && (state.Racks[state.Turn].Length == 0 ||
-                (rules.IsClassic ? state.Last?.Kind != "place" : state.DryTurns != 0)))
+                (rules.UsesPremiumRules ? state.Last?.Kind != "place" : state.DryTurns != 0)))
             throw InvalidCheckpoint();
         return state;
 
@@ -116,10 +117,11 @@ internal sealed record WordCheckpoint(
         null => DryTurns == 0 && Board.Length == 0 && Turn == 0,
         { Kind: "pass", Count: 0, Words: null, Points: 0 } => DryTurns > 0,
         { Kind: "exchange", Count: >= 1, Words: null, Points: 0 } note =>
-            DryTurns > 0 && note.Count <= rules.MaxExchange && (!rules.IsClassic || Bag.Length >= rules.RackSize),
+            DryTurns > 0 && note.Count <= rules.MaxExchange && Bag.Length >= rules.MinExchangeBag &&
+            (!rules.IsDuel || note.Count <= Bag.Length),
         { Kind: "place", Count: >= 1, Words: { Length: >= 1 } words, Points: >= 0 } move =>
             move.Count <= rules.RackSize && move.Count <= Board.Length && Scores[1 - Turn] >= move.Points &&
-            (rules.IsClassic
+            (rules.UsesPremiumRules
                 ? words.Length <= move.Count + 1 && move.Points <= rules.MaxTurnScore &&
                     (move.Points == 0 ? DryTurns > 0 : DryTurns == 0)
                 : words.Length <= rules.RackSize + 1 && move.Points > 0 && DryTurns == 0) &&

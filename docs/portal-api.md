@@ -121,10 +121,12 @@ The Word Tiles table routes, invite behavior, response shape, and outer revision
 Poker under `/api/words` instead of `/api/poker`. Create with `{players: 2, bots}`; there is no
 `/next` route. `position` is the [typed `WordView`](word-tiles-rules.md), including sparse
 board cells, scores, bag count, seat rack sizes, and the caller's own rack only. New deals have
-`variant: "classic"` (15×15, `rackSize: 7`); existing 11×11 tables remain `"quick"` (`rackSize: 6`).
-`premiums` gives the original map as `{row,column,kind}` entries (`double-letter`, `triple-letter`,
-`double-word`, `triple-word`); Quick has none. Derive which premiums have been used from occupied
-cells. `exchangeLimit` is the number of tiles the caller may exchange now, or `0` if unavailable.
+`variant: "duel"` (15×15, `rackSize: 7`); saved `"classic"` and `"quick"` games retain their
+original layouts and values. The creator (seat `0`) opens; Duel's center has no premium. `premiums` gives the table's
+map as `{row,column,kind}` entries (`double-letter`, `triple-letter`, `double-word`, `triple-word`);
+Quick has none. Derive which premiums have been used from occupied cells. In Duel, a cell
+includes `recent: true` only if its tile was placed in the latest action. `exchangeLimit` is the
+number of tiles the caller may exchange now, or `0` if unavailable.
 Tiles include `blank`; a blank shows `letter: "?"` in the rack and its assigned uppercase letter
 on the board, with zero points either way. Neither the other rack nor bag order is returned.
 A finished game cannot be changed.

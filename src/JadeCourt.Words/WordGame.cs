@@ -17,7 +17,7 @@ public sealed class WordGame
 
     public string Start()
     {
-        var rules = WordTiles.Classic;
+        var rules = WordTiles.Duel;
         var tiles = Enumerable.Range(1, rules.Count).ToArray();
         shuffle(tiles);
         return new WordCheckpoint(rules.Version, 0,
@@ -36,12 +36,14 @@ public sealed class WordGame
         string? detail = null;
         if (finished)
         {
-            var left = state.Racks.Select(rack => rack.Sum(id => rules.Get(id).Points)).ToArray();
-            for (var i = 0; i < 2; i++)
-                state.Scores[i] -= left[i];
-            if (rules.IsClassic && state.WentOut)
-                state.Scores[1 - state.Turn] += left[state.Turn];
-
+            if (!rules.IsDuel || state.WentOut)
+            {
+                var left = state.Racks.Select(rack => rack.Sum(id => rules.Get(id).Points)).ToArray();
+                for (var i = 0; i < 2; i++)
+                    state.Scores[i] -= left[i];
+                if (rules.UsesPremiumRules && state.WentOut)
+                    state.Scores[1 - state.Turn] += left[state.Turn];
+            }
             winners = state.Scores[0].CompareTo(state.Scores[1]) switch
             {
                 > 0 => [0],
@@ -50,13 +52,16 @@ public sealed class WordGame
             };
             detail = state.WentOut
                 ? "A seat emptied its rack with no tiles left to draw."
-                : rules.IsClassic ? "Six consecutive scoreless turns." : "Four turns without a placement.";
+                : rules.IsDuel ? "Three consecutive scoreless turns."
+                : rules.UsesPremiumRules ? "Six consecutive scoreless turns." : "Four turns without a placement.";
         }
 
+        // Checkpoints append placements in turn order, before projection sorts them for display.
+        var recentStart = state.Board.Length - (rules.IsDuel && state.Last is { Kind: "place" } move ? move.Count : 0);
         return new WordView(rules.Size, rules.Size, finished ? null : state.Turn,
             finished ? "finished" : "playing", winners, detail,
-            state.Board.OrderBy(cell => cell.Row).ThenBy(cell => cell.Column)
-                .Select(cell => new WordCell(cell.Row, cell.Column, rules.Placed(cell.TileId, cell.Letter), cell.Seat)).ToArray(),
+            state.Board.Select((cell, index) => new WordCell(cell.Row, cell.Column, rules.Placed(cell.TileId, cell.Letter), cell.Seat)
+                { Recent = index >= recentStart }).OrderBy(cell => cell.Row).ThenBy(cell => cell.Column).ToArray(),
             viewerSeat is { } viewer ? state.Racks[viewer].Select(rules.Get).ToArray() : [],
             state.Scores, state.Racks.Select(rack => rack.Length).ToArray(), state.Bag.Length, DescribeLast(state),
             rules.Variant, rules.RackSize, rules.ProjectPremiums(),
@@ -81,7 +86,7 @@ public sealed class WordGame
             { Kind: "exchange", Placements: null, Exchange: { } exchange }
                 => Exchange(state, seat, exchange),
             { Kind: "pass", Placements: null, Exchange: null } => state with
-                { DryTurns = state.DryTurns + 1, Last = new("pass", 0, null, 0) },
+                { DryTurns = state.NextDryTurn, Last = new("pass", 0, null, 0) },
             _ => throw new InvalidOperationException("Invalid Word Tiles action or payload.")
         };
         return (next with { Turn = 1 - seat }).Save();
@@ -115,7 +120,7 @@ public sealed class WordGame
         {
             Board = [.. state.Board, .. placements.Select(p => new WordCheckpoint.PlacedTile(p.Row, p.Column, p.TileId, seat, p.Letter))],
             Bag = state.Bag[draw..],
-            DryTurns = play.Points > 0 ? 0 : state.DryTurns + 1,
+            DryTurns = play.Points > 0 ? 0 : state.NextDryTurn,
             Last = new("place", placements.Length, play.Words, play.Points)
         };
     }
@@ -135,7 +140,7 @@ public sealed class WordGame
         return state with
         {
             Bag = bag,
-            DryTurns = state.DryTurns + 1,
+            DryTurns = state.NextDryTurn,
             Last = new("exchange", exchange.Length, null, 0)
         };
     }

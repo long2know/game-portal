@@ -178,19 +178,30 @@ async function seedPoker(call, guests) {
 }
 
 function checkWordProjection(table, rival) {
-  const { board, rack, rackSizes, variant, rackSize, rows, columns, premiums, exchangeLimit, bagCount, turn } = table.position;
-  assert(['classic', 'quick'].includes(variant), 'Word Tiles did not project a known rules profile');
-  const classic = variant === 'classic';
-  const size = classic ? 15 : 11;
-  assert.deepEqual([rows, columns, rackSize], [size, size, classic ? 7 : 6]);
-  if (classic) {
+  const { board, rack, rackSizes, variant, rackSize, rows, columns, premiums, exchangeLimit, bagCount, turn, lastMove } = table.position;
+  assert(['duel', 'classic', 'quick'].includes(variant), 'Word Tiles did not project a known rules profile');
+  const quick = variant === 'quick';
+  const size = quick ? 11 : 15;
+  assert.deepEqual([rows, columns, rackSize], [size, size, quick ? 6 : 7]);
+  if (variant === 'classic') {
     assert(premiums.some(cell => cell.row === Math.floor(rows / 2) && cell.column === Math.floor(columns / 2)
       && cell.kind === 'double-word'), 'Classic did not project its center premium');
-  } else {
+  } else if (quick) {
     assert.deepEqual(premiums, [], 'Quick must not have premiums');
+  } else {
+    const marks = new Map(premiums.map(cell => [`${cell.row},${cell.column}`, cell.kind]));
+    assert.equal(marks.size, 64, 'Duel did not project 64 distinct premium squares');
+    assert.equal(marks.has('7,7'), false, 'Duel must have a neutral start square');
+    assert.deepEqual(['0,0', '0,3', '0,5', '1,1'].map(cell => marks.get(cell)),
+      ['double-letter', 'double-word', 'triple-word', 'triple-letter']);
+    assert.equal(bagCount + board.length + rackSizes[0] + rackSizes[1], 104);
+    const faces = ['?', 'AEIORST', 'DLNU', 'GHY', 'BCFMPW', 'KV', '', '', 'X', '', 'JQZ'];
+    for (const tile of [...rack, ...board.map(cell => cell.tile)])
+      assert.equal(tile.points, faces.findIndex(letters => letters.includes(tile.blank ? '?' : tile.letter)),
+        `Duel face value for ${tile.letter}`);
   }
-  const expectedExchange = turn === table.seat && (!classic || bagCount >= 7)
-    ? Math.min(classic ? 7 : 3, rack.length, bagCount) : 0;
+  const expectedExchange = turn === table.seat && (variant !== 'classic' || bagCount >= 7)
+    ? Math.min(quick ? 3 : 7, rack.length, bagCount) : 0;
   assert.equal(exchangeLimit, expectedExchange, 'Word Tiles projected an incorrect exchange limit for this seat');
   const own = new Set(rack.map(tile => tile.id));
   assert.equal(rack.length, rackSizes[table.seat], 'Word Tiles projected more than the viewer’s rack');
@@ -206,6 +217,11 @@ function checkWordProjection(table, rival) {
     assert.match(tile.letter, /^[A-Z]$/);
     if (tile.blank) assert.equal(tile.points, 0);
   }
+  const mover = /^Seat ([12]) played /.exec(lastMove);
+  const recent = board.filter(cell => cell.recent === true);
+  if (variant === 'duel' && mover)
+    assert(recent.length > 0 && recent.length <= rackSize && recent.every(cell => cell.seat === Number(mover[1]) - 1));
+  else assert.deepEqual(recent, [], 'Word Tiles marked tiles for a non-placement turn');
   if (rival) {
     for (const tile of rival.position.rack) {
       assert(!visible.has(tile.id), 'Word Tiles exposed another guest’s rack');
@@ -237,7 +253,7 @@ function verifyOpeningScore({ rows, columns, board, scores, premiums, rackSize, 
     base += tile.points * (kind === 'double-letter' ? 2 : kind === 'triple-letter' ? 3 : 1);
     wordMultiplier *= kind === 'double-word' ? 2 : kind === 'triple-word' ? 3 : 1;
   }
-  const rackBonus = variant === 'classic' && board.length === rackSize ? 50 : 0;
+  const rackBonus = board.length !== rackSize ? 0 : variant === 'duel' ? 35 : variant === 'classic' ? 50 : 0;
   assert.equal(scores[seat], base * wordMultiplier + rackBonus, 'Word Tiles did not score the opening premiums and rack bonus');
 }
 
@@ -249,7 +265,7 @@ async function wordBotReply(call, host, words) {
     assert.equal(table.seats[1]?.bot, true, 'Word Tiles did not seat a bot');
     assert.equal(table.position.turn, table.seat);
     assert.deepEqual(table.position.board, [], 'New Word Tiles board was not empty');
-    assert.equal(table.position.variant, 'classic', 'New bot tables should start on Classic');
+    assert.equal(table.position.variant, 'duel', 'New bot tables should start on Duel');
     checkWordProjection(table);
     const after = await act(call, 'words', table, host, { kind: 'pass' });
     assert.equal(after.position.turn, table.seat, 'Word Tiles bot did not return the turn');
@@ -274,7 +290,7 @@ async function seedWords(call, guests) {
       checkWordProjection(pair[0], pair[1]);
       checkWordProjection(pair[1], pair[0]);
       const { turn: seat, board, variant } = pair[0].position;
-      assert.equal(variant, 'classic', 'New invited tables should start on Classic');
+      assert.equal(variant, 'duel', 'New invited tables should start on Duel');
       assert.deepEqual(board, [], 'Word Tiles did not start an empty board');
       const table = pair[seat];
       const placements = openingPlacement(table.position, words);
@@ -287,7 +303,7 @@ async function seedWords(call, guests) {
       if (placements) {
         const expected = placements.map(({ row, column, tileId, letter }) => {
           const tile = table.position.rack.find(entry => entry.id === tileId);
-          return { row, column, seat, tile: { ...tile, letter: letter ?? tile.letter } };
+          return { row, column, seat, tile: { ...tile, letter: letter ?? tile.letter }, recent: true };
         });
         assert.deepEqual(after.position.board, expected, 'Word Tiles did not commit the requested public placement');
         verifyOpeningScore(after.position, seat, words);
@@ -530,6 +546,11 @@ export async function resumeExpansion(call, { host, visitor, outsider }, state) 
     assert.deepEqual(await readSeat(call, game, botReply, host), botReply, `${game} did not restore the bot reply`);
     const resumed = await Promise.all([host, visitor].map(cookie => readSeat(call, game, pair[0], cookie)));
     assert.deepEqual(resumed, pair, `${game} did not restore the public position and both private seats`);
+    if (game === 'words') {
+      checkWordProjection(botReply);
+      checkWordProjection(resumed[0], resumed[1]);
+      checkWordProjection(resumed[1], resumed[0]);
+    }
     for (const cookie of [host, visitor]) {
       assert.deepEqual(await call(`api/${game}/resume`, { cookie }), { tableId: pair[0].id },
         `${game} did not offer to resume the restored private table`);
