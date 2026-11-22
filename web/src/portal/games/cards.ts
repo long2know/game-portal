@@ -47,6 +47,25 @@ function pipField(rank: number, suit: Suit): SVGSVGElement | undefined {
   return field;
 }
 
+function courtField(rank: number, suit: Suit, label: string): HTMLElement {
+  const fallback = el("span", "", label);
+  const field = el("span", "card-court", fallback);
+  if (rank < 11 || rank > 13) return field;
+  const kind = high[rank].toLowerCase();
+  const portrait = el("img", "card-portrait");
+  portrait.alt = "";
+  portrait.loading = "lazy";
+  portrait.decoding = "async";
+  portrait.addEventListener("load", () => {
+    field.dataset.illustrated = "";
+    fallback.remove();
+  }, { once: true });
+  portrait.addEventListener("error", () => portrait.remove(), { once: true });
+  portrait.src = new URL(`../assets/bellot/bellot-${kind}-${suit}.svg?no-inline`, import.meta.url).href;
+  field.append(portrait);
+  return field;
+}
+
 export function cardFace(card?: { rank: number; suit: Suit }): HTMLElement {
   const face = el("span", card ? "playing-card" : "playing-card card-back");
   face.setAttribute("role", "img");
@@ -60,7 +79,7 @@ export function cardFace(card?: { rank: number; suit: Suit }): HTMLElement {
     index.dataset.pip = mirror.dataset.pip = suitMark(suit);
     face.dataset.suit = suit;
     face.setAttribute("aria-label", cardName(rank, suit));
-    art.append(index, pipField(rank, suit) ?? el("span", "card-court", label), mirror);
+    art.append(index, pipField(rank, suit) ?? courtField(rank, suit, label), mirror);
   } else {
     face.setAttribute("aria-label", "Face-down card");
     art.append(el("span", "back-mark"));

@@ -6,10 +6,13 @@
   user-select: none;
 }
 .playing-card:is([data-suit="hearts"], [data-suit="diamonds"]) { color: #912e32; }
-.playing-card-art { position: relative; min-block-size: 0; overflow: hidden; }
+.playing-card-art {
+  --index-size: clamp(.66rem, 29cqi, 1.42rem);
+  position: relative; min-block-size: 0; overflow: hidden;
+}
 .card-rank {
   position: absolute; inset: 6% auto auto 7%;
-  font: 700 clamp(.66rem, 29cqi, 1.42rem)/1 var(--serif);
+  font: 700 var(--index-size)/1 var(--serif);
 }
 .card-rank::after { content: attr(data-pip); margin-inline-start: .06em; font-size: .7em; }
 .card-rank-mirror { inset: auto 7% 6% auto; transform: rotate(180deg); }
@@ -18,9 +21,16 @@
   display: grid; place-items: center; border-block: 1px solid currentColor;
   font: 600 clamp(.9rem, 56cqi, 2.72rem)/1 var(--serif);
 }
+.card-court[data-illustrated] { inset-block: calc(8% + var(--index-size)); block-size: auto; border: 0; }
+.card-portrait {
+  position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: contain; opacity: 0;
+  pointer-events: none;
+}
+.card-court[data-illustrated] .card-portrait { opacity: 1; }
 @container (max-width: 36px) {
   .card-rank-mirror { display: none; }
   .card-pips, .card-court { inset-block: 28% 7%; block-size: 65%; }
+  .card-court[data-illustrated] { inset-block-end: 7%; block-size: auto; }
 }
 .card-back { color: #e2d4aa; background: #234635; }
 .card-back .playing-card-art {
