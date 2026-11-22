@@ -1,5 +1,6 @@
 using Mahjong.Server.Board;
 using Mahjong.Server.Seated;
+using Mahjong.Server.Social;
 using Mahjong.Server.Solo;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,6 +15,7 @@ internal sealed class GuestRow
     public double Volume { get; set; } = 0.7;
     public bool ReducedMotion { get; set; }
     public long ExpiresAtTicks { get; set; }
+    public bool SocialAvailable { get; set; }
 }
 
 internal sealed class RoomRow
@@ -63,6 +65,8 @@ internal sealed class MahjongDb(DbContextOptions<MahjongDb> options) : DbContext
     public DbSet<SeatedTableRow> SeatedTables => Set<SeatedTableRow>();
     public DbSet<SeatedMembershipRow> SeatedMemberships => Set<SeatedMembershipRow>();
     public DbSet<SoloSaveRow> SoloSaves => Set<SoloSaveRow>();
+    public DbSet<SocialInviteRow> SocialInvites => Set<SocialInviteRow>();
+    public DbSet<SocialBlockRow> SocialBlocks => Set<SocialBlockRow>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -98,6 +102,7 @@ internal sealed class MahjongDb(DbContextOptions<MahjongDb> options) : DbContext
         });
         BoardPersistence.Configure(builder);
         SeatedPersistence.Configure(builder);
+        SocialPersistence.Configure(builder);
         builder.Entity<SoloSaveRow>(save =>
         {
             save.ToTable("SoloSaves");

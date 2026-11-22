@@ -4,6 +4,7 @@ using System.Threading.RateLimiting;
 using Mahjong.Server;
 using Mahjong.Server.Board;
 using Mahjong.Server.Seated;
+using Mahjong.Server.Social;
 using Mahjong.Server.Solo;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -42,6 +43,8 @@ if (portalEnabled)
     builder.Services.AddSingleton<BoardTables>();
     builder.Services.AddSingleton<SeatedTables>();
     builder.Services.AddSingleton<SoloTables>();
+    builder.Services.AddSingleton<SocialPresence>();
+    builder.Services.AddSingleton<SocialService>();
 }
 
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
@@ -79,6 +82,7 @@ builder.Services.AddRateLimiter(rate =>
     {
         rate.AddPolicy(PortalApi.Read, context => PortalApi.PerGuest(context, 90, 120));
         rate.AddPolicy(PortalApi.Write, context => PortalApi.PerGuest(context, 60, 60));
+        rate.AddPolicy(SocialApi.Rate, context => PortalApi.PerGuest(context, 90, 120));
     }
 });
 
@@ -121,6 +125,7 @@ if (portalEnabled)
     FarkleRules.Map(app);
     BackgammonRules.Map(app);
     SoloApi.Map(app);
+    SocialApi.Map(app);
 }
 app.MapGet("/ws", (HttpContext context, Realtime realtime) => realtime.InvokeAsync(context)).RequireRateLimiting("read");
 app.MapGet("/health/live", () => Results.Json(new { status = "live" }, Wire.Json));

@@ -6,7 +6,7 @@ namespace Mahjong.Server.Seated;
 
 internal static class FarkleRules
 {
-    private static readonly SeatedRules Game = new("farkle", FarkleGame.MinPlayers, FarkleGame.MaxPlayers, Start, View);
+    public static readonly SeatedRules Game = new("farkle", FarkleGame.MinPlayers, FarkleGame.MaxPlayers, Start, View);
 
     private sealed record Choice(int Mask, int Points);
     private sealed record TurnResult(int Seat, string Kind, int Points, int[] Dice);

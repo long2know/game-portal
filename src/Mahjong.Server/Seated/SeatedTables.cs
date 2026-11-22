@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
+using Mahjong.Server.Social;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mahjong.Server.Seated;
@@ -58,36 +59,80 @@ internal sealed class SeatedTables(IDbContextFactory<MahjongDb> factory, TimePro
         return Project(table, 0, 0, table.Status, initial?.Position);
     }
 
-    public async Task<SeatedTable> JoinAsync(SeatedRules rules, GuestRow guest, string invite, CancellationToken stop)
+    public async Task<SeatedTable> JoinAsync(SeatedRules rules, GuestRow guest, string invite, CancellationToken stop) =>
+        (await JoinCoreAsync(rules, guest, invite, null, stop))!;
+
+    public async Task JoinSocialAsync(SeatedRules rules, GuestRow guest, SocialAcceptance admission, CancellationToken stop) =>
+        await JoinCoreAsync(rules, guest, null, admission, stop);
+
+    private async Task<SeatedTable?> JoinCoreAsync(SeatedRules rules, GuestRow guest, string? invite, SocialAcceptance? admission,
+        CancellationToken stop)
     {
         for (var attempt = 0; attempt < rules.MaxPlayers; attempt++)
         {
             await using var db = await factory.CreateDbContextAsync(stop);
             var now = time.GetUtcNow().UtcTicks;
-            var table = await WithSeats(db).SingleOrDefaultAsync(t => t.Game == rules.Game
-                && t.InviteCode == invite && t.ExpiresAtTicks > now, stop) ?? throw Missing();
-            if (table.Members.SingleOrDefault(m => m.GuestId == guest.Id) is { } existing)
-                return Read(rules, table, existing.Seat);
-            if (table.Status != "waiting" || table.Members.Count >= table.Players)
-                throw Missing();
+            var table = await (admission is { } social ? SocialTargetQuery(db, rules, social.Target.TableId, now)
+                : WithSeats(db).Where(t => t.Game == rules.Game && t.InviteCode == invite && t.ExpiresAtTicks > now))
+                .SingleOrDefaultAsync(stop) ?? throw (admission is null ? Missing() : SocialLedger.Missing());
+            var existing = table.Members.SingleOrDefault(m => m.GuestId == guest.Id);
+            var open = admission is null ? table.Status == "waiting" && table.Members.Count < table.Players
+                : CanInvite(table, admission.SenderId);
+            if (admission is null)
+            {
+                if (existing is not null) return Read(rules, table, existing.Seat);
+                if (!open) throw Missing();
+            }
 
             var seat = table.Members.Count;
-            var initial = seat + 1 == table.Players
+            var initial = open && existing is null && admission?.ReceiptHint != true && seat + 1 == table.Players
                 ? Compute(false, () => rules.Start(table.Players, seat, false, stop)) : null;
             var status = initial?.Status ?? "waiting";
             await using var transaction = await db.Database.BeginTransactionAsync(stop);
             var utc = time.GetUtcNow();
+            SocialInviteRow? receipt = null;
+            if (admission is not null)
+            {
+                receipt = await admission.AuthorizeAsync(db, utc, stop);
+                if (!await db.SeatedTables.AnyAsync(t => t.Id == table.Id && t.Revision == table.Revision
+                        && t.ExpiresAtTicks > utc.UtcTicks, stop)) continue;
+                var entitled = existing is not null && table.Status != "closed";
+                if (receipt.Accepted)
+                {
+                    if (entitled) return null;
+                    throw SocialLedger.Missing();
+                }
+                if (entitled) throw SocialLedger.AlreadySeated();
+                if (!open) throw SocialLedger.Missing();
+            }
             if (!await CommitAsync(db, table, status, initial?.Checkpoint, utc, stop)) continue;
+            using var handoff = receipt is null ? null : admission!.Stage(receipt);
             var member = NewMember(table.Id, guest.Id, seat, utc);
             db.SeatedMemberships.Add(member);
             await db.SaveChangesAsync(stop);
             await transaction.CommitAsync(stop);
+            if (handoff is not null)
+            {
+                handoff.Commit();
+                return null;
+            }
             member.Guest = guest;
             table.Members.Add(member);
             return Project(table, seat, table.Revision + 1, status, initial?.Position);
         }
         throw new BusyException();
     }
+
+    public static async Task<bool> CanInviteAsync(MahjongDb db, SeatedRules rules, string id, Guid sender,
+        DateTimeOffset utc, CancellationToken stop) =>
+        await SocialTargetQuery(db, rules, id, utc.UtcTicks).SingleOrDefaultAsync(stop) is { } table
+        && CanInvite(table, sender);
+
+    private static bool CanInvite(SeatedTableRow table, Guid sender) => !table.Bots && table.Status == "waiting"
+        && table.Members.Count < table.Players && table.Members.Any(m => m.GuestId == sender);
+
+    private static IQueryable<SeatedTableRow> SocialTargetQuery(MahjongDb db, SeatedRules rules, string id, long now) =>
+        WithSeats(db).Where(t => t.Game == rules.Game && t.Id == id && t.ExpiresAtTicks > now);
 
     public async Task<SeatedTable> GetAsync(SeatedRules rules, Guid guest, string id, CancellationToken stop)
     {

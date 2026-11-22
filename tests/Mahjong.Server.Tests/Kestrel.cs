@@ -138,14 +138,14 @@ internal sealed class User(Kestrel server)
         return await response.Content.ReadFromJsonAsync<JsonElement>();
     }
 
-    public async Task<Client> Connect()
+    public async Task<Client> Connect(string path = "/ws")
     {
         var ws = new ClientWebSocket();
         ws.Options.Cookies = Cookies;
         ws.Options.Proxy = null;
         ws.Options.SetRequestHeader("Origin", server.Origin);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        await ws.ConnectAsync(new UriBuilder(server.Address) { Scheme = "ws", Path = "/ws" }.Uri, timeout.Token);
+        await ws.ConnectAsync(new UriBuilder(server.Address) { Scheme = "ws", Path = path }.Uri, timeout.Token);
         var client = new Client(ws);
         var lease = await client.Take("lease");
         client.Lease = lease.GetProperty("lease").GetString()!;
