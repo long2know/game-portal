@@ -14,6 +14,15 @@ See Apache-2.0.txt and SQLitePCLRaw-NOTICE.txt, including the SQLite notice.
 Gera.Chess 1.2.0 and Ardalis.SmartEnum 2.0.1: MIT.
 See Gera.Chess-MIT.txt and Ardalis.SmartEnum-MIT.txt.
 
+The Chess board uses Colin M. L. Burnett’s cburnett chess pieces, originally
+GPLv2+ and distributed here under GPLv3. See cburnett-NOTICE.txt for source,
+provenance and adaptation details, and the distribution’s root LICENSE.
+
+Hold’em and Solitaire use twelve adapted SVG-cards court illustrations by
+David Bellot and contributors, distributed here under LGPL 2.1. See
+Bellot-Courts-NOTICE.txt, Bellot-Courts-LGPL-2.1.txt and
+Bellot-Courts-AUTHORS.txt.
+
 When included, Word Tiles uses a modified subset of SCOWL 2020.12.07.
 Copyright 2000-2018 by Kevin Atkinson. See SCOWL-2020.12.07.txt for
 the full redistribution notice, component notices, and disclaimers.

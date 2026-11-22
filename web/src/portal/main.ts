@@ -86,6 +86,8 @@ const expansions = {
   solitaire: () => import("./games/solitaire"),
   sudoku: () => import("./games/sudoku"),
   "word-tiles": () => import("./games/words"),
+  farkle: () => import("./games/farkle"),
+  backgammon: () => import("./games/backgammon"),
 };
 if (isBoardId(route)) void openGame(catalog[route].name, async () => new (await import("./room")).GameRoom(route, host));
 else if (isExpansionId(route)) void openGame(catalog[route].name, async () => (await expansions[route]()).mount(host));

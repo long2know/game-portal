@@ -1,0 +1,28 @@
+SVG-cards court illustrations — David Bellot and contributors
+
+Copyright (C) 2005 David Bellot
+Copyright (C) 2016, 2017 Huub de Beer
+
+Source: https://github.com/htdebeer/SVG-cards/tree/6d88bf9c594997b82bc5668ab0877a4e9b717665
+File: svg-cards-indented.svg (Git blob c6dd43cc1dbe51ebccecaecbf6191755a942147b)
+SHA-256: 0762ae87d4e0e8fae5560c0cd3562b9e8291f481ccaf1961cb9d57fe0ad8abbd
+
+The header of that SVG grants GNU LGPL version 2 or, at your option, any
+later version. Here the twelve court drawings are distributed under GNU LGPL
+version 2.1, without warranty. Bellot-Courts-LGPL-2.1.txt and
+Bellot-Courts-AUTHORS.txt are the verbatim LICENSE and AUTHORS from that pin.
+
+Modified 2026-11-22 by Jade Court contributors: extracted the twelve J/Q/K
+drawings with their original paired placements and inks, cropped the view
+boxes, removed the card bases, font-dependent indices, unused nonpainting
+shapes and editor metadata, and rounded path and shape coordinates to 0.1
+units. The two uses within each file refer only to its own vector drawing.
+No other part of the deck is included.
+
+The editable corresponding source is web/src/portal/assets/bellot/ in this
+project. The matching files wwwroot/assets/bellot-<rank>-<suit>-<hash>.svg
+in the published app are byte-for-byte copies and can be opened as vectors.
+They are replaceable same-origin image resources. To use compatible modified
+art, replace the source SVGs and rebuild, or serve the replacement SVG from
+the same asset URL in an installed copy and refresh the browser cache. Keep
+the LGPL 2.1 terms and notices when redistributing the drawings.

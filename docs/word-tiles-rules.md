@@ -1,10 +1,9 @@
 # Word Tiles rules and engine contract
 
-Word Tiles is a two-seat crossword game. New deals use **Classic**: a 15×15 board with an original symmetric premium layout,
-seven tiles per rack, and an original 100-tile supply including two blanks. Already-dealt **Quick** games keep their 11×11
-board and original rules, table, and guests after an update. A table waiting for its first deal starts with Classic.
-Seat `0` opens. The dealer and exchange shuffles use the operating system's cryptographic random generator.
-A given rack is not guaranteed to have a legal play.
+Word Tiles is an independent two-seat crossword game. New deals use **Duel**: a 15×15 board, a 104-tile English
+supply, and seven tiles per rack. A table waiting for its first deal starts with Duel. Saved **Quick** and **Classic**
+tables keep their rules, tile IDs, draw order, and guests. The server uses
+the operating system's cryptographic random generator to shuffle; a rack is not guaranteed to have a playable word.
 
 ## Turns and scoring
 
@@ -14,11 +13,56 @@ A given rack is not guaranteed to have a legal play.
   words. A single tile may form a word in either direction or in both. Unchanged words and isolated letters do not score.
   Refill the rack while tiles remain.
 - **Exchange:** Draw replacements first, then return the traded tiles to the bag and shuffle. Only the count is public.
-  The turn scores nothing. The two profiles have different exchange limits.
+  The turn scores nothing. The profiles have different exchange limits.
 - **Pass:** Play no tiles and score nothing.
 
-### Classic (new deals)
+### Duel (new deals, checkpoint 3)
 
+- **Opening:** The table creator (seat `0`) plays first. The opening word must have at least two letters and cover the
+  neutral center star `(7,7)`. The center does **not** double the score in Duel.
+- **Scoring:** Duel uses Jade Court's original symmetric premium layout, excluding the former center double-word:
+  12 triple-word, 12 double-word, 20 triple-letter and 20 double-letter cells. Apply newly covered letter premiums
+  first, then multiply the word by each newly covered word premium. Apply a tile's premium to every word made
+  through it on that turn; previously placed tiles score only their face value. Assign
+  blanks an uppercase letter for the rest of the game. A blank stays worth zero on any square, but still activates word
+  premiums. Add **35 points once** after scoring every word if seven tiles were placed. `CAB` across row 7, columns
+  6–8 scores **9** with no premium. `CABINET` across row 7, columns 4–10 scores **91** (`14 × 2 × 2 + 35`),
+  not Classic's 130.
+- **Exchange:** Duel allows up to the number of tiles left in the bag, capped by the current rack size. It uses a
+  turn and cannot draw back any of the tiles just traded. This is Jade Court's short-bag convention; the publisher
+  rulebook confirms swapping costs the turn but does not specify a numeric minimum.
+- **Ending:** Play ends if a seat empties its rack with an empty bag, or after **three consecutive scoreless turns**
+  once either score is nonzero. Passes, exchanges and accepted zero-point plays count. A rejected submission
+  does not consume a turn; a scoring play resets the streak. On rack-out, subtract the opponent's unused tile
+  value and award the same amount to the seat that went out. A scoreless ending keeps the posted totals. The
+  greater final score wins; equal totals return `winners: []`.
+
+| Face value | Supply (letter × count) |
+|---|---|
+| 0 | Blank×2 |
+| 1 | A×9, E×13, I×8, O×8, R×6, S×5, T×7 |
+| 2 | D×5, L×4, N×5, U×4 |
+| 3 | G×3, H×4, Y×2 |
+| 4 | B×2, C×2, F×2, M×2, P×2, W×2 |
+| 5 | K×1, V×2 |
+| 8 | X×1 |
+| 10 | J×1, Q×1, Z×1 |
+
+Rule references: Zynga's [Classic Words With Friends rulebook](https://zyngasupport.helpshift.com/hc/en/26-words-with-friends-classic/faq/20964-classic-words-with-friends-rule-book/)
+for placement, scoring and ending; its [start guide](https://zyngasupport.helpshift.com/hc/en/26-words-with-friends-classic/faq/20971-how-do-i-start-a-game/)
+for creator-first play; [Hasbro's component list](https://hasbro-new.custhelp.com/app/answers/detail/a_id/177) for the
+104-tile English counts; and the independent [MonkeyTactics](https://blog.monkeytactics.com/posts/wwf-tile-distribution-explained/)
+and [Wordton](https://wordton.com/words-with-friends/) tables for their face values. Jade Court's
+numeric premium layout, neutral center and exact short-bag and tie policies are specified here, not claims about publisher parity.
+
+Word Tiles is not a branded edition. It validates every word against the bundled SCOWL list on submission and does not
+share commercial word lists, challenge procedures, power-ups, or matchmaking. Leaving a table closes it without scored
+settlement. The rendered board and tile art are original.
+
+### Classic (already-dealt games, checkpoint 2)
+
+- Seat `0` opened. These games use Jade Court's original 15×15 symmetric premium layout and the original
+  letter distribution below, not Duel's values or neutral center.
 - The center `(7,7)` is a double-word square. A letter premium doubles or triples the new tile's face value before the
   word total is multiplied by any new word premiums. Apply each covered premium to every word made through that square
   **on that turn only**. Previously placed tiles contribute their face values with no premiums, even if they extend a word.
@@ -44,9 +88,9 @@ A given rack is not guaranteed to have a legal play.
 | 7 | J×1, X×1 |
 | 9 | Q×1, Z×1 |
 
-### Quick (already-dealt games)
+### Quick (already-dealt games, checkpoint 1)
 
-- Six tiles per rack; center `(5,5)`; 62-tile supply. No premium cells, blanks, or rack bonus. Sum the face values
+- Seat `0` opened. Six tiles per rack; center `(5,5)`; 62-tile supply. No premium cells, blanks, or rack bonus. Sum the face values
   in each complete word, including its existing letters, and add two points for each word after the first made on that
   turn. For example, with `CAT` across, play `PI` directly above its `AT` to form `PI` (3), `PA` (3), and `IT` (2),
   plus two links (4): **12 points**.
@@ -62,16 +106,16 @@ A given rack is not guaranteed to have a legal play.
 | 4 | J×1, X×1 |
 | 5 | Q×1, Z×1 |
 
-In both profiles, final scores may be negative; the greater score wins. On a tie `winners` is `[]`.
-No more moves are accepted after the game ends.
+In the two legacy profiles, final scores may be negative; the higher adjusted total wins and any tie returns `winners: []`.
+No more moves are accepted after a game ends.
 
 ## Typed library, checkpoints and wire
 
 `src/JadeCourt.Words/JadeCourt.Words.csproj` has no runtime package dependencies. Construct `JadeCourt.Words.WordGame` and use:
 
 - `string Start()`, `string Apply(string checkpoint, int seat, WordAction action)`: these produce opaque, versioned
-  **server-only** snapshots. `Start()` deals Classic (`2`); applying turns to a Quick (`1`) snapshot keeps its original
-  format and rules. A snapshot contains both racks, draw order, board, turn, scores and the ending streak. It is not a wire
+  **server-only** snapshots. `Start()` deals Duel (`3`); applying turns to a Quick (`1`) or Classic (`2`) snapshot keeps its
+  original format and rules. A snapshot contains both racks, draw order, board, turn, scores and the ending streak. It is not a wire
   response, signed input from a client, or a revision/token. The host must authenticate the seat and apply a move to the
   latest committed checkpoint.
 - `WordView View(string checkpoint, int? viewerSeat)`: pass an authenticated seat, or `null` for a spectator. A seat sees only its own rack, even when it is not that seat's turn. A spectator sees `rack: []`. The same public fields are available to all viewers, even after the game ends. `board` is sparse (occupied cells only), sorted row then column. `turn` is `0`/`1` in `playing`, `null` in `finished`; `detail` is a terminal reason or `null`. `lastMove` is public display text, not structured game state.
@@ -83,13 +127,15 @@ No more moves are accepted after the game ends.
 Serialize the records with .NET JSON web defaults (camel case). `WordView` includes `rows`, `columns`, `turn`, `status`,
 `winners`, `detail`, `board`, `rack`, `scores`, `rackSizes`, `bagCount`, and `lastMove`, plus:
 
-- `variant`: `classic` or `quick`.
+- `variant`: `duel`, `classic` or `quick`.
 - `rackSize`: the profile's full rack size. Actual rack sizes and scores are in seat order.
 - `premiums`: `{row,column,kind}` cells in row-then-column order; each kind is `double-letter`, `triple-letter`,
   `double-word`, or `triple-word`. Quick uses `[]`. An occupied cell's premium has already been used.
 - `exchangeLimit`: the number of tiles the viewer could exchange this turn, or `0` if unavailable.
 
-Coordinates are zero-based. Board cells are `{row,column,tile,seat}`. Tiles are `{id,letter,points,blank}`. `blank` is
+Coordinates are zero-based. Board cells are `{row,column,tile,seat,recent?}`. In Duel, `recent: true` marks only the
+tiles committed by the latest action if it was a placement; omitted otherwise, including after a pass or exchange.
+Tiles are `{id,letter,points,blank}`. `blank` is
 `false` for ordinary tiles; for a blank it is `true`, `points` is `0`, and `letter` is `?` in a rack or its assigned
 uppercase letter on the board. No bag order, other rack, or checkpoint is returned.
 

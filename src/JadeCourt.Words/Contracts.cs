@@ -9,7 +9,11 @@ public sealed record WordPlacement(int Row, int Column, int TileId,
 
 public sealed record WordTile(int Id, string Letter, int Points, bool Blank = false);
 
-public sealed record WordCell(int Row, int Column, WordTile Tile, int Seat);
+public sealed record WordCell(int Row, int Column, WordTile Tile, int Seat)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Recent { get; init; }
+}
 
 public sealed record WordPremium(int Row, int Column, string Kind);
 

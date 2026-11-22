@@ -19,8 +19,8 @@ public sealed class WordGameTests
         foreach (var checkpoint in new[] { first, second })
         {
             var state = WordCheckpoint.Load(checkpoint);
-            Assert.Equal(2, state.Version);
-            Assert.Equal(Enumerable.Range(1, 100), state.Racks[0]
+            Assert.Equal(3, state.Version);
+            Assert.Equal(Enumerable.Range(1, 104), state.Racks[0]
                 .Concat(state.Racks[1]).Concat(state.Bag).Order());
         }
     }
@@ -317,7 +317,7 @@ public sealed class WordGameTests
     {
         var (game, checkpoint) = Start("CATERS", "PIONDB");
         var version = JsonNode.Parse(checkpoint)!;
-        version["version"] = 3;
+        version["version"] = 4;
         Assert.Throws<InvalidDataException>(() => game.View(version.ToJsonString(), null));
 
         var inventory = JsonNode.Parse(checkpoint)!;

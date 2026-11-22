@@ -118,6 +118,8 @@ if (portalEnabled)
     BoardApi.Map(app);
     PokerRules.Map(app);
     WordsRules.Map(app);
+    FarkleRules.Map(app);
+    BackgammonRules.Map(app);
     SoloApi.Map(app);
 }
 app.MapGet("/ws", (HttpContext context, Realtime realtime) => realtime.InvokeAsync(context)).RequireRateLimiting("read");

@@ -1,16 +1,14 @@
 .poker-felt {
   display: grid; justify-items: center; gap: .6rem; padding: clamp(11px, 3vw, 26px); text-align: center;
-  border: 3px double #c2a371; border-radius: clamp(17px, 5vw, 45px);
-  background: repeating-linear-gradient(142deg, #fff1bd09 0 1px, transparent 1px 4px),
-    radial-gradient(ellipse at 42% 42%, #426951, #1d4737 72%, #16312a);
-  box-shadow: inset 0 0 0 5px #1f382f, inset 0 0 34px #162c22a0, 0 12px 20px #11180f5c;
+  border: 3px solid var(--table-walnut); border-radius: 8px;
+  background: var(--table-baize); box-shadow: 0 2px #101a15;
 }
 .poker-pot { font-size: clamp(1.05rem, 4vw, 1.5rem); color: var(--ivory); }
 .poker-community {
   display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: clamp(4px, 1vw, 9px);
   inline-size: min(100%, 22rem);
 }
-.poker-card-slot { aspect-ratio: .71; border: 1px dashed #d5cc9b91; border-radius: 6px; background: #19382c70; }
+.poker-card-slot { aspect-ratio: .71; border: 1px dashed #f2e4bc98; border-radius: 6px; }
 .poker-own-lane { display: grid; justify-items: center; gap: 5px; padding-block-start: .55rem; }
 .poker-own { display: flex; justify-content: center; gap: 6px; inline-size: min(100%, 9rem); }
 .poker-own .playing-card { min-inline-size: 0; max-inline-size: 4.25rem; }
@@ -20,12 +18,11 @@
 }
 .poker-seat {
   display: grid; gap: .25rem; align-content: start; min-inline-size: 0; padding: .5rem .65rem;
-  overflow-wrap: anywhere; border: 1px solid #81a185; border-radius: 9px; background: #1a382be0;
+  overflow-wrap: anywhere; border: 1px solid #82a389; border-radius: 5px; background: #244333;
 }
 .poker-seat[data-acting] { border-color: #f4d0a1; box-shadow: inset 3px 0 #f4d0a1; }
 .poker-stack, .poker-awards { font-size: .88rem; }
 .poker-seat-cards { display: grid; grid-template-columns: repeat(2, 1.8rem); gap: 5px; padding-block-end: 2px; }
-.poker-seat-cards .card-rank, .poker-seat-cards .card-suit, .poker-seat-cards .back-mark { font-size: .82rem; }
 .poker-wager { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; }
 .poker-wager .field { inline-size: min(100%, 11rem); }
 .poker-wager .feature-hint { flex-basis: 100%; }

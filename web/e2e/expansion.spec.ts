@@ -17,8 +17,8 @@ type Klondike = {
 type Sudoku = { given: number[]; values: number[]; moves: number; conflicts: number[] };
 type WordTile = { id: number; letter: string; points: number; blank: boolean };
 type Words = {
-  variant: "classic" | "quick"; rows: number; columns: number; rackSize: number; exchangeLimit: number;
-  rack: WordTile[]; turn: number; board: { row: number; column: number; tile: WordTile; seat: number }[];
+  variant: "duel" | "classic" | "quick"; rows: number; columns: number; rackSize: number; exchangeLimit: number;
+  rack: WordTile[]; turn: number; board: { row: number; column: number; tile: WordTile; seat: number; recent?: boolean }[];
   premiums: { row: number; column: number; kind: string }[];
   scores: number[]; rackSizes: number[]; bagCount: number; lastMove: string | null;
 };
@@ -28,6 +28,8 @@ const routes = [
   ["solitaire", "Solitaire", "Play Solitaire", "solo/solitaire", "solitaire", "Deal cards"],
   ["sudoku", "Sudoku", "Play Sudoku", "solo/sudoku", "sudoku", "Start puzzle"],
   ["word-tiles", "Word Tiles", "Set up Word Tiles", "words/resume", "words", "Play a bot"],
+  ["farkle", "Farkle", "Set up Farkle", "farkle/resume", "farkle", "Play a bot"],
+  ["backgammon", "Backgammon", "Set up Backgammon", "backgammon/resume", "backgammon", "Play a bot"],
 ] as const;
 const button = (page: Page | Locator, name: string | RegExp) => page.getByRole("button", { name, exact: true });
 const watch = (page: Page, url: string, method = "POST") =>
@@ -66,6 +68,29 @@ const wordRack = (page: Page) => page.getByRole("group", { name: "Your tile rack
 const wordSquare = (board: Locator, row: number, column: number, columns: number) =>
   board.locator(`[data-word-index="${row * columns + column}"]`);
 const wordTile = (rack: Locator, id: number) => rack.locator(`[data-tile="${id}"]`);
+const shortWords = ["AM", "AN", "AS", "AT", "BE", "BY", "DO", "GO", "HE", "IF", "IN", "IS", "IT", "ME", "MY", "NO",
+  "OF", "ON", "OR", "OX", "SO", "TO", "UP", "US", "WE"];
+
+function openingWords(rack: WordTile[]) {
+  return shortWords.flatMap(word => {
+    const first = rack.find(tile => tile.letter === word[0]);
+    const second = rack.find(tile => tile.letter === word[1]);
+    return first && second ? [[first, second] as const] : [];
+  });
+}
+
+function findWordLink(racks: [WordTile[], WordTile[]]) {
+  for (const opening of openingWords(racks[0])) {
+    for (const [offset, anchor] of opening.entries()) {
+      for (const word of shortWords) {
+        const above = word[1] === anchor.letter;
+        if (!above && word[0] !== anchor.letter) continue;
+        const tile = racks[1].find(tile => tile.letter === word[above ? 0 : 1]);
+        if (tile) return { opening, reply: { row: above ? 6 : 8, column: 7 + offset, tile, word, anchor } };
+      }
+    }
+  }
+}
 
 async function wordPan(board: Locator) {
   return board.evaluate(board => {
@@ -110,7 +135,8 @@ test.describe("mounted Jade Court expansion", () => {
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(url());
     await expect(page.getByRole("heading", { name: "Find your next move." })).toBeVisible();
-    const featureAssets = () => [...seen].filter(path => /\/assets\/(?:holdem|solitaire|sudoku|words|multiplayer|solo|cards|shared|room)-/.test(path));
+    const featureAssets = () => [...seen].filter(path =>
+      /\/assets\/(?:holdem|solitaire|sudoku|words|farkle|backgammon|multiplayer|solo|cards|shared|room)-/.test(path));
     expect(featureAssets()).toEqual([]);
     for (const [route, name, linkName, api, chunk, entry] of routes) {
       const bare = await request.get(url(`${route}?from=bookmark`), { maxRedirects: 0 });
@@ -273,12 +299,9 @@ test.describe("mounted Jade Court expansion", () => {
       await button(page, "Play a bot").tap();
       return body<Table<Words>>(await response);
     };
-    const common = ["AM", "AN", "AS", "AT", "BE", "BY", "DO", "GO", "HE", "IF", "IN", "IS", "IT", "ME", "MY", "NO",
-      "OF", "ON", "OR", "OX", "SO", "TO", "UP", "US", "WE"];
-    const pick = (table: Table<Words>) => common.map(word => [...word].map(letter => table.position.rack.find(tile => tile.letter === letter)))
-      .find(tiles => tiles.every(tile => tile !== undefined));
+    const pick = (table: Table<Words>) => !table.position.board.length ? openingWords(table.position.rack)[0] : undefined;
     let table = await create();
-    for (let attempt = 0; !pick(table) && attempt < 4; attempt++) {
+    for (let attempt = 0; !pick(table) && attempt < 10; attempt++) {
       await button(page, "Leave table").tap();
       await button(page.getByRole("dialog", { name: "Leave table?" }), "Leave table").tap();
       await button(page, "Set up another game").tap();
@@ -296,11 +319,14 @@ test.describe("mounted Jade Court expansion", () => {
     const center = wordSquare(board, row, column, columns);
     const neighbor = wordSquare(board, row, column + 1, columns);
     const tile = (id: number) => wordTile(rack, id);
-    expect(table.position).toMatchObject({ variant: "classic", rows: 15, columns: 15, rackSize: 7 });
+    expect(table.position).toMatchObject({ variant: "duel", rows: 15, columns: 15, rackSize: 7 });
+    await expect(page.getByText("Duel · 7 tiles")).toBeVisible();
     await expect(board.getByRole("button")).toHaveCount(rows * columns);
     await expect(rack.getByRole("button")).toHaveCount(table.position.rackSize);
-    await expect(center).toHaveAccessibleName(/center, empty, double word/);
-    await expect(center).toHaveText("2W");
+    await expect(center).toHaveAccessibleName(/center, empty$/);
+    await expect(center).toHaveText("✦");
+    await expect(wordSquare(board, 0, 0, columns)).toHaveText("2L");
+    await expect(wordSquare(board, 0, 5, columns)).toHaveText("3W");
     const marks = new Map([["double-letter", "2L"], ["triple-letter", "3L"], ["double-word", "2W"], ["triple-word", "3W"]]);
     for (const [kind, mark] of marks) {
       const premium = table.position.premiums.find(premium => premium.kind === kind)!;
@@ -318,7 +344,7 @@ test.describe("mounted Jade Court expansion", () => {
     await expect(center).not.toHaveAttribute("data-premium", /.+/);
     expect(writes).toEqual([]);
     await button(page, "Recall tiles").tap();
-    await expect(center).toHaveText("2W");
+    await expect(center).toHaveText("✦");
     await expect(rack.getByRole("button")).toHaveCount(table.position.rack.length);
     await tile(tiles[0]!.id).tap();
     await center.focus();
@@ -339,7 +365,7 @@ test.describe("mounted Jade Court expansion", () => {
     expect(writes).toEqual([{ revision: table.revision, action: { kind: "place", placements: [
       { row, column, tileId: tiles[0]!.id }, { row, column: column + 1, tileId: tiles[1]!.id },
     ] } }]);
-    expect(play.position.scores[table.seat]).toBeGreaterThan(0);
+    expect(play.position.scores[table.seat]).toBe(tiles[0].points + tiles[1].points);
     expect(play.revision).toBe(table.revision + 1);
     expect(play.position.turn).toBe(table.seat);
     expect(play.position.lastMove).toBeTruthy();
@@ -347,19 +373,116 @@ test.describe("mounted Jade Court expansion", () => {
     await expect(center).not.toHaveAttribute("data-premium", /.+/);
     await expect(center).toHaveText(`${tiles[0]!.letter}${tiles[0]!.points}`);
     await expect(page.getByText(`Last move: ${play.position.lastMove}`, { exact: true })).toBeVisible();
-    await button(page, "Exchange tiles").tap();
-    await tile(play.position.rack[0].id).tap();
-    const exchanged = watch(page, endpoint);
-    await button(page, "Exchange selected").tap();
-    const exchange = await exchanged;
-    expect(exchange.request().postDataJSON()).toEqual({ revision: play.revision, action: { kind: "exchange", exchange: [play.position.rack[0].id] } });
-    const latest = await body<Table<Words>>(exchange);
-    expect(latest.position.rack.some(item => item.id === play.position.rack[0].id)).toBe(false);
+    await button(page, "Center board").tap();
+    await page.screenshot({ path: info.outputPath("word-duel-320-committed.png"), fullPage: true });
     const resumed = watch(page, `${game}/${table.id}`, "GET");
     await page.reload();
-    expect((await body<Table<Words>>(await resumed)).position).toEqual(latest.position);
+    expect((await body<Table<Words>>(await resumed)).position).toEqual(play.position);
     await expect(center).toHaveAccessibleName(new RegExp(tiles[0]!.letter));
-    await expect(rack.locator("[data-tile]")).toHaveCount(latest.position.rack.length);
+    await expect(rack.locator("[data-tile]")).toHaveCount(play.position.rack.length);
+  });
+
+  test("Word Tiles Duel scores a real mobile and desktop guest's linked words", async ({ page, browser, baseURL }, info) => {
+    const url = (path: string) => new URL(path, baseURL).href;
+    const game = url("api/words/tables");
+    const desktop = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    try {
+      const peer = await desktop.newPage();
+      await page.goto(url("word-tiles/"));
+      await page.getByRole("textbox", { name: "Display name" }).fill("Linden");
+      const players = [page, peer];
+      let tables: Table<Words>[];
+      let link: ReturnType<typeof findWordLink>;
+      let endpoint: string;
+      for (let attempt = 0; ; attempt++) {
+        const made = watch(page, game);
+        await button(page, "Invite a friend").tap();
+        const created = await body<Table<Words>>(await made);
+        endpoint = `${game}/${created.id}`;
+        await peer.goto(await page.getByRole("textbox", { name: "Invite link" }).inputValue());
+        await peer.getByRole("textbox", { name: "Display name" }).fill("Rowan");
+        const joined = watch(peer, url("api/words/join"));
+        await button(peer, "Join table").click();
+        const visitor = await body<Table<Words>>(await joined);
+        const host = await page.request.get(endpoint);
+        await expect(host).toBeOK();
+        tables = [await host.json() as Table<Words>, visitor];
+        link = findWordLink([tables[0].position.rack, tables[1].position.rack]);
+        if (link || attempt === 5) break;
+        await expect(wordBoard(page)).toBeVisible();
+        await button(page, "Leave table").tap();
+        await button(page.getByRole("dialog", { name: "Leave table?" }), "Leave table").tap();
+        await button(page, "Set up another game").tap();
+      }
+      expect(link, "The seats can form two linked words from their real racks").toBeDefined();
+      const { opening, reply } = link!;
+      for (const table of tables) expect(table.position).toMatchObject({ variant: "duel", bagCount: 90, board: [], turn: 0 });
+      expect(new Set(tables.flatMap(table => table.position.rack.map(tile => tile.id))).size).toBe(14);
+      const draft = async (seat: number, row: number, column: number, tile: WordTile) => {
+        const viewer = players[seat];
+        const square = wordSquare(wordBoard(viewer), row, column, 15);
+        const control = wordTile(wordRack(viewer), tile.id);
+        if (viewer === page) {
+          await control.tap();
+          await tapWordSquare(viewer, square);
+        } else {
+          await control.click();
+          await square.click();
+        }
+        await expect(square).toHaveAccessibleName(/draft/);
+      };
+      const submit = async (seat: number) => {
+        const viewer = players[seat];
+        const posted = watch(viewer, `${endpoint}/actions`);
+        if (viewer === page) await button(viewer, "Submit word").tap();
+        else await button(viewer, "Submit word").click();
+        return body<Table<Words>>(await posted);
+      };
+
+      await draft(0, 7, 7, opening[0]);
+      await draft(0, 7, 8, opening[1]);
+      await expect(wordBoard(peer).locator("[data-draft], [data-recent]")).toHaveCount(0);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect(wordRack(page)).toBeInViewport({ ratio: 1 });
+      await expect(button(page, "Submit word")).toBeInViewport({ ratio: 1 });
+      await page.screenshot({ path: info.outputPath("word-duel-mobile-320-draft.png") });
+      const first = await submit(0);
+      const firstWord = opening.map(tile => tile.letter).join("");
+      const firstScore = opening[0].points + opening[1].points;
+      expect(first.position.lastMove).toBe(`Seat 1 played ${firstWord} (+${firstScore}).`);
+      expect(first.position.scores[0]).toBe(firstScore);
+      for (const viewer of players) {
+        await expect(wordBoard(viewer).locator("[data-recent]")).toHaveCount(2);
+        await expect(wordSquare(wordBoard(viewer), 7, 7, 15)).toHaveAccessibleName(/last play/);
+      }
+
+      await draft(1, reply.row, reply.column, reply.tile);
+      await expect(wordBoard(peer).locator("[data-recent]")).toHaveCount(2);
+      await expect(wordBoard(peer).locator("[data-draft]")).toHaveCount(1);
+      await expect(wordBoard(page).locator("[data-draft]")).toHaveCount(0);
+      await peer.locator(".word-layout").screenshot({ path: info.outputPath("word-duel-desktop-draft.png") });
+      const second = await submit(1);
+      const replyScore = reply.anchor.points + reply.tile.points;
+      expect(second.position.lastMove).toBe(`Seat 2 played ${reply.word} (+${replyScore}).`);
+      expect(second.position.scores[1]).toBe(replyScore);
+      expect(second.position.board.filter(cell => cell.recent)).toEqual([
+        { row: reply.row, column: reply.column, seat: 1, tile: reply.tile, recent: true },
+      ]);
+      for (const viewer of players) {
+        await expect(wordBoard(viewer).locator("[data-recent]")).toHaveCount(1);
+        await expect(wordBoard(viewer).locator("[data-draft]")).toHaveCount(0);
+        await expect(viewer.getByRole("list", { name: "Scores and rack sizes" })).toContainText(`${replyScore} pts`);
+      }
+      await fits(peer);
+      await peer.locator(".word-layout").screenshot({ path: info.outputPath("word-duel-desktop-committed.png") });
+      await button(page, "Center board").tap();
+      await fits(page);
+      await page.screenshot({ path: info.outputPath("word-duel-multiplayer-320.png"), fullPage: true });
+      const restored = watch(peer, endpoint, "GET");
+      await peer.reload();
+      expect((await body<Table<Words>>(await restored)).position).toEqual(second.position);
+      await expect(wordSquare(wordBoard(peer), reply.row, reply.column, 15)).toHaveAccessibleName(/last play/);
+    } finally { await desktop.close(); }
   });
 
   test("Word Tiles assigns and recalls distinct blanks by touch and keyboard", async ({ page, baseURL, browserName }, info) => {

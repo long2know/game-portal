@@ -40,20 +40,36 @@ public sealed class WordTableTests
             HttpStatusCode.NotFound, "room_not_found");
         await Error(await host.Request(HttpMethod.Post, path + "/next", new { revision = 1 }),
             HttpStatusCode.NotFound, "invalid_request");
-        var hostTiles = AssertPrivateView(initial);
-        var peerTiles = AssertPrivateView(joined);
-        Assert.Empty(hostTiles.Intersect(peerTiles));
+        Assert.Empty(AssertPrivateView(initial).Intersect(AssertPrivateView(joined)));
         Assert.Empty(Position(initial).GetProperty("board").EnumerateArray());
         Assert.Equal(new[] { 7, 7 }, Position(joined).GetProperty("rackSizes").EnumerateArray().Select(e => e.GetInt32()));
-        Assert.Equal(86, Number(Position(initial), "bagCount"));
+        Assert.Equal(90, Number(Position(initial), "bagCount"));
+        Assert.Equal(0, Number(Position(joined), "turn"));
         Assert.Equal(7, Number(Position(initial), "exchangeLimit"));
         Assert.Equal(0, Number(Position(joined), "exchangeLimit"));
 
+        int[][] racks = [[12, 1, 84, 19, 73, 79, 103], [70, 41, 62, 57, 14, 10, 51]];
+        await SeedCheckpoint(server, id!, JsonSerializer.Serialize(new
+        {
+            version = 3, turn = 0, racks, bag = Enumerable.Range(1, 104).Except(racks.SelectMany(rack => rack)),
+            board = Array.Empty<int>(), scores = new[] { 0, 0 }, dryTurns = 0, last = (object?)null
+        }));
+
         var actions = path + "/actions";
+        var peerTiles = AssertPrivateView(await Read(peer, path));
+        Assert.Equal(racks[1], peerTiles);
         await Error(await peer.Request(HttpMethod.Post, actions, Pass(1)), HttpStatusCode.BadRequest, "not_your_turn");
-        var passed = await Post(host, actions, Pass(1));
-        Assert.Equal("Seat 1 passed.", Position(passed).Text("lastMove"));
-        Assert.Equal(2, Revision(passed));
+        var opened = await Post(host, actions, new
+        {
+            revision = 1,
+            action = new { kind = "place", placements = racks[0][..3].Select((id, column) => new { row = 7, column = column + 6, tileId = id }) }
+        });
+        Assert.Equal("Seat 1 played CAT (+6).", Position(opened).Text("lastMove"));
+        Assert.Equal(2, Revision(opened));
+        var playedBoard = Position(opened).GetProperty("board").EnumerateArray().ToArray();
+        Assert.Equal(racks[0][..3], playedBoard.Select(cell => Number(cell.GetProperty("tile"), "id")));
+        Assert.All(playedBoard, cell => Assert.True(cell.GetProperty("recent").GetBoolean()));
+        var hostTiles = AssertPrivateView(opened);
         await Error(await peer.Request(HttpMethod.Post, actions, new
         {
             revision = 2, action = new { kind = "place", placements = new[] { new { row = 15, column = 7, tileId = peerTiles[0] } } }
@@ -71,7 +87,7 @@ public sealed class WordTableTests
         Assert.Empty(peerTiles.Intersect(after));
         Assert.Empty(after.Intersect(hostTiles));
         Assert.Equal("Seat 2 exchanged 7 tiles.", Position(traded).Text("lastMove"));
-        Assert.Equal(86, Number(Position(traded), "bagCount"));
+        Assert.Equal(87, Number(Position(traded), "bagCount"));
         Assert.Equal(0, Number(Position(traded), "exchangeLimit"));
         Assert.Equal(hostTiles, AssertPrivateView(await Read(host, path)));
 
@@ -82,16 +98,16 @@ public sealed class WordTableTests
         await Error(await host.Request(HttpMethod.Post, actions, Pass(2)), HttpStatusCode.Conflict, "stale_room");
         var again = await Post(host, actions, Pass(3));
         Assert.Equal(4, Revision(again));
-        Assert.Equal("playing", (await Post(peer, actions, Pass(4))).Text("status"));
-        Assert.Equal("playing", (await Post(host, actions, Pass(5))).Text("status"));
-        var ended = await Post(peer, actions, Pass(6));
+        Assert.Equal("playing", again.Text("status"));
+        var ended = await Post(peer, actions, Pass(4));
         Assert.Equal("finished", ended.Text("status"));
         Assert.Equal(JsonValueKind.Null, Position(ended).GetProperty("turn").ValueKind);
-        Assert.Equal("Six consecutive scoreless turns.", Position(ended).Text("detail"));
+        Assert.Equal("Three consecutive scoreless turns.", Position(ended).Text("detail"));
         Assert.Equal(0, Number(Position(ended), "exchangeLimit"));
-        Assert.All(Position(ended).GetProperty("scores").EnumerateArray(), score => Assert.True(score.GetInt32() < 0));
+        Assert.Equal([6, 0], Position(ended).GetProperty("scores").EnumerateArray().Select(score => score.GetInt32()));
+        Assert.Equal(0, Assert.Single(Position(ended).GetProperty("winners").EnumerateArray()).GetInt32());
         Assert.Null((await Read(host, Api + "/resume")).Text("tableId"));
-        await Error(await host.Request(HttpMethod.Post, path + "/leave", new { revision = 7 }),
+        await Error(await host.Request(HttpMethod.Post, path + "/leave", new { revision = 5 }),
             HttpStatusCode.BadRequest, "game_finished");
     }
 
@@ -118,7 +134,7 @@ public sealed class WordTableTests
         {
             Assert.All(cells, cell => Assert.Equal(1, cell.GetProperty("seat").GetInt32()));
             Assert.Contains(cells, cell => Number(cell, "row") == 7 && Number(cell, "column") == 7);
-            Assert.Equal(86 - cells.Length, Number(Position(played), "bagCount"));
+            Assert.Equal(90 - cells.Length, Number(Position(played), "bagCount"));
         }
         else
             Assert.Equal("Seat 2 passed.", Position(played).Text("lastMove"));
@@ -154,8 +170,8 @@ public sealed class WordTableTests
         }));
         var before = await Read(host, path);
         var opponent = await Read(peer, path);
-        var ownIds = AssertPrivateView(before);
-        var rivalIds = AssertPrivateView(opponent);
+        var ownIds = AssertPrivateView(before, "classic");
+        var rivalIds = AssertPrivateView(opponent, "classic");
         Assert.Equal("CAB?NET", string.Concat(Position(before).GetProperty("rack").EnumerateArray().Select(tile => tile.Text("letter"))));
         Assert.Empty(ownIds.Intersect(rivalIds));
 
@@ -193,14 +209,14 @@ public sealed class WordTableTests
             Number(blank.GetProperty("tile"), "points")));
         Assert.Equal("double-word", Assert.Single(position.GetProperty("premiums").EnumerateArray(),
             premium => Number(premium, "row") == 7 && Number(premium, "column") == 7).Text("kind"));
-        Assert.Empty(AssertPrivateView(played).Intersect([.. ownIds, .. rivalIds]));
+        Assert.Empty(AssertPrivateView(played, "classic").Intersect([.. ownIds, .. rivalIds]));
 
         await server.StopAsync();
         await server.StartAsync();
         Assert.True(JsonElement.DeepEquals(played, await Read(host, path)));
         Assert.Equal(id, (await Read(peer, Api + "/resume")).Text("tableId"));
         var peerAfter = await Read(peer, path);
-        Assert.Equal(rivalIds, AssertPrivateView(peerAfter));
+        Assert.Equal(rivalIds, AssertPrivateView(peerAfter, "classic"));
         Assert.Equal(7, Number(Position(peerAfter), "exchangeLimit"));
         Assert.True(JsonElement.DeepEquals(position.GetProperty("board"), Position(peerAfter).GetProperty("board")));
     }
@@ -271,22 +287,28 @@ public sealed class WordTableTests
     private static async Task<JsonElement> Post(User guest, string path, object body) => await Ok(await guest.Request(HttpMethod.Post, path, body));
     private static async Task<JsonElement> Read(User guest, string path) => await Ok(await guest.Request(HttpMethod.Get, path));
 
-    private static int[] AssertPrivateView(JsonElement table, string variant = "classic")
+    private static int[] AssertPrivateView(JsonElement table, string variant = "duel")
     {
         var position = Position(table);
         Assert.Equal(new[] { "bagCount", "board", "columns", "detail", "exchangeLimit", "lastMove", "premiums", "rack",
                 "rackSize", "rackSizes", "rows", "scores", "status", "turn", "variant", "winners" },
             position.EnumerateObject().Select(field => field.Name).Order(StringComparer.Ordinal));
         Assert.False(table.TryGetProperty("checkpoint", out _));
-        var size = variant == "classic" ? 15 : 11;
-        var rackSize = variant == "classic" ? 7 : 6;
+        var size = variant == "quick" ? 11 : 15;
+        var rackSize = variant == "quick" ? 6 : 7;
         Assert.Equal((variant, size, size, rackSize),
             (position.Text("variant"), Number(position, "rows"), Number(position, "columns"), Number(position, "rackSize")));
         var premiums = position.GetProperty("premiums").EnumerateArray();
         if (variant == "classic")
             Assert.Contains(premiums, cell => Number(cell, "row") == 7 && Number(cell, "column") == 7 && cell.Text("kind") == "double-word");
-        else
+        else if (variant == "quick")
             Assert.Empty(premiums);
+        else
+        {
+            Assert.Equal(64, premiums.Count());
+            Assert.DoesNotContain(premiums, cell => Number(cell, "row") == 7 && Number(cell, "column") == 7);
+            Assert.Contains(premiums, cell => Number(cell, "row") == 0 && Number(cell, "column") == 0 && cell.Text("kind") == "double-letter");
+        }
         Assert.All(position.GetProperty("rack").EnumerateArray(), tile =>
         {
             Assert.Equal(new[] { "blank", "id", "letter", "points" }, tile.EnumerateObject().Select(field => field.Name).Order(StringComparer.Ordinal));

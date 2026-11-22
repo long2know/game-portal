@@ -1,0 +1,30 @@
+cburnett chess pieces — Colin M. L. Burnett
+
+Upstream: https://github.com/lichess-org/lila/tree/b071608bc4ce71b31cda36ffa493100e3dc3580f/public/piece/cburnett
+The COPYING.md at that commit names Colin M. L. Burnett and explicitly lists
+public/piece/cburnett under GPLv2+:
+https://github.com/lichess-org/lila/blob/b071608bc4ce71b31cda36ffa493100e3dc3580f/COPYING.md
+COPYING.md SHA-256: 7f859c4ebb2a12d701110c5d0eb5f150881938bf16e0c8132863cbd5c27bd92d
+
+Jade Court distributes this sheet under GNU GPL version 3; see the LICENSE
+file in the root of this distribution. No other Lichess assets are included.
+
+Changed 2026-11-22 by Jade Court contributors: joined the twelve source SVGs
+into one sheet with named symbols; removed the file-level sizing and style.
+The original paths, geometry, fills and strokes are otherwise unchanged.
+The editable corresponding source is web/src/portal/assets/cburnett.svg;
+the fingerprinted SVG in wwwroot/assets/ is a byte-for-byte copy of it.
+
+Upstream Git blob IDs (from the pinned tree):
+bB.svg  51a8751ae22da38c651de6184b369cc41b2fa831
+bK.svg  543b910beec2759f3a3b406469a30bdc45fd0daf
+bN.svg  fc29188687934dd4a3b2adeb1c1c0929b30088e1
+bP.svg  c97ccf5da13ea3543ffa2c906c4c0b82fecff13d
+bQ.svg  0bd323342a09eade878f8b8ff9ad9d413c0f000b
+bR.svg  1f87576592d69d992d22b190ebe2a0d61ea67fb8
+wB.svg  8eee13f25d7bdeb1e737e5b02254d2cfa5d3b840
+wK.svg  3370721dda45844f051b62692f301a29a862f5a6
+wN.svg  afd1fc8ca93c4028a1fbb4818f5ce68a9627407f
+wP.svg  c252c58d26cfa342aa16134836377a0155136976
+wQ.svg  c40c4e0442773a9cd56967987b988cb28b7276fb
+wR.svg  8564f6be0dc39102a078595a420f6fc77718527c

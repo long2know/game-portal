@@ -1,7 +1,7 @@
 .solitaire-board {
   inline-size: min(100%, 52rem); min-inline-size: 23rem; margin-inline: auto;
-  padding: 8px; border: 1px solid #6f9c7d; border-radius: 12px;
-  background: radial-gradient(ellipse at 42% 33%, #385e4c, #1d3d31);
+  padding: 8px; border: 1px solid #829c7d; border-radius: 6px;
+  background: var(--table-baize);
 }
 .solitaire-row { display: grid; align-items: start; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: clamp(4px, 1.25vw, 11px); }
 .solitaire-columns { margin-block-start: 9px; border-block-start: 1px solid #6e9676; padding-block-start: 6px; }
@@ -12,7 +12,7 @@
 .solitaire-columns .solitaire-under + .solitaire-under { margin-block-start: -95%; }
 .solitaire-slot {
   display: grid; place-items: center; aspect-ratio: .71; border-radius: 7px;
-  border: 1px dashed #afbd9b; color: #d7d4b8; font: 1.2rem var(--serif); background: #15362d7a;
+  border: 1px dashed #cad4b2; color: #e2e3c9; font: 1.2rem var(--serif);
 }
 .solitaire-card[aria-disabled="true"] { cursor: default; }
 .solitaire-card:is([data-target], [aria-pressed="true"], :focus-visible) {
