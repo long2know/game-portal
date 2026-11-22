@@ -1,6 +1,8 @@
 export const boardIds = ["chess", "go", "reversi", "checkers", "chinese-checkers"] as const;
+export const expansionIds = ["holdem", "solitaire", "sudoku", "word-tiles"] as const;
 export type BoardId = typeof boardIds[number];
-export type GameId = BoardId | "mahjong";
+export type ExpansionId = typeof expansionIds[number];
+export type GameId = BoardId | ExpansionId | "mahjong";
 
 export const catalog: Record<GameId, { name: string; seats: string; description: string; invitation: string }> = {
   mahjong: {
@@ -33,8 +35,32 @@ export const catalog: Record<GameId, { name: string; seats: string; description:
     description: "Hop across a star and race to bring your whole crew home.",
     invitation: "Set up Chinese Checkers",
   },
+  holdem: {
+    name: "Texas Hold’em", seats: "2–6 players",
+    description: "Read the table, build a hand and play for chips. No money changes hands.",
+    invitation: "Set up Texas Hold’em",
+  },
+  solitaire: {
+    name: "Solitaire", seats: "Solo · Draw one",
+    description: "Uncover the tableau and build four foundations from Ace through King.",
+    invitation: "Play Solitaire",
+  },
+  sudoku: {
+    name: "Sudoku", seats: "Solo · 3 difficulties",
+    description: "Fill the grid one number at a time, with hints when you need them.",
+    invitation: "Play Sudoku",
+  },
+  "word-tiles": {
+    name: "Word Tiles", seats: "2 players",
+    description: "Turn a rack of letters into crossing words on a shared board.",
+    invitation: "Set up Word Tiles",
+  },
 };
 
 export function isBoardId(id: string): id is BoardId {
   return boardIds.some(game => game === id);
+}
+
+export function isExpansionId(id: string): id is ExpansionId {
+  return expansionIds.some(game => game === id);
 }

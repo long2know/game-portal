@@ -1,7 +1,7 @@
 import "./styles.css";
 import type { Guest } from "../protocol";
 import { apiCode, portalApi } from "./api";
-import { catalog, isBoardId } from "./catalog";
+import { catalog, isBoardId, isExpansionId } from "./catalog";
 import { button, el, link } from "./dom";
 import type { PortalHost, ProfileChange } from "./host";
 import { lobby } from "./lobby";
@@ -50,7 +50,7 @@ const music = new MusicControl(mount, enabled => changeProfile(({ preferences })
 const brand = link("", mount, "brand");
 brand.setAttribute("aria-label", "Jade Court · All games");
 brand.append(el("span", "brand-tile"), el("span", "brand-name", "Jade Court"));
-const nav = el("nav", "site-nav", music.button, isBoardId(route)
+const nav = el("nav", "site-nav", music.button, isBoardId(route) || isExpansionId(route)
   ? link("‹ All games", mount, "button")
   : link("Mahjong table ↗", `${mount}mahjong/`, "button"));
 nav.setAttribute("aria-label", "Court navigation");
@@ -81,7 +81,14 @@ async function openGame(name: string, render: () => Promise<unknown>): Promise<v
   progress.remove();
 }
 
+const expansions = {
+  holdem: () => import("./games/holdem"),
+  solitaire: () => import("./games/solitaire"),
+  sudoku: () => import("./games/sudoku"),
+  "word-tiles": () => import("./games/words"),
+};
 if (isBoardId(route)) void openGame(catalog[route].name, async () => new (await import("./room")).GameRoom(route, host));
+else if (isExpansionId(route)) void openGame(catalog[route].name, async () => (await expansions[route]()).mount(host));
 else {
   main.append(lobby(mount));
   if (music.remembered) void openGuest().catch(() => music.preferencesUnavailable());

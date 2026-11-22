@@ -1,14 +1,14 @@
 import { tableau } from "./art";
-import { boardIds, catalog } from "./catalog";
+import { boardIds, catalog, expansionIds } from "./catalog";
 import type { GameId } from "./catalog";
 import { el, link } from "./dom";
 
 export function lobby(mount: string): HTMLElement {
   const h1 = el("h1", "", "Find your ", el("em", "", "next move."));
   const hero = el("section", "lobby-hero", el("div", "hero-copy",
-    el("p", "eyebrow", "The board game parlor"),
+    el("p", "eyebrow", "The game parlor"),
     h1,
-    el("p", "intro", "Six classic games, one quiet court. Play a bot at your own pace, or invite a friend to a private table."),
+    el("p", "intro", "Ten games, one quiet court. Unwind with a solo puzzle, play a bot, or share a private table with friends."),
     el("div", "hero-actions", link("Choose a game ↓", "#games", "button primary"),
       link("Play Mahjong", `${mount}mahjong/`, "button secondary")),
   ), el("div", "hero-study"));
@@ -19,7 +19,7 @@ export function lobby(mount: string): HTMLElement {
   heading.id = "catalog-heading";
   section.setAttribute("aria-labelledby", heading.id);
   const grid = el("div", "catalog-grid");
-  const games: GameId[] = ["mahjong", ...boardIds];
+  const games: GameId[] = ["mahjong", ...boardIds, ...expansionIds];
   for (const game of games) {
     const info = catalog[game];
     const card = el("a", "game-card", tableau(game), el("div", "game-card-body",
@@ -33,6 +33,6 @@ export function lobby(mount: string): HTMLElement {
     grid.append(card);
   }
   section.append(el("div", "section-title", el("div", "", el("p", "eyebrow", "The collection"), heading),
-    el("p", "section-caption", "Six games, no account required.")), grid);
+    el("p", "section-caption", "Ten games, no account required.")), grid);
   return el("div", "lobby", hero, section);
 }

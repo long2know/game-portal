@@ -1,0 +1,23 @@
+.solitaire-board {
+  inline-size: min(100%, 52rem); min-inline-size: 23rem; margin-inline: auto;
+  padding: 8px; border: 1px solid #6f9c7d; border-radius: 12px;
+  background: radial-gradient(ellipse at 42% 33%, #385e4c, #1d3d31);
+}
+.solitaire-row { display: grid; align-items: start; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: clamp(4px, 1.25vw, 11px); }
+.solitaire-columns { margin-block-start: 9px; border-block-start: 1px solid #6e9676; padding-block-start: 6px; }
+.solitaire-pile { min-inline-size: 0; display: grid; }
+.pile-title { color: #e4dcc7; font-size: clamp(.61rem, 1.4vw, .84rem); text-align: center; min-block-size: 1.2rem; }
+.solitaire-card, .solitaire-under { padding: 0; border: 0; background: transparent; border-radius: 6px; line-height: 1; }
+.solitaire-columns :is(.solitaire-card, .solitaire-under) + :is(.solitaire-card, .solitaire-under) { margin-block-start: -42%; }
+.solitaire-columns .solitaire-under + .solitaire-under { margin-block-start: -95%; }
+.solitaire-slot {
+  display: grid; place-items: center; aspect-ratio: .71; border-radius: 7px;
+  border: 1px dashed #afbd9b; color: #d7d4b8; font: 1.2rem var(--serif); background: #15362d7a;
+}
+.solitaire-card[aria-disabled="true"] { cursor: default; }
+.solitaire-card:is([data-target], [aria-pressed="true"], :focus-visible) {
+  outline: 3px solid #ffdb9d; outline-offset: -2px; position: relative;
+}
+.solitaire-card[aria-pressed="true"] { outline-color: #eca956; }
+.solitaire-card:focus-visible { outline-style: dashed; }
+.solitaire-hint { color: var(--brass); font-size: .88rem; }

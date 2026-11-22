@@ -1,0 +1,45 @@
+.word-felt {
+  background: linear-gradient(156deg, #42352b, #26362c 25%, #1b2f24);
+  border-color: #9c8565;
+}
+.word-scores {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.8rem), 1fr)); gap: 6px;
+  padding: 0; margin: 0; list-style: none;
+}
+.word-scores li {
+  display: grid; overflow-wrap: anywhere; min-inline-size: 0; gap: .15rem; padding: .5rem .7rem;
+  border: 1px solid #718a6c; border-radius: 8px; background: #254738;
+}
+.word-scores li span { color: var(--muted); font-size: .85rem; }
+.word-board-host {
+  inline-size: min(100%, 39rem); min-inline-size: 32rem; margin-inline: auto; padding: 4px;
+  border: 1px solid #d5ad76; border-radius: 9px; background: #15241d;
+}
+.word-board-host .feature-grid { gap: 2px; }
+.word-cell {
+  display: grid; place-items: stretch; position: relative; aspect-ratio: 1;
+  border: 1px solid #537663; border-radius: 3px; padding: 1px;
+  background: linear-gradient(146deg, #345747, #294737); color: #efd0a0;
+  font-size: 1.15rem; line-height: 1; align-items: center;
+}
+.word-cell[aria-disabled="true"], .word-rack-tile[aria-disabled="true"] { cursor: default; }
+.word-cell[data-center] { border-color: #c69f6b; background: #5c5941; }
+.word-tile {
+  display: grid; place-items: center; position: relative; inline-size: 100%; aspect-ratio: 1;
+  border: 1px solid #ffe6aa; border-radius: 4px; background: linear-gradient(144deg, #ffedc5, #d6af7c);
+  color: #28382f; box-shadow: inset 0 0 0 2px #c4a06d5c, 0 2px #917250;
+  font: 700 clamp(1.03rem, 3vw, 1.7rem)/1 var(--serif);
+}
+.word-tile small { position: absolute; inset: auto .2em .16em auto; font: 720 .63rem/1 system-ui; }
+.word-cell[data-draft] .word-tile, .word-rack-tile[aria-pressed="true"] .word-tile {
+  border-color: #fff3c9; background: #fff1c8; outline: 2px dashed #7b4a1f; outline-offset: -3px;
+}
+.word-rack { display: flex; flex-wrap: wrap; gap: 7px; padding-block-end: 4px; }
+.word-rack-tile {
+  inline-size: clamp(44px, 12vw, 59px); min-block-size: 44px;
+  border: 0; border-radius: 5px; background: transparent; padding: 0;
+}
+@media (min-width: 900px) {
+  .word-layout { grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr); align-items: start; }
+  .word-layout > :last-child { position: sticky; inset-block-start: 12px; }
+}

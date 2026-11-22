@@ -100,7 +100,7 @@ test.describe("mounted Jade Court portal", () => {
     test.skip(!baseURL || !/^\/portal\/?$/.test(new URL(baseURL).pathname), "Requires the published runtime with the portal mounted at /portal/.");
   });
 
-  test("lobby presents six real destinations and keeps assets and links at the mount", async ({ page, baseURL, request }, info) => {
+  test("lobby presents ten real destinations and keeps assets and links at the mount", async ({ page, baseURL, request }, info) => {
     const url = urls(baseURL!);
     const assets = new Set<string>();
     page.on("request", event => {
@@ -115,6 +115,7 @@ test.describe("mounted Jade Court portal", () => {
     expect((await heroStudy).ok()).toBe(true);
     await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", /^\/portal\/assets\/jade-court-[\w-]+\.svg$/);
     await expect(page.getByRole("link", { name: "Take a seat", exact: true })).toHaveAttribute("href", "/portal/mahjong/");
+    await expect(page.locator(".game-card")).toHaveCount(10);
     expect([...assets].map(asset => new URL(asset).pathname)).toEqual(expect.arrayContaining([
       expect.stringMatching(/\/portal-[\w-]+\.js$/), expect.stringMatching(/\/portal-[\w-]+\.css$/),
       expect.stringMatching(/\/court-study-[\w-]+\.svg$/), expect.stringMatching(/\/jade-court-[\w-]+\.svg$/),
@@ -129,6 +130,10 @@ test.describe("mounted Jade Court portal", () => {
     await expect(music).toBeInViewport();
     expect((await music.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await page.screenshot({ path: info.outputPath("lobby-phone.png"), fullPage: true });
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("main")).toBeFocused();
 
     for (const [game, name] of boardGames) {
       const card = page.getByRole("link", { name: `Set up ${name}`, exact: true });
@@ -723,7 +728,7 @@ test.describe("mounted Jade Court portal", () => {
       expect.stringMatching(/\/index-[\w-]+\.js$/), expect.stringMatching(/\/index-[\w-]+\.css$/),
       expect.stringMatching(/\/jade-court-[\w-]+\.svg$/),
     ]));
-    expect([...assets].every(asset => !/\/(?:portal-|actors-|ambient-|court-study-|hall-dragon-)/.test(new URL(asset).pathname))).toBe(true);
+    expect([...assets].every(asset => !/\/(?:portal-|actors-|ambient-|court-study-|hall-dragon-|holdem-|solitaire-|sudoku-|words-|multiplayer-|solo-|cards-|shared-|room-)/.test(new URL(asset).pathname))).toBe(true);
     const compressed = await Promise.all([...assets].map(async asset => {
       const response = await request.get(asset);
       expect(response.ok()).toBe(true);

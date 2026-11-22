@@ -40,9 +40,9 @@ h1 { letter-spacing: -.036em; }
 .skip-link {
   position: fixed; z-index: 5; inset: 8px auto auto 8px; padding: 10px 16px;
   color: #241d13; background: #ffe1ab; border-radius: 8px;
-  translate: 0 -150%;
+  clip-path: inset(50%);
 }
-.skip-link:focus { translate: 0; }
+.skip-link:focus { clip-path: none; }
 .shell {
   inline-size: min(100%, 1192px);
   min-height: 100dvh;
@@ -186,6 +186,25 @@ h1 { letter-spacing: -.036em; }
 .art-tile:nth-child(2) { transform: rotate(9deg) translateY(-11%); }
 .tile-dot { display: block; width: 22%; aspect-ratio: 1; border: 1px solid #4a624b; border-radius: 50%; box-shadow: inset 0 0 0 1px #e7d5aa; background: #43745c; }
 .tile-dot:nth-child(2) { background: #8a4432; }
+.tableau[data-game="holdem"] { --art-light: #63866d; --art-base: #224838; }
+.tableau[data-game="solitaire"] { --art-light: #756c85; --art-base: #404356; }
+.tableau[data-game="sudoku"] { --art-light: #72868d; --art-base: #385658; }
+.tableau[data-game="word-tiles"] { --art-light: #966c4c; --art-base: #564037; }
+:is([data-game="holdem"], [data-game="solitaire"]) .mini-field { border-radius: 45%; background: #356351; }
+[data-game="sudoku"] .mini-field {
+  background: linear-gradient(#6f8d86 1px, transparent 1px) 0 0 / 11% 11%,
+    linear-gradient(90deg, #6f8d86 1px, #2e4f50 1px) 0 0 / 11% 11%;
+}
+.art-card, .art-block {
+  display: grid; place-items: center; inline-size: clamp(24px, 5vw, 46px); aspect-ratio: .75;
+  color: #23332d; background: linear-gradient(144deg, #fff4d8, #dbbb8d);
+  border: 1px solid #fff4d8; border-radius: 5px;
+  box-shadow: 0 3px #ab8f63, 2px 6px 9px #132017b0;
+  font: 680 clamp(.65rem, 2vw, 1.12rem)/1 var(--serif);
+}
+.art-card.red { color: #8d2929; transform: translate(-13%, -14%) rotate(9deg); }
+.art-block { aspect-ratio: 1; }
+.art-block:nth-child(2n) { transform: translateY(-13%); }
 
 .setup { display: grid; gap: clamp(13px, 3vw, 33px); align-items: stretch; }
 .setup-copy > h1 { font-size: clamp(2.75rem, 7.5vw, 5.25rem); margin-block: 6px 7px; }

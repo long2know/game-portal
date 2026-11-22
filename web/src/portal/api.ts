@@ -88,8 +88,8 @@ export class ApiError extends Error {
 
 export const apiCode = (error: unknown) => error instanceof ApiError ? error.code : "";
 
-export function portalApi(mount: string) {
-  async function json<T>(path: string, method = "GET", body?: object, abort?: AbortSignal): Promise<T> {
+export function mountedJson(mount: string) {
+  return async function json<T>(path: string, method = "GET", body?: object, abort?: AbortSignal): Promise<T> {
     const timeout = AbortSignal.timeout(8000);
     const response = await fetch(mount + path, {
       method, cache: "no-store", signal: abort ? AbortSignal.any([timeout, abort]) : timeout,
@@ -100,8 +100,11 @@ export function portalApi(mount: string) {
       throw new ApiError(result?.error?.code ?? "unavailable");
     }
     return response.json();
-  }
+  };
+}
 
+export function portalApi(mount: string) {
+  const json = mountedJson(mount);
   const tablePath = (id: string) => `api/board/tables/${encodeURIComponent(id)}`;
   return {
     guest: () => json<Guest>("api/guest", "POST", {}),
