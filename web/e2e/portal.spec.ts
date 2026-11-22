@@ -115,7 +115,7 @@ test.describe("mounted Jade Court portal", () => {
     test.skip(!baseURL || !/^\/portal\/?$/.test(new URL(baseURL).pathname), "Requires the published runtime with the portal mounted at /portal/.");
   });
 
-  test("lobby presents twelve real destinations and keeps assets and links at the mount", async ({ page, baseURL, request }, info) => {
+  test("lobby presents thirteen real destinations and keeps assets and links at the mount", async ({ page, baseURL, request }, info) => {
     const url = urls(baseURL!);
     const assets = new Set<string>();
     page.on("request", event => {
@@ -130,7 +130,8 @@ test.describe("mounted Jade Court portal", () => {
     expect((await heroStudy).ok()).toBe(true);
     await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", /^\/portal\/assets\/jade-court-[\w-]+\.svg$/);
     await expect(page.getByRole("link", { name: "Take a seat", exact: true })).toHaveAttribute("href", "/portal/mahjong/");
-    await expect(page.locator(".game-card")).toHaveCount(12);
+    await expect(page.getByRole("link", { name: "Play Lantern Run", exact: true })).toHaveAttribute("href", "/portal/lantern-run/");
+    await expect(page.locator(".game-card")).toHaveCount(13);
     expect([...assets].map(asset => new URL(asset).pathname)).toEqual(expect.arrayContaining([
       expect.stringMatching(/\/portal-[\w-]+\.js$/), expect.stringMatching(/\/portal-[\w-]+\.css$/),
       expect.stringMatching(/\/court-study-[\w-]+\.svg$/), expect.stringMatching(/\/jade-court-[\w-]+\.svg$/),

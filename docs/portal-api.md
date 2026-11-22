@@ -4,11 +4,16 @@ Set `Portal__Enabled=true` to enable the game APIs and portal shell (the default
 `BASE_URL=/portal`, the base for assets, HTTP and WebSocket URLs is `/portal/`, including on
 `/portal/chess/`, `/portal/go/`, `/portal/reversi/`, `/portal/checkers/`, and
 `/portal/chinese-checkers/`, `/portal/holdem/`, `/portal/solitaire/`, `/portal/sudoku/`,
-`/portal/word-tiles/`, `/portal/farkle/`, and `/portal/backgammon/`. `/portal/mahjong/` and
+`/portal/word-tiles/`, `/portal/farkle/`, `/portal/backgammon/`, and `/portal/lantern-run/`. `/portal/mahjong/` and
 its nested SPA routes serve the existing Changsha Mahjong client. The bare routes return
 a 308 with the query intact. Browsers retain the original fragment because the redirect
 does not supply one. Other shell
 paths return 404. The build publishes `index.html` and `portal.html` outside `wwwroot`.
+
+Lantern Run has no game API, multiplayer rooms, or invite links. It runs in the browser
+and stores only the local best finished score, separately for each mount such as `/portal/`
+or `/game-portal/`. If local storage is unavailable the best lasts until the page is closed
+or reloaded.
 
 Use a dedicated data volume for the portal (`GamePortal__DataDirectory`, `/data` in the
 image). Its EF migrations preserve existing board, guest/profile and Mahjong data and add

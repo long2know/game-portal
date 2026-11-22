@@ -2,7 +2,7 @@ export const boardIds = ["chess", "go", "reversi", "checkers", "chinese-checkers
 export const expansionIds = ["holdem", "solitaire", "sudoku", "word-tiles", "farkle", "backgammon"] as const;
 export type BoardId = typeof boardIds[number];
 export type ExpansionId = typeof expansionIds[number];
-export type GameId = BoardId | ExpansionId | "mahjong";
+export type GameId = BoardId | ExpansionId | "mahjong" | "lantern-run";
 
 const jadeLettersName = "Jade Letters";
 
@@ -66,6 +66,11 @@ export const catalog: Record<GameId, { name: string; seats: string; description:
     name: "Backgammon", seats: "2 players",
     description: "Race your checkers home, hit blots, and bear off before your opponent.",
     invitation: "Set up Backgammon",
+  },
+  "lantern-run": {
+    name: "Lantern Run", seats: "Solo · Arcade",
+    description: "Carry the light through a twilight canal town. Dodge kilns, clear rails and gather lanterns.",
+    invitation: "Play Lantern Run",
   },
 };
 

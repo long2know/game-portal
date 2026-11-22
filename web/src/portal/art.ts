@@ -71,11 +71,32 @@ function backgammonStudy(): SVGSVGElement {
   return board;
 }
 
+function lanternStudy(): SVGSVGElement {
+  const mark = svg("svg", { viewBox: "0 0 60 50", width: "100%", height: "100%", preserveAspectRatio: "xMidYMid slice" });
+  mark.append(
+    svg("path", { d: "M0 0h60v50H0z", fill: "#20333c" }),
+    svg("circle", { cx: 44, cy: 12, r: 7, fill: "#d98663" }),
+    svg("path", { d: "M0 29l15-13 9 9 7-4 29 8v21H0z", fill: "#3f6460" }),
+    svg("path", { d: "M29 26h3l22 24H6z", fill: "#886651" }),
+    svg("path", { d: "M18 50l11-24m13 24L32 26", stroke: "#d2a57b", "stroke-width": ".65" }),
+    svg("path", { d: "M4 36h11v14H4zM48 33h10v17H48z", fill: "#854d45" }),
+    svg("path", { d: "M1 37l8-9 9 9zm44-3 7-8 8 8z", fill: "#79a296" }),
+    svg("path", { d: "M25 18l5-3 5 3v8l-5 3-5-3z", fill: "#ffca79", stroke: "#553c34" }),
+    svg("path", { d: "M30 18l2.5 4-2.5 4-2.5-4z", fill: "#fff2b8" }),
+    svg("path", { d: "M30 12v3m0 14v4", stroke: "#ffca79" }),
+  );
+  return mark;
+}
+
 export function tableau(game: GameId | "farkle" | "backgammon", scale: "index" | "table" = "table"): HTMLElement {
   const scene = el("div", "tableau");
   scene.dataset.game = game;
   scene.dataset.scale = scale;
   scene.setAttribute("aria-hidden", "true");
+  if (game === "lantern-run") {
+    scene.append(lanternStudy());
+    return scene;
+  }
   const field = el("div", "mini-field");
   const pieces = el("div", "mini-pieces");
   switch (game) {
