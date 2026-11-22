@@ -50,17 +50,25 @@ export interface Seat {
   occupied: boolean;
 }
 
+export type BotDifficulty = "easy" | "standard" | "hard";
+
 export interface Table {
   id: string;
   game: string;
   variant: string;
   revision: number;
-  status: "waiting" | "playing" | "finished";
+  status: "waiting" | "playing" | "finished" | "closed";
   seat: number;
   invite: string | null;
   seats: Seat[];
   position: Position | null;
+  botDifficulty?: BotDifficulty | null;
+  endReason?: string | null;
+  endedBySeat?: number | null;
+  result?: { cause: "resignation"; loserSeat: number; winnerSeat: number } | null;
 }
+
+export const isLive = ({ status }: Pick<Table, "status">) => status === "waiting" || status === "playing";
 
 export interface MotionStep {
   move: Move;
@@ -77,6 +85,8 @@ export type MoveReply = Table & { turnMotion?: TurnMotion };
 export class ApiError extends Error {
   constructor(readonly code: string) { super(code); }
 }
+
+export const apiCode = (error: unknown) => error instanceof ApiError ? error.code : "";
 
 export function portalApi(mount: string) {
   async function json<T>(path: string, method = "GET", body?: object, abort?: AbortSignal): Promise<T> {
@@ -97,11 +107,13 @@ export function portalApi(mount: string) {
     guest: () => json<Guest>("api/guest", "POST", {}),
     profile: (change: Partial<Pick<Guest, "displayName" | "preferences">>) => json<Guest>("api/profile", "PATCH", change),
     games: () => json<{ games: GameDefinition[] }>("api/board/games"),
-    create: (game: string, variant: string, players: number, bots: boolean) =>
-      json<Table>("api/board/tables", "POST", { game, variant, players, bots }),
+    create: (game: string, variant: string, players: number, bots: boolean, botDifficulty?: BotDifficulty) =>
+      json<Table>("api/board/tables", "POST", { game, variant, players, bots, botDifficulty }),
     join: (invite: string) => json<Table>("api/board/join", "POST", { invite }),
     resume: (game: string) => json<{ tableId: string | null }>(`api/board/resume?game=${encodeURIComponent(game)}`),
     read: (id: string, signal?: AbortSignal) => json<Table>(tablePath(id), "GET", undefined, signal),
     move: (id: string, revision: number, moveId: string) => json<MoveReply>(`${tablePath(id)}/moves`, "POST", { revision, moveId }),
+    end: (id: string, revision: number, action: "leave" | "resign") =>
+      json<Table>(`${tablePath(id)}/${action}`, "POST", { revision }),
   };
 }
