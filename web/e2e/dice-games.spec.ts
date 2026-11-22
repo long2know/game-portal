@@ -103,7 +103,7 @@ async function keep(page: Page, url: string, table: Table<Farkle>) {
   const kept = await act(table, url, page, button(page, "Keep"), { kind: "keep", dice: indices });
   expect(kept.position.turnPoints).toBe(turnPoints + choice.points);
   expect(kept.position.kept).toEqual(indices);
-  await expect(page.getByLabel("Unbanked points", { exact: true })).toHaveText(String(kept.position.turnPoints));
+  await expect(page.getByLabel("Unbanked points", { exact: true })).toHaveText(kept.position.turnPoints.toLocaleString("en-US"));
   await expect(button(page, "Roll")).toBeEnabled();
   return kept;
 }
