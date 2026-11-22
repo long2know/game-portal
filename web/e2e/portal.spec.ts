@@ -40,6 +40,7 @@ async function fitsPhone(page: Page) {
 type Point = [number, number];
 type MotionTrace = {
   effect: string; side: string; piece: string; start: Point; path: Point[]; delay: number;
+  flipTilt?: number[];
   sample?: { center: Point; height: number; opacity: number }; finished?: boolean; cancelled?: boolean;
 };
 type MotionPage = Window & { motion: MotionTrace[]; holdMotion: boolean };
@@ -59,15 +60,14 @@ async function observeMotion(page: Page) {
       const art = this.querySelector<HTMLElement>(".token")!;
       const animation = animate.call(this, frames, options);
       const effect = (animation.effect as KeyframeEffect);
+      const transforms = effect.getKeyframes().map(frame => new DOMMatrix(frame.transform as string | undefined));
       const entry: MotionTrace = {
         effect: [...this.classList].find(name => name !== "motion-piece")!.slice("motion-".length),
         side: art.dataset.side!, piece: art.dataset.piece!, start,
-        path: effect.getKeyframes().map(frame => {
-          const transform = new DOMMatrix(frame.transform as string | undefined);
-          return [start[0] + transform.m41, start[1] + transform.m42];
-        }),
+        path: transforms.map(transform => [start[0] + transform.m41, start[1] + transform.m42]),
         delay: effect.getTiming().delay!,
       };
+      if (entry.effect === "flip") entry.flipTilt = transforms.map(transform => transform.m22);
       probe.motion.push(entry);
       const sample = () => {
         if (!this.isConnected || animation.playState === "idle" || animation.playState === "finished") return;
@@ -316,8 +316,14 @@ test.describe("mounted Jade Court portal", () => {
       if (game === "reversi") {
         const flips = visual.filter(entry => entry.effect === "flip");
         expect(flips.map(entry => entry.side)).toEqual(["ivory", "onyx", "onyx", "ivory"]);
-        for (const flip of flips) expectPoint(flip.start, centers.r3c3);
-        await expect.poll(async () => (await motion()).filter(entry => entry.effect === "flip" && entry.sample).length).toBe(4);
+        for (const [index, flip] of flips.entries()) {
+          expectPoint(flip.start, centers.r3c3);
+          const [start, end] = flip.flipTilt!;
+          expect(start).toBeCloseTo(index % 2 === 0 ? 1 : 0);
+          expect(end).toBeCloseTo(index % 2 === 0 ? 0 : 1);
+        }
+        // A busy runner can skip sampling a short half-flip even when it finishes.
+        await expect.poll(async () => (await motion()).filter(entry => entry.effect === "flip" && entry.finished).length).toBe(4);
       }
       await expect(board.locator(".motion-layer")).toHaveCount(0);
       const last = after.position!.lastMove!;
