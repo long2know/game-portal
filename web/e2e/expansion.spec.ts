@@ -15,9 +15,12 @@ type Klondike = {
   legalMoves: { from: string; to: string; count: number }[];
 };
 type Sudoku = { given: number[]; values: number[]; moves: number; conflicts: number[] };
+type WordTile = { id: number; letter: string; points: number; blank: boolean };
 type Words = {
-  rack: { id: number; letter: string; points: number }[]; turn: number; board: { row: number; column: number; seat: number }[];
-  scores: number[]; lastMove: string | null;
+  variant: "classic" | "quick"; rows: number; columns: number; rackSize: number; exchangeLimit: number;
+  rack: WordTile[]; turn: number; board: { row: number; column: number; tile: WordTile; seat: number }[];
+  premiums: { row: number; column: number; kind: string }[];
+  scores: number[]; rackSizes: number[]; bagCount: number; lastMove: string | null;
 };
 
 const routes = [
@@ -58,6 +61,37 @@ async function desktopCrop(page: Page, playArea: Locator, path: string) {
 }
 
 const portrait = { width: 320, height: 730 };
+const wordBoard = (page: Page) => page.getByRole("group", { name: "Word Tiles board" });
+const wordRack = (page: Page) => page.getByRole("group", { name: "Your tile rack" });
+const wordSquare = (board: Locator, row: number, column: number, columns: number) =>
+  board.locator(`[data-word-index="${row * columns + column}"]`);
+const wordTile = (rack: Locator, id: number) => rack.locator(`[data-tile="${id}"]`);
+
+async function wordPan(board: Locator) {
+  return board.evaluate(board => {
+    const pan = board.closest(".word-board-pan")!;
+    return {
+      horizontal: pan.scrollWidth > pan.clientWidth, vertical: pan.scrollHeight > pan.clientHeight,
+      centeredX: Math.abs(2 * pan.scrollLeft + pan.clientWidth - pan.scrollWidth) <= 2,
+      centeredY: Math.abs(2 * pan.scrollTop + pan.clientHeight - pan.scrollHeight) <= 2,
+    };
+  });
+}
+
+async function tapWordSquare(page: Page, square: Locator) {
+  await page.locator(".word-board-pan").scrollIntoViewIfNeeded();
+  const { x, y, width, height } = (await square.boundingBox())!;
+  const center = { x: x + width / 2, y: y + height / 2 };
+  expect(await square.evaluate((square, { x, y }) => square.contains(document.elementFromPoint(x, y)), center)).toBe(true);
+  await page.touchscreen.tap(center.x, center.y);
+}
+
+const wordFixture = (position: Words) => ({
+  id: `test-${position.variant}`, seat: 0, revision: 3, status: "playing", invite: null,
+  seats: [{ seat: 0, name: "Bamboo", occupied: true }, { seat: 1, name: "Pine", occupied: true }],
+  position: { status: "playing", winners: [], detail: null, ...position },
+});
+
 const pokerCards = (page: Page) => page.getByRole("group", { name: "Your cards", exact: true }).getByRole("img");
 const suitNames = ["clubs", "diamonds", "hearts", "spades"];
 const cardName = (rank: number, suit: string) => `${({ 1: "Ace", 11: "Jack", 12: "Queen", 13: "King", 14: "Ace" } as Record<number, string>)[rank] ?? rank} of ${suit}`;
@@ -255,18 +289,36 @@ test.describe("mounted Jade Court expansion", () => {
     const endpoint = `${game}/${table.id}/actions`;
     const writes: unknown[] = [];
     page.on("request", request => { if (request.url() === endpoint) writes.push(request.postDataJSON()); });
-    const rack = page.getByRole("group", { name: "Your tile rack" });
-    const board = page.getByRole("group", { name: "Word Tiles board" });
-    const center = board.locator('[data-word-index="60"]');
-    const neighbor = board.locator('[data-word-index="61"]');
-    const tile = (id: number) => rack.locator(`[data-tile="${id}"]`);
-    await expect(rack.getByRole("button")).toHaveCount(table.position.rack.length);
+    const rack = wordRack(page);
+    const board = wordBoard(page);
+    const { rows, columns } = table.position;
+    const row = Math.floor(rows / 2), column = Math.floor(columns / 2);
+    const center = wordSquare(board, row, column, columns);
+    const neighbor = wordSquare(board, row, column + 1, columns);
+    const tile = (id: number) => wordTile(rack, id);
+    expect(table.position).toMatchObject({ variant: "classic", rows: 15, columns: 15, rackSize: 7 });
+    await expect(board.getByRole("button")).toHaveCount(rows * columns);
+    await expect(rack.getByRole("button")).toHaveCount(table.position.rackSize);
+    await expect(center).toHaveAccessibleName(/center, empty, double word/);
+    await expect(center).toHaveText("2W");
+    const marks = new Map([["double-letter", "2L"], ["triple-letter", "3L"], ["double-word", "2W"], ["triple-word", "3W"]]);
+    for (const [kind, mark] of marks) {
+      const premium = table.position.premiums.find(premium => premium.kind === kind)!;
+      await expect(wordSquare(board, premium.row, premium.column, columns)).toHaveText(mark);
+      await expect(page.getByRole("list", { name: "Premium squares" })
+        .getByText(new RegExp(`^${kind.replace("-", " ")}$`, "i"))).toBeVisible();
+    }
+    await expect.poll(() => wordPan(board)).toEqual({ horizontal: true, vertical: true, centeredX: true, centeredY: true });
+    await expect(board.locator('[tabindex="0"]')).toHaveCount(1);
+    await expect(center).toHaveAttribute("tabindex", "0");
+    await targets(center, neighbor, tile(tiles[0]!.id), button(page, "Submit word"), button(page, "Center board"));
     await tile(tiles[0]!.id).tap();
-    await center.tap();
+    await tapWordSquare(page, center);
     await expect(center).toHaveAttribute("data-draft", "");
+    await expect(center).not.toHaveAttribute("data-premium", /.+/);
     expect(writes).toEqual([]);
     await button(page, "Recall tiles").tap();
-    await expect(center).toHaveAccessibleName(/center, empty/);
+    await expect(center).toHaveText("2W");
     await expect(rack.getByRole("button")).toHaveCount(table.position.rack.length);
     await tile(tiles[0]!.id).tap();
     await center.focus();
@@ -278,23 +330,22 @@ test.describe("mounted Jade Court expansion", () => {
     await expect(neighbor).toHaveAccessibleName(/draft/);
     expect(writes).toEqual([]);
     await fits(page);
-    await expect.poll(() => board.evaluate(node => {
-      const scroll = node.closest(".feature-scroll")!;
-      return scroll.scrollWidth > scroll.clientWidth;
-    })).toBe(true);
+    await button(page, "Center board").tap();
     await page.screenshot({ path: info.outputPath("word-draft-320.png"), fullPage: true });
     await desktopCrop(page, page.locator(".word-layout"), info.outputPath("word-draft-desktop.png"));
     const played = watch(page, endpoint);
     await button(page, "Submit word").tap();
     const play = await body<Table<Words>>(await played);
     expect(writes).toEqual([{ revision: table.revision, action: { kind: "place", placements: [
-      { row: 5, column: 5, tileId: tiles[0]!.id }, { row: 5, column: 6, tileId: tiles[1]!.id },
+      { row, column, tileId: tiles[0]!.id }, { row, column: column + 1, tileId: tiles[1]!.id },
     ] } }]);
     expect(play.position.scores[table.seat]).toBeGreaterThan(0);
     expect(play.revision).toBe(table.revision + 1);
     expect(play.position.turn).toBe(table.seat);
     expect(play.position.lastMove).toBeTruthy();
     await expect(center).not.toHaveAttribute("data-draft", "");
+    await expect(center).not.toHaveAttribute("data-premium", /.+/);
+    await expect(center).toHaveText(`${tiles[0]!.letter}${tiles[0]!.points}`);
     await expect(page.getByText(`Last move: ${play.position.lastMove}`, { exact: true })).toBeVisible();
     await button(page, "Exchange tiles").tap();
     await tile(play.position.rack[0].id).tap();
@@ -309,6 +360,155 @@ test.describe("mounted Jade Court expansion", () => {
     expect((await body<Table<Words>>(await resumed)).position).toEqual(latest.position);
     await expect(center).toHaveAccessibleName(new RegExp(tiles[0]!.letter));
     await expect(rack.locator("[data-tile]")).toHaveCount(latest.position.rack.length);
+  });
+
+  test("Word Tiles assigns and recalls distinct blanks by touch and keyboard", async ({ page, baseURL, browserName }, info) => {
+    await page.setViewportSize({ width: 390, height: 780 });
+    const url = (path: string) => new URL(path, baseURL).href;
+    const rackTiles = [
+      { id: 99, letter: "?", points: 0, blank: true },
+      ...[..."ECIND"].map((letter, index) => ({ id: index + 10, letter, points: letter === "C" ? 3 : 1, blank: false })),
+      { id: 100, letter: "?", points: 0, blank: true },
+    ];
+    const table = wordFixture({
+      variant: "classic", rows: 15, columns: 15, rackSize: 7, exchangeLimit: 0, turn: 0, rack: rackTiles, board: [],
+      premiums: [{ row: 7, column: 7, kind: "double-word" }], scores: [0, 0], rackSizes: [7, 7], bagCount: 6, lastMove: null,
+    });
+    const game = url(`api/words/tables/${table.id}`);
+    const writes: unknown[] = [];
+    await page.route(url("api/words/resume"), route => route.fulfill({ json: { tableId: table.id } }));
+    await page.route(game, route => route.fulfill({ json: table }));
+    await page.route(`${game}/actions`, async route => {
+      writes.push(route.request().postDataJSON());
+      await route.fulfill({ status: 400, json: { error: { code: "illegal_action" } } });
+    });
+    await page.goto(url("word-tiles/"));
+    const board = wordBoard(page), rack = wordRack(page);
+    const center = wordSquare(board, 7, 7, 15), left = wordSquare(board, 7, 6, 15), right = wordSquare(board, 7, 8, 15);
+    const first = wordTile(rack, 99), second = wordTile(rack, 100);
+    const picker = page.getByRole("dialog", { name: "Choose a blank letter" });
+    const cancel = button(picker, "Cancel");
+    await expect(button(page, "Exchange tiles")).toBeDisabled();
+    await expect(first).toHaveAccessibleName("Blank, 0 points · tile 1");
+    await expect(first).toHaveText("?0");
+    await expect(first.locator(".word-tile")).toHaveAttribute("data-blank", "");
+    await fits(page);
+    await expect.poll(() => wordPan(board)).toEqual({ horizontal: true, vertical: true, centeredX: true, centeredY: true });
+    if (browserName === "chromium") {
+      const pan = page.locator(".word-board-pan");
+      await pan.scrollIntoViewIfNeeded();
+      const area = (await pan.boundingBox())!;
+      const x = area.x + area.width * .75, y = area.y + area.height * .75;
+      const input = await page.context().newCDPSession(page);
+      const scrolled = pan.evaluate(node => new Promise<boolean>(resolve => {
+        node.addEventListener("scrollend", () => resolve(true), { once: true });
+        setTimeout(() => resolve(false), 3500);
+      }));
+      await input.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+      for (let step = 1; step <= 6; step++) {
+        await input.send("Input.dispatchTouchEvent", {
+          type: "touchMove", touchPoints: [{ x: x - step * 17, y: y - step * 20 }],
+        });
+      }
+      await input.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await input.detach();
+      expect(await scrolled).toBe(true);
+    } else {
+      await center.focus();
+      await page.keyboard.press("Control+End");
+      await expect(wordSquare(board, 14, 14, 15)).toBeFocused();
+    }
+    await expect.poll(() => wordPan(board)).toMatchObject({ centeredX: false, centeredY: false });
+    await button(page, "Center board").tap();
+    await expect(center).toBeFocused();
+    await expect.poll(() => wordPan(board)).toMatchObject({ centeredX: true, centeredY: true });
+
+    await first.focus();
+    await page.keyboard.press("Space");
+    await expect(first).toBeFocused();
+    await expect(first).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText(/Blank selected/)).toBeVisible();
+    await tapWordSquare(page, center);
+    await expect(cancel).toBeFocused();
+    await targets(button(picker, "A"), button(picker, "Z"), cancel);
+    await page.keyboard.press("Escape");
+    await expect(picker).toBeHidden();
+    await expect(center).toBeFocused();
+    await expect(center).toHaveText("2W");
+    await expect(first).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("O");
+    await expect(center).toBeFocused();
+    await expect(center).toHaveAccessibleName(/O, blank, 0 points, draft/);
+    await expect(center).toHaveText("O0");
+    await page.keyboard.press("Enter");
+    await expect(center).toHaveText("2W");
+    await expect(first).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("a");
+    await expect(center).toHaveText("A0");
+    await expect(center.locator(".word-tile")).toHaveAttribute("data-blank", "");
+
+    await second.tap();
+    await tapWordSquare(page, right);
+    await cancel.tap();
+    await expect(right).toBeFocused();
+    await expect(center).toHaveText("A0");
+    await expect(second).toHaveAttribute("aria-pressed", "true");
+    await tapWordSquare(page, right);
+    await page.screenshot({ path: info.outputPath("word-blank-390.png") });
+    await button(picker, "T").tap();
+    await expect(right).toHaveText("T0");
+    await wordTile(rack, 11).tap();
+    await tapWordSquare(page, left);
+    await expect(left.locator(".word-tile")).not.toHaveAttribute("data-blank", "");
+    expect(writes).toEqual([]);
+    await expect(page).toHaveURL(url("word-tiles/"));
+
+    const submit = button(page, "Submit word");
+    await submit.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByText(/That play wasn’t accepted/)).toBeVisible();
+    expect(writes).toEqual([{ revision: table.revision, action: { kind: "place", placements: [
+      { row: 7, column: 7, tileId: 99, letter: "A" },
+      { row: 7, column: 8, tileId: 100, letter: "T" },
+      { row: 7, column: 6, tileId: 11 },
+    ] } }]);
+    await expect(submit).toBeFocused();
+    await expect(center).toHaveText("A0");
+    await expect(right).toHaveText("T0");
+  });
+
+  test("Word Tiles resumes a Quick board without premiums or lost tiles", async ({ page, baseURL }) => {
+    const url = (path: string) => new URL(path, baseURL).href;
+    const normal = (letter: string, id: number) => ({ id, letter, points: 1, blank: false });
+    const table = wordFixture({
+      variant: "quick", rows: 11, columns: 11, rackSize: 6, exchangeLimit: 3, turn: 0,
+      rack: [..."ECINDL"].map((letter, index) => normal(letter, index + 1)), board: [
+        { row: 5, column: 5, seat: 0, tile: normal("A", 44) },
+        { row: 5, column: 6, seat: 0, tile: normal("T", 55) },
+      ],
+      premiums: [], scores: [2, 0], rackSizes: [6, 6], bagCount: 32, lastMove: "Seat 1 played AT (+2).",
+    });
+    await page.route(url("api/words/resume"), route => route.fulfill({ json: { tableId: table.id } }));
+    await page.route(url(`api/words/tables/${table.id}`), route => route.fulfill({ json: table }));
+    await page.goto(url("word-tiles/"));
+    const board = wordBoard(page);
+    const center = wordSquare(board, 5, 5, 11);
+    await expect(board.getByRole("button")).toHaveCount(121);
+    await expect(wordRack(page).getByRole("button")).toHaveCount(6);
+    await expect(page.getByText("Quick · 6 tiles")).toBeVisible();
+    await expect(page.getByRole("list", { name: "Premium squares" })).toBeHidden();
+    await expect(board.locator("[data-premium]")).toHaveCount(0);
+    await expect(center).toHaveText("A1");
+    await button(page, "Exchange tiles").tap();
+    for (const tile of table.position.rack.slice(0, 4)) await wordTile(wordRack(page), tile.id).tap();
+    await expect(page.getByText("Select up to 3 to exchange. 3 selected.")).toBeVisible();
+    await expect(wordTile(wordRack(page), table.position.rack[3].id)).toHaveAttribute("aria-pressed", "false");
+    await page.reload();
+    await expect(center).toHaveText("A1");
+    await expect(wordSquare(board, 5, 6, 11)).toHaveText("T1");
+    await expect(page.getByText("Last move: Seat 1 played AT (+2).")).toBeVisible();
   });
 
   test("Hold’em uses street totals and a seated next-hand control against a bot", async ({ page, baseURL }, info) => {
