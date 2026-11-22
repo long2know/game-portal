@@ -160,7 +160,7 @@ test.describe("mounted Jade Court portal", () => {
   for (const [game, name] of boardGames) {
     test(`${name}: places a real bot move, aligns keyboard navigation, and resumes`, async ({ page, baseURL }, info) => {
       const url = urls(baseURL!);
-      const motion = await observeMotion(page);
+      const motion = await observeMotion(page, game === "go" ? "landing" : "in-flight");
       await page.goto(url(`${game}/`));
       if (game === "go") {
         const size = page.getByRole("combobox", { name: "Variant" });
@@ -252,16 +252,30 @@ test.describe("mounted Jade Court portal", () => {
       expect(steps.length).toBe(initial.seats.length);
       const playedSteps = steps.filter(({ move }) => move.to !== null);
       const effect = move.from === null ? "place" : "travel";
-      await expect.poll(async () => (await motion()).filter(entry => entry.effect === effect && entry.sample).length).toBe(playedSteps.length);
+      // WebKit can skip the midpoint callback of a real drop. Verify both native animations and their landings instead.
+      await expect.poll(async () => (await motion()).filter(entry =>
+        entry.effect === effect && (game === "go" ? entry.finished : entry.sample)).length).toBe(playedSteps.length);
       const visual = await motion();
       const centers = await boardCenters(board);
       const travel = visual.filter(entry => entry.effect === effect);
+      if (game === "go") expect(travel.map(({ side, piece }) => [side, piece])).toEqual([["onyx", "stone"], ["ivory", "stone"]]);
       for (const [index, entry] of travel.entries()) {
         const leg = playedSteps[index].move;
-        expectPoint(entry.start, centers[leg.from ?? leg.to!]);
-        expect(entry.sample!.center).not.toEqual(entry.start);
-        if (leg.from)
-          [leg.from, ...leg.via ?? [], leg.to!].forEach((id, i) => expectPoint(entry.path[2 * i], centers[id]));
+        const anchor = centers[leg.from ?? leg.to!];
+        expectPoint(entry.start, anchor);
+        if (game === "go") {
+          expect(entry).toMatchObject({ started: true, finished: true, landing: { opacity: 1 } });
+          expect(entry.cancelled).toBeUndefined();
+          const [x, y] = entry.path[0];
+          expect(Math.abs(x - anchor[0])).toBeLessThan(.7);
+          expect(y).toBeLessThan(anchor[1] - .7);
+          expectPoint(entry.path.at(-1)!, anchor);
+          expectPoint(entry.landing!.center, anchor);
+        } else {
+          expect(entry.sample!.center).not.toEqual(entry.start);
+          if (leg.from)
+            [leg.from, ...leg.via ?? [], leg.to!].forEach((id, i) => expectPoint(entry.path[2 * i], centers[id]));
+        }
       }
       if (game === "reversi") {
         const flips = visual.filter(entry => entry.effect === "flip");
