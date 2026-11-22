@@ -1,4 +1,5 @@
 import "./words.css";
+import { catalog } from "../catalog";
 import { button, el, text } from "../dom";
 import type { PortalHost } from "../host";
 import { Multiplayer, nameAt } from "./multiplayer";
@@ -238,7 +239,7 @@ function view(play: (action: Action) => void): MatchView<Position> {
         const cell = button("", "word-cell", () => place(index, cell));
         cell.dataset.wordIndex = String(index);
         return cell;
-      }, "Word Tiles board");
+      }, `${catalog["word-tiles"].name} board`);
       grid.root.setAttribute("aria-describedby", instructions.id);
       const start = grid.cells[center];
       grid.cells[0].tabIndex = -1;

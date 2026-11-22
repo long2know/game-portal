@@ -115,10 +115,11 @@ include `illegal_action`, `not_your_turn`, `hand_finished` (deal the next hand),
 expire after 24 hours, playing tables after seven days, and closed or finished tables
 after 24 hours. Terminal tables cannot be resumed and do not count toward active limits.
 
-## Word Tiles
+## Jade Letters
 
-The Word Tiles table routes, invite behavior, response shape, and outer revision rules match
-Poker under `/api/words` instead of `/api/poker`. Create with `{players: 2, bots}`; there is no
+The Jade Letters page and invites keep the `word-tiles/` path under the configured mount.
+The table routes, invite behavior, response shape, and outer revision rules match Poker
+under `/api/words` instead of `/api/poker`. Create with `{players: 2, bots}`; there is no
 `/next` route. `position` is the [typed `WordView`](word-tiles-rules.md), including sparse
 board cells, scores, bag count, seat rack sizes, and the caller's own rack only. New deals have
 `variant: "duel"` (15×15, `rackSize: 7`); saved `"classic"` and `"quick"` games retain their
@@ -144,7 +145,7 @@ public position and its own rack and takes at most one turn before the response 
 ## Farkle and Backgammon
 
 `/api/farkle` (2–6 seats) and `/api/backgammon` (2 seats) follow the same seated table,
-invite, resume, leave, and outer revision contract as Word Tiles. Both support bots and
+invite, resume, leave, and outer revision contract as Jade Letters. Both support bots and
 private guest invitations; neither has a `/next` route. A roll takes only `{kind: "roll"}`:
 the server chooses the dice and saves the committed position. Requests cannot supply
 faces or a random seed.

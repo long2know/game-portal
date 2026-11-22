@@ -1,9 +1,11 @@
-# Word Tiles rules and engine contract
+# Jade Letters rules and engine contract
 
-Word Tiles is an independent two-seat crossword game. New deals use **Duel**: a 15×15 board, a 104-tile English
-supply, and seven tiles per rack. A table waiting for its first deal starts with Duel. Saved **Quick** and **Classic**
-tables keep their rules, tile IDs, draw order, and guests. The server uses
-the operating system's cryptographic random generator to shuffle; a rack is not guaranteed to have a playable word.
+Jade Letters is an independent two-seat crossword game. Choose **Play a bot** or **Invite a friend** at setup.
+New deals use **Duel**: a 15×15 board, a 104-tile English supply, and seven tiles per rack. A table waiting for
+its first deal starts with Duel. Saved **Quick** and **Classic** tables keep their rules, tile IDs, draw order,
+and guests. Bookmarks and invites still use the `word-tiles/` page at your portal's base URL.
+The server uses the operating system's cryptographic random generator to shuffle; a rack is not guaranteed
+to have a playable word.
 
 ## Turns and scoring
 
@@ -55,7 +57,7 @@ for creator-first play; [Hasbro's component list](https://hasbro-new.custhelp.co
 and [Wordton](https://wordton.com/words-with-friends/) tables for their face values. Jade Court's
 numeric premium layout, neutral center and exact short-bag and tie policies are specified here, not claims about publisher parity.
 
-Word Tiles is not a branded edition. It validates every word against the bundled SCOWL list on submission and does not
+Jade Letters is not a branded edition. It validates every word against the bundled SCOWL list on submission and does not
 share commercial word lists, challenge procedures, power-ups, or matchmaking. Leaving a table closes it without scored
 settlement. The rendered board and tile art are original.
 

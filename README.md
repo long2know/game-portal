@@ -1,8 +1,8 @@
 # Jade Court
 
-A self-hosted board-game portal for phones and desktops, including four-seat Changsha Mahjong and Chess. Play a bot or share a private invite. This is free play with points only: no accounts, payments, wagering, or cash value.
+A self-hosted board-game portal for phones and desktops, including four-seat Changsha Mahjong, Chess, and [Jade Letters](docs/word-tiles-rules.md), a two-seat crossword game. Play a bot or share a private invite. This is free play with points only: no accounts, payments, wagering, or cash value.
 
-The catalog is at `/portal/`; Changsha Mahjong is at `/portal/mahjong/`. This is a separate service and data store. Leave any existing Mahjong container, volume, and `/mahjong/` proxy route unchanged.
+The catalog is at `/portal/`; Changsha Mahjong is at `/portal/mahjong/`. Jade Letters keeps its existing `/portal/word-tiles/` URL for bookmarks and invites. Jade Court is a separate service and data store. Leave any existing Mahjong container, volume, and `/mahjong/` proxy route unchanged.
 
 ## Run the published image
 
