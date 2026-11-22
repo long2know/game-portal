@@ -126,7 +126,7 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
                 if (!open) throw SocialLedger.Missing();
             }
             if (!await CommitAsync(db, table, checkpoint, utc, stop)) continue;
-            using var handoff = receipt is null ? null : admission!.Stage(receipt);
+            using var handoff = receipt is null ? null : await admission!.StageAsync(db, receipt, stop);
             var member = NewMember(table, guest.Id, seat, utc);
             db.BoardMemberships.Add(member);
             await db.SaveChangesAsync(stop);

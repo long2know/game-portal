@@ -7,7 +7,6 @@ internal sealed class SocialPresence(TimeProvider time)
     private const int MaxGuests = 512;
     private const int MaxTabs = 8;
     private static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(45);
-    private static readonly TimeSpan HandoffLifetime = TimeSpan.FromSeconds(15);
     private readonly byte[] _handleKey = RandomNumberGenerator.GetBytes(32);
     private readonly object _gate = new();
     private readonly Dictionary<Guid, Guest> _guests = [];
@@ -148,7 +147,7 @@ internal sealed class SocialPresence(TimeProvider time)
         {
             if (!_guests.TryGetValue(id, out var guest) || guest.Claim != claim) return;
             guest.Claim = null;
-            if (committed) guest.BusyUntil = (time.GetUtcNow() + HandoffLifetime).UtcTicks;
+            if (committed) guest.BusyUntil = (time.GetUtcNow() + SocialLedger.HandoffLifetime).UtcTicks;
         }
     }
 

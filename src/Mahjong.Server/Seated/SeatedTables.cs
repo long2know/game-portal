@@ -106,7 +106,7 @@ internal sealed class SeatedTables(IDbContextFactory<MahjongDb> factory, TimePro
                 if (!open) throw SocialLedger.Missing();
             }
             if (!await CommitAsync(db, table, status, initial?.Checkpoint, utc, stop)) continue;
-            using var handoff = receipt is null ? null : admission!.Stage(receipt);
+            using var handoff = receipt is null ? null : await admission!.StageAsync(db, receipt, stop);
             var member = NewMember(table.Id, guest.Id, seat, utc);
             db.SeatedMemberships.Add(member);
             await db.SaveChangesAsync(stop);

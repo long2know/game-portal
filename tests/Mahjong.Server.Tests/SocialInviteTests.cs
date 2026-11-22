@@ -350,15 +350,76 @@ public sealed class SocialInviteTests
         var pokerInvite = await Offer(host, handle, "holdem", poker);
         var results = await Task.WhenAll(Act(recipient, boardInvite, "accept"), Act(recipient, pokerInvite, "accept"));
         var firstWon = results[0].IsSuccessStatusCode;
-        await Joined(Task.FromResult(results[firstWon ? 0 : 1]), firstWon ? "chess" : "holdem", firstWon ? chess : poker);
+        (string Token, string Game, string Id) won = firstWon ? (boardInvite, "chess", chess) : (pokerInvite, "holdem", poker);
+        (string Token, string Game, string Id) waiting = firstWon ? (pokerInvite, "holdem", poker) : (boardInvite, "chess", chess);
+        await Joined(Task.FromResult(results[firstWon ? 0 : 1]), won.Game, won.Id);
         await Fault(Task.FromResult(results[firstWon ? 1 : 0]), HttpStatusCode.Conflict, "already_seated");
         Assert.Equal(1L, await Number(server, "SELECT count(*) FROM SocialInvites WHERE Accepted = 1"));
-        var board = await Read(host, Board + "/tables/" + chess);
-        var seated = await Read(host, Api + "/poker/tables/" + poker);
+        var boardPath = Board + "/tables/" + chess;
+        var pokerPath = Api + "/poker/tables/" + poker;
+        var board = await Read(host, boardPath);
+        var seated = await Read(host, pokerPath);
         Assert.Equal(firstWon ? "playing" : "waiting", board.Text("status"));
         Assert.Equal(firstWon ? "waiting" : "playing", seated.Text("status"));
         Assert.Equal(firstWon ? 1 : 0, board.GetProperty("revision").GetInt32());
         Assert.Equal(firstWon ? 0 : 1, seated.GetProperty("revision").GetInt32());
+
+        await server.StopAsync();
+        // Allow for process startup latency while keeping the receipt inside the short handoff window.
+        server.SetClockOffset(-10);
+        await server.StartAsync();
+        Assert.True((await Pulse(recipient)).GetProperty("available").GetBoolean());
+        await Joined(Act(recipient, won.Token, "accept"), won.Game, won.Id);
+        await Fault(Act(recipient, waiting.Token, "accept"), HttpStatusCode.Conflict, "already_seated");
+        Assert.Equal(0L, await Number(server, "SELECT Accepted FROM SocialInvites WHERE Id = $id", waiting.Token));
+        Assert.True(JsonElement.DeepEquals(board, await Read(host, boardPath)));
+        Assert.True(JsonElement.DeepEquals(seated, await Read(host, pokerPath)));
+
+        await server.StopAsync();
+        server.SetClockOffset(20);
+        await server.StartAsync();
+        await Pulse(recipient);
+        await Joined(Act(recipient, waiting.Token, "accept"), waiting.Game, waiting.Id);
+        await Joined(Act(recipient, won.Token, "accept"), won.Game, won.Id);
+        Assert.Equal(1, (await Read(recipient, boardPath)).GetProperty("revision").GetInt32());
+        Assert.Equal(1, (await Read(recipient, pokerPath)).GetProperty("revision").GetInt32());
+        Assert.Equal(2L, await Number(server, "SELECT count(*) FROM SocialInvites WHERE Accepted = 1"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CommittedReceiptSurvivesOptOutOrBlockWhilePendingInviteDoesNot(bool block)
+    {
+        await using var server = PortalServer();
+        await server.StartAsync();
+        var host = await Guest(server, "Host");
+        var recipient = await Guest(server, "Receiver");
+        var chess = (await CreateBoard(host, "chess", "standard")).Text("id");
+        var waiting = (await CreateBoard(host, "checkers", "english")).Text("id");
+        await Pulse(recipient, available: true);
+        var handle = Player(await Pulse(host, busy: true, available: true), "Receiver");
+        var joined = await Offer(host, handle, "chess", chess);
+        var pending = await Offer(host, handle, "checkers", waiting);
+        using (var lost = await Act(recipient, joined, "accept")) Assert.Equal(HttpStatusCode.OK, lost.StatusCode);
+        var path = Board + "/tables/" + chess;
+        var original = await Read(recipient, path);
+        Assert.Equal(1, original.GetProperty("revision").GetInt32());
+        Assert.Equal(1, original.GetProperty("seat").GetInt32());
+        var receiptExpiry = await Number(server, "SELECT ExpiresAtTicks FROM SocialInvites WHERE Id = $id", joined);
+
+        if (block)
+            await Confirm(Act(recipient, pending, "block"));
+        else
+            Assert.False((await Pulse(host, available: false)).GetProperty("available").GetBoolean());
+        await Unavailable(Act(recipient, pending, "accept"));
+        Assert.Equal(0L, await Number(server, "SELECT count(*) FROM SocialInvites WHERE Id = $id", pending));
+        Assert.Equal(1L, await Number(server, "SELECT count(*) FROM BoardMemberships WHERE TableId = $id", waiting));
+        await Unavailable(Act(host, joined, "accept"));
+        await Joined(Act(recipient, joined, "accept"), "chess", chess);
+        Assert.True(JsonElement.DeepEquals(original, await Read(recipient, path)));
+        Assert.Equal(2L, await Number(server, "SELECT count(*) FROM BoardMemberships WHERE TableId = $id", chess));
+        Assert.Equal(receiptExpiry, await Number(server, "SELECT ExpiresAtTicks FROM SocialInvites WHERE Id = $id", joined));
     }
 
     [Fact]

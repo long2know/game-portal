@@ -419,7 +419,7 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
                 db.Rooms.Remove(expired);
                 await db.SaveChangesAsync(stop);
             }
-            using var handoff = admission.Stage(receipt);
+            using var handoff = await admission.StageAsync(db, receipt, stop);
             SeatHuman(db, room, guest, seat);
             Touch(row, utc);
             room.Store(row);

@@ -64,17 +64,19 @@ there must be an open human seat. Sending does not reserve a seat. An identical 
 send returns the original ID and does not extend its two-minute lifetime. The pending
 limits are eight sent and eight received per guest, three per pair, and 512 per instance.
 
-Accept rechecks the recipient, both opt-ins, any block, the recipient's live tab state,
-and the sender's authority and the open seat in the same waiting table. It never leaves
-or resigns from another game. An exact-table seat acquired through a share link, another
-live Mahjong membership for a Mahjong invite, or a busy recipient returns `already_seated`.
-An in-memory busy hold covers the 15 seconds after joining so the recipient can navigate.
+For a pending invite, accept rechecks the recipient, both opt-ins, any block, the
+recipient's live tab state, and the sender's authority and open seat in the same waiting
+table. It never leaves or resigns from another game. An exact-table seat acquired through
+a share link, another live Mahjong membership for a Mahjong invite, or a busy recipient
+returns `already_seated`.
+For 15 seconds after joining, accepting another otherwise valid pending invite returns
+`already_seated` so the recipient can navigate. This handoff window survives a restart.
 The response identifies only the now-authorized table: use the existing exact member GET
 or authenticated Mahjong WebSocket `sync` to load it. A retry can replay the same result,
-including across restart, for five minutes while the recipient remains entitled to the
-same unexpired table, it has not closed, and neither guest has opted out or blocked the
-other. This does not add a seat or start a game again. The server prunes expired invites
-and receipts independently of client polling.
+including across restart, for five minutes while the same recipient is still seated at the
+same unexpired table and it has not closed. Later opt-outs or blocks do not invalidate a
+committed receipt, and replay does not add a seat or start a game again. The server prunes
+expired invites and receipts independently of client polling.
 
 Opting out immediately cancels all of that guest's pending requests, across tabs.
 Blocking persists for the guests' lifetime, hides the pair in both directions, and

@@ -6,6 +6,7 @@ internal static class SocialLedger
 {
     public static readonly TimeSpan PendingLifetime = TimeSpan.FromMinutes(2);
     public static readonly TimeSpan ReceiptLifetime = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan HandoffLifetime = TimeSpan.FromSeconds(15);
 
     public static IQueryable<SocialInviteRow> Pending(MahjongDb db, long now) =>
         db.SocialInvites.Where(i => !i.Accepted && i.ExpiresAtTicks > now);
@@ -36,16 +37,22 @@ internal sealed class SocialAcceptance(SocialInviteRow hint, SocialPresence pres
     {
         var row = await db.SocialInvites.FindAsync([hint.Id], stop);
         if (row is null || row.ExpiresAtTicks <= utc.UtcTicks || row.RecipientId != RecipientId
-            || row.SenderId != SenderId || row.Game != Target.Game || row.TableId != Target.TableId
-            || !await SocialLedger.AllowedAsync(db, SenderId, RecipientId, stop))
+            || row.SenderId != SenderId || row.Game != Target.Game || row.TableId != Target.TableId)
+            throw SocialLedger.Missing();
+        if (!row.Accepted && !await SocialLedger.AllowedAsync(db, SenderId, RecipientId, stop))
             throw SocialLedger.Missing();
         return row;
     }
 
-    public SocialPresence.Handoff Stage(SocialInviteRow row)
+    public async Task<SocialPresence.Handoff> StageAsync(MahjongDb db, SocialInviteRow row, CancellationToken stop)
     {
+        // A committed row expires five minutes after acceptance, so its expiry also dates the handoff.
+        var cutoff = (time.GetUtcNow() + SocialLedger.ReceiptLifetime - SocialLedger.HandoffLifetime).UtcTicks;
+        var hasHandoff = await db.SocialInvites.AnyAsync(i => i.RecipientId == RecipientId
+            && i.Accepted && i.ExpiresAtTicks > cutoff, stop);
         var utc = time.GetUtcNow();
         if (row.ExpiresAtTicks <= utc.UtcTicks) throw SocialLedger.Missing();
+        if (hasHandoff) throw SocialLedger.AlreadySeated();
         var handoff = presence.Claim(RecipientId, utc);
         row.Accepted = true;
         row.ExpiresAtTicks = (utc + SocialLedger.ReceiptLifetime).UtcTicks;
