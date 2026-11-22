@@ -151,7 +151,7 @@ faces or a random seed.
   current roll; `{kind: "bank"}` ends the turn and banks its points when allowed.
   `position.choices` lists the current player's scoring subsets as `{mask, points}`,
   with bit `i` corresponding to die `i`. A roll with no scoring subset ends the turn.
-- In Backgammon, the server rolls both opening dice and starts the higher seat.
+- In Backgammon, the server rolls both opening dice; the seat with the higher die starts.
   `{kind: "move", from, to, die}` uses a move from `position.legalActions.moves`;
   points are numbered 1–24, with `from: 0` for the bar and `to: 25` for bearing off.
   `{kind: "pass"}` is allowed only where advertised by `position.legalActions.canPass`.

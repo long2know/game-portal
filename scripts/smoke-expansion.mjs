@@ -315,9 +315,12 @@ async function rejectClientRoll(call, game, table, cookie, outsider) {
   }
   await call(path, { status: 401, error: 'not_authenticated' });
   await call(`${path}/actions`, { cookie: outsider, body, status: 404, error: 'room_not_found' });
-  await call(`${path}/actions`, {
-    cookie, body: { ...body, action: { ...roll, dice: [6, 6] } }, status: 400, error: 'invalid_request',
-  });
+  const dice = Array(game === 'farkle' ? table.position.diceToRoll : 2).fill(6);
+  for (const supplied of [{ dice }, { seed: 1 }]) {
+    await call(`${path}/actions`, {
+      cookie, body: { ...body, action: { ...roll, ...supplied } }, status: 400, error: 'invalid_request',
+    });
+  }
   assert.deepEqual(await readSeat(call, game, table, cookie), table, `${game} changed after a rejected roll`);
 }
 
@@ -437,6 +440,9 @@ async function seedBackgammon(call, guests) {
   await rejectClientRoll(call, game, other, cookies[1 - seat], outsider);
   const rolled = await act(call, game, other, cookies[1 - seat], roll);
   checkDice(rolled.position.dice, 2);
+  const [first, second] = rolled.position.dice;
+  assert.deepEqual(rolled.position.remaining, first === second ? [first, first, first, first] : [first, second],
+    'Backgammon did not make the rolled dice available to play');
   assert.deepEqual(rolled.position.points, passed.position.points, 'Backgammon moved checkers while rolling');
   await checkStaleRoll(call, game, other, rolled, cookies[1 - seat]);
   return { botReply, pair: await readDicePair(call, game, rolled, cookies, ['legalActions']) };
