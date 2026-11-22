@@ -9,6 +9,7 @@
     <ClientDist Condition="'$(ClientDist)' == ''">../../web/dist</ClientDist>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Mahjong.Server.Tests" />
     <ProjectReference Include="../Mahjong.Rules/Mahjong.Rules.csproj" />
     <ProjectReference Include="../JadeCourt.Games/JadeCourt.Games.csproj" />
     <ProjectReference Include="../JadeCourt.Chess/JadeCourt.Chess.csproj" />

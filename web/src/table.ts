@@ -46,7 +46,7 @@ export function setMelds(parent: HTMLElement, melds: Meld[], dealer: Seat, local
   });
 }
 
-export type TableCue = "draw" | "discard" | "call" | "turn" | "win" | "exhausted";
+export type TableCue = "draw" | "discard" | "call" | "chi" | "peng" | "turn" | "win" | "exhausted";
 
 const signed = (points: number) => points > 0 ? `+${points}` : points < 0 ? `−${-points}` : "0";
 
@@ -465,7 +465,10 @@ export class TableView {
       render.forEach(paint => paint());
     }
     if (newSettlement) return game.settlement!.reason === "win" ? "win" : "exhausted";
-    if (calls.length) return "call";
+    if (calls.length) {
+      const kind = calls[0].kind;
+      return kind === "chi" || kind === "peng" ? kind : "call";
+    }
     if (newDraw) return "draw";
     if (discards.length) return "discard";
     if (live && game.turnSeat === self.seat && game.turnSeat !== priorGame?.turnSeat) return "turn";

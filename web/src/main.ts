@@ -1,11 +1,12 @@
 import "./styles.css";
 import { LanternAudio } from "./audio";
+import type { AudioChoices } from "./audio";
 import { Modal } from "./dialog";
 import { button, el, text } from "./dom";
 import { appPath } from "./paths";
 import { api, HttpError } from "./protocol";
 import type { Action, Command, Guest, Preferences, Snapshot } from "./protocol";
-import { ChatPanel, HomeScreen, WaitingRoom, field, iconButton, resultsContent, rulesContent, submit, toggle, nameField } from "./screens";
+import { ChatPanel, HomeScreen, WaitingRoom, field, iconButton, resultsContent, rulesContent, submit, toggle } from "./screens";
 import { errorMessage, TableSession } from "./session";
 import type { Connection } from "./session";
 import { TableView } from "./table";
@@ -29,7 +30,7 @@ class LanternTable {
   private readonly retryButton = button("Reconnect now", "btn secondary", () => this.retry());
   private readonly dismissButton = iconButton("close", "Dismiss message", () => this.showNotice(""));
   private readonly notice = el("div", "notice", this.noticeText, el("div", "notice-actions", this.retryButton, this.dismissButton));
-  private readonly audio = new LanternAudio();
+  private readonly audio = new LanternAudio(fromPortal ? `${mahjongPath}audio` : undefined);
   private readonly modal = new Modal(() => this.modalClosed());
   private readonly chatButton = iconButton("chat", "Table chat", () => this.openChat());
   private readonly settingsButton = iconButton("settings", "Settings", () => this.openSettings());
@@ -272,6 +273,7 @@ class LanternTable {
       // Remember the same-room waiting projection before the first live hand.
       if (state.game || scene === "waiting") cue = this.table.update(state, available, this.session.now, effect);
     }
+    this.audio.setTableActive(scene === "play" && this.session.status === "online" && !state?.room.paused);
     if (cue) this.audio.play(cue);
     this.overlayActions.forEach(control => { control.disabled = !available; });
 
@@ -333,71 +335,32 @@ class LanternTable {
     this.modal.show("create", "Create a table", form);
   }
 
-  private openSettings(): void {
-    if (!this.guest) return;
-    const name = nameField(this.guest.displayName);
-    name.required = true;
-    const preferences = this.guest.preferences;
-    const sound = toggle("Tile and turn sounds", preferences.sound);
-    const music = toggle("Quiet table music", preferences.music);
-    const motion = toggle("Reduce visual motion", preferences.reducedMotion);
-    const volume = el("input");
-    volume.type = "range";
-    volume.min = "0";
-    volume.max = "100";
-    volume.value = String(Math.round(preferences.volume * 100));
-    const readout = el("span", "", `Volume · ${volume.value}%`);
-    const preview = () => this.audio.preview([music.input.checked, Number(volume.value) / 100]);
-    music.input.addEventListener("change", preview);
-    volume.addEventListener("input", () => {
-      text(readout, `Volume · ${volume.value}%`);
-      preview();
-    });
-    const audioNote = el("p", "note", this.audio.note);
-    audioNote.setAttribute("role", "status");
-    this.audio.changed = () => text(audioNote, this.audio.note);
-    const save = submit("Save settings");
-    const actions = el("div", "row-actions", save);
-    const state = this.session.snapshot;
-    const reserve = state?.room.status === "playing" || state?.room.status === "betweenHands";
-    const leave = button(reserve ? "Back to lobby" : "Leave table", "btn subtle", () => this.leave());
-    if (state) {
-      actions.append(leave);
-      this.overlayActions = [leave];
-    }
-    const form = el("form", "form", field("Display name", name), sound.field, music.field,
-      el("label", "field", readout, volume), audioNote, motion.field, actions);
-    if (reserve) form.append(el("p", "note", "Your seat stays reserved. Timed decisions continue at the table."));
-    form.addEventListener("submit", event => {
-      event.preventDefault();
-      const displayName = name.value.trim();
-      if (!displayName || nonDiscard.test(displayName)) {
-        this.modal.message("Enter a display name of 1–24 characters without controls.");
-        name.focus();
-        return;
-      }
-      if (this.profileBusy) return;
-      const prefs: Preferences = { sound: sound.input.checked, music: music.input.checked,
-        volume: Number(volume.value) / 100, reducedMotion: motion.input.checked };
-      if (prefs.sound || prefs.music) void this.audio.unlock(true);
-      void this.saveSettings(displayName, prefs, form, save);
-    });
-    leave.disabled = !this.session.available;
-    this.modal.show("settings", "Settings", form, this.settingsButton);
-    void import("./fullscreen").then(module => module.addFullscreen(actions),
-      () => actions.before(el("p", "note", "Full screen unavailable.")));
+  private async openSettings(): Promise<void> {
+    try {
+      const { showSettings } = await import("./settings");
+      if (!this.guest || this.modal.root.open) return;
+      this.overlayActions = showSettings({
+        guest: this.guest, state: this.session.snapshot, available: this.session.available && !this.profileBusy,
+        audio: this.audio, modal: this.modal, opener: this.settingsButton, leave: () => this.leave(),
+        save: (name, prefs, form, control, choices) => void this.saveSettings(name, prefs, form, control, choices),
+      });
+    } catch { this.showNotice("Settings couldn’t load. Please try again."); }
   }
 
-  private async saveSettings(name: string, preferences: Preferences, form: HTMLElement, save: HTMLButtonElement): Promise<void> {
+  private async saveSettings(name: string, preferences: Preferences, form: HTMLElement, save: HTMLButtonElement,
+    choices?: AudioChoices): Promise<void> {
+    if (this.profileBusy) return;
     this.profileBusy = true;
     save.disabled = true;
     this.modal.message("");
     try {
-      this.setGuest(await api.profile({ displayName: name, preferences }));
+      const guest = await api.profile({ displayName: name, preferences });
+      const remembered = !choices || this.audio.saveChoices(choices);
+      this.setGuest(guest);
       if (fromPortal) {
         try { localStorage.setItem(`${appPath}court-music`, preferences.music ? "on" : "off"); } catch { /* Optional. */ }
       }
-      if (form.isConnected) this.modal.message("Settings saved.");
+      if (form.isConnected) this.modal.message(remembered ? "Settings saved." : "Settings saved. This browser can’t remember the audio choices after you leave.");
     } catch (error) {
       if (form.isConnected) this.modal.message(error instanceof HttpError ? errorMessage(error.code) : "Couldn’t save settings. Please try again.");
     } finally {

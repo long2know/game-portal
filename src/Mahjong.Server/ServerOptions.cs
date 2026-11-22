@@ -65,10 +65,11 @@ internal sealed record ServerOptions(string DataDirectory, Uri? PublicOrigin, IP
                 : throw new InvalidOperationException("Mahjong:TrustedProxies entries must be explicit IP addresses."))
             .ToArray();
 
+        var defaultBotDelayMilliseconds = config.GetValue<bool>("Portal:Enabled") ? 1000 : 700;
         return new ServerOptions(directory, origin, proxies, pathBase,
             TimeSpan.FromSeconds(ReadInt("TurnSeconds", 30, 1, 120)),
             TimeSpan.FromSeconds(ReadInt("ClaimSeconds", 8, 1, 30)),
-            TimeSpan.FromMilliseconds(ReadInt("BotDelayMilliseconds", 700, 10, 5000)),
+            TimeSpan.FromMilliseconds(ReadInt("BotDelayMilliseconds", defaultBotDelayMilliseconds, 10, 5000)),
             TimeSpan.FromSeconds(ReadInt("PauseSeconds", 60, 1, 60)),
             TimeSpan.FromSeconds(ReadInt("LeaseSeconds", 600, 1, 600)),
             TimeSpan.FromMilliseconds(ReadInt("TickMilliseconds", 100, 10, 1000)),

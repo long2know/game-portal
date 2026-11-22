@@ -73,7 +73,14 @@ draw.hidden = kongs;
 shell.append(header, table.root);
 mount.append(shell);
 
-function render(draw: boolean): void { table.update(state(draw), true, clock, draw); }
+function paint(frame: Snapshot, live: boolean): TableCue | undefined {
+  const cue = table.update(frame, true, clock, live);
+  audio?.setTableActive(!!frame.game && frame.room.status !== "waiting" && !frame.room.paused);
+  if (cue) audio?.play(cue);
+  return cue;
+}
+
+function render(draw: boolean): void { paint(state(draw), draw); }
 render(false);
 
 type Frame = "base" | "draw" | "discard" | "seabed" | "cannon" | "rob" | "call" | "settle";
@@ -113,9 +120,7 @@ if (params.has("feedback")) {
         };
         game.seats.forEach((seat, i) => { seat.total = game.settlement!.seatResults[i].total; });
       }
-      const cue = table.update(frame, true, clock, live);
-      if (cue) audio?.play(cue);
-      return cue;
+      return paint(frame, live);
     },
     interrupt() { table.clearEffects(); audio?.clearEffects(); },
     mute() { audio?.configure({ ...defaultPreferences, sound: false }); },

@@ -159,6 +159,9 @@ test("a mounted guest can copy an invite, start a live hand, and reload into the
     await expect.poll(() => engraving()?.[1]).toEqual({ status: 200, mime: "image/svg+xml" });
 
     await tap("Settings");
+    await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Soundtrack", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Spoken table calls", exact: true })).toHaveCount(0);
     await expect.poll(() => [...responses].some(([path, asset]) =>
       /\/assets\/fullscreen-[\w-]+\.js$/.test(path) && asset.status === 200)).toBe(true);
     await tap("Close dialog");

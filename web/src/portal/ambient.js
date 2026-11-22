@@ -16,9 +16,12 @@ export class Ambient {
   #keys;
   #pad;
   #bus;
+  #clearRoom;
+  #finishFade;
   #timer = 0;
   #nextBar = 0;
   #bar = 0;
+  #track;
   #volume = 0;
   #away = false;
   #pending;
@@ -54,6 +57,16 @@ export class Ambient {
     this.#update();
   }
 
+  setTrack(track) {
+    if (track === this.#track) return;
+    this.#track = track;
+    this.#bar = 0;
+    if (this.#bus) {
+      this.#clearRoom();
+      this.#scheduleRoom();
+    }
+  }
+
   get #audible() {
     return !this.unavailable && this.#volume > 0 && !this.#away && !document.hidden &&
       this.#context.state === "running" && (!!this.#locks || document.hasFocus());
@@ -83,13 +96,22 @@ export class Ambient {
   }
 
   #start() {
+    this.#finishFade?.();
     const context = this.#context;
     const bus = this.#bus = context.createGain();
+    bus.gain.setValueAtTime(0, context.currentTime);
+    bus.gain.setTargetAtTime(this.#volume, context.currentTime, .065);
+    bus.connect(context.destination);
+    this.#scheduleRoom();
+    this.#changed();
+  }
+
+  #scheduleRoom() {
+    const context = this.#context;
+    const bus = this.#bus;
     const room = context.createGain();
     const echo = context.createDelay();
     const wet = context.createGain();
-    bus.gain.setValueAtTime(0, context.currentTime);
-    bus.gain.setTargetAtTime(this.#volume, context.currentTime, .065);
     room.connect(bus);
     room.connect(echo);
     echo.delayTime.value = .32;
@@ -97,25 +119,35 @@ export class Ambient {
     wet.gain.value = .20;
     wet.connect(bus);
     wet.connect(echo);
-    bus.connect(context.destination);
     const schedule = () => {
       if (!this.#audible || context.currentTime + .45 < this.#nextBar) return;
       const start = Math.max(context.currentTime + .025, this.#nextBar);
-      const [bass, harmony, melody] = score[this.#bar++ % score.length];
-      this.#voice(room, this.#pad, bass, start, .060, .62, 4.65);
-      harmony.forEach((pitch, i) => this.#voice(room, this.#pad, pitch, start + .20 + i * .29, .027, .87, 4.4));
-      for (let i = 0; i < melody.length; i += 2) {
-        this.#voice(room, this.#keys, melody[i + 1], start + melody[i], i === 0 ? .188 : .143, .024, 2.7);
-      }
-      this.#nextBar = start + barLength;
+      const bar = this.#bar++;
+      this.#nextBar = start + (this.#track?.(room, start, bar) ?? this.#stillWater(room, start, bar));
     };
     this.#nextBar = 0;
+    const timer = this.#timer = window.setInterval(schedule, 190);
+    this.#clearRoom = () => {
+      clearInterval(timer);
+      room.disconnect();
+      echo.disconnect();
+      wet.disconnect();
+    };
     schedule();
-    this.#timer = window.setInterval(schedule, 190);
-    this.#changed();
+  }
+
+  #stillWater(room, start, bar) {
+    const [bass, harmony, melody] = score[bar % score.length];
+    this.#voice(room, this.#pad, bass, start, .060, .62, 4.65);
+    harmony.forEach((pitch, i) => this.#voice(room, this.#pad, pitch, start + .20 + i * .29, .027, .87, 4.4));
+    for (let i = 0; i < melody.length; i += 2) {
+      this.#voice(room, this.#keys, melody[i + 1], start + melody[i], i === 0 ? .188 : .143, .024, 2.7);
+    }
+    return barLength;
   }
 
   #stop() {
+    if (this.#away || document.hidden || this.#context.state !== "running") this.#finishFade?.();
     this.#pending?.abort();
     this.#pending = undefined;
     const bus = this.#bus;
@@ -124,11 +156,20 @@ export class Ambient {
     clearInterval(this.#timer);
     const release = this.#release;
     this.#release = undefined;
-    const disconnect = () => { bus.disconnect(); release?.(); };
+    const clearRoom = this.#clearRoom;
+    let timer;
+    const disconnect = () => {
+      clearTimeout(timer);
+      this.#finishFade = undefined;
+      clearRoom();
+      bus.disconnect();
+      release?.();
+    };
     if (this.#away || document.hidden || this.#context.state !== "running") disconnect();
     else {
       bus.gain.setTargetAtTime(0, this.#context.currentTime, .014);
-      window.setTimeout(disconnect, 92);
+      this.#finishFade = disconnect;
+      timer = window.setTimeout(disconnect, 92);
     }
   }
 

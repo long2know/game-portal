@@ -333,10 +333,19 @@ test("settlement follows initial OS motion settings and changes to saved prefere
   }
 });
 
+type SourceStart = { id: number; noise: boolean };
 type AudioTrace = {
-  starts: { id: number; noise: boolean }[];
+  starts: SourceStart[];
   stops: { id: number; when: number }[];
   context?: AudioContext;
+  afterStart?: () => void;
+  playback?: {
+    strike: SourceStart[];
+    call: SourceStart[];
+    replaced: boolean;
+    mutedWin: boolean;
+    afterMute: number;
+  };
 };
 type AudioWindow = FeedbackWindow & { fixtureAudio: AudioTrace; webkitAudioContext?: typeof AudioContext };
 
@@ -360,8 +369,9 @@ test("original tile and call cues obey unlock, replacement and mute", async ({ p
         const start = node.start.bind(node);
         const stop = node.stop.bind(node);
         node.start = (when?: number) => {
-          trace.starts.push({ id, noise: method === "createBufferSource" });
           start(when);
+          trace.starts.push({ id, noise: method === "createBufferSource" });
+          trace.afterStart?.();
         };
         node.stop = (when = 0) => {
           trace.stops.push({ id, when });
@@ -373,31 +383,45 @@ test("original tile and call cues obey unlock, replacement and mute", async ({ p
   });
   await page.goto(`${fixture}?feedback&audio`);
   const locked = await page.evaluate(() => {
-    const { paint } = (window as AudioWindow).feedbackFixture;
-    paint("discard");
-    return (window as AudioWindow).fixtureAudio.starts.length;
+    const { feedbackFixture, fixtureAudio } = window as AudioWindow;
+    feedbackFixture.paint("base", false);
+    const cue = feedbackFixture.paint("discard");
+    return { cue, starts: fixtureAudio.starts.length };
   });
-  expect(locked).toBe(0);
+  expect(locked).toEqual({ cue: "discard", starts: 0 });
+  const cueModule = page.waitForResponse(response => new URL(response.url()).pathname === "/src/table-sounds.ts");
   await page.getByRole("button", { name: "Enable fixture sound" }).tap();
   await expect.poll(() => page.evaluate(() => (window as AudioWindow).fixtureAudio.context?.state)).toBe("running");
+  const response = await cueModule;
+  expect(response.ok()).toBe(true);
+  expect(await response.finished()).toBeNull();
 
-  const playback = await page.evaluate(() => {
+  await page.evaluate(() => {
     const { feedbackFixture: audio, fixtureAudio: trace } = window as AudioWindow;
     audio.paint("base", false);
+    trace.afterStart = () => {
+      trace.afterStart = undefined;
+      // Replace the discard immediately after all of its native sources are scheduled.
+      queueMicrotask(() => {
+        const strike = trace.starts.slice();
+        const before = trace.stops.slice();
+        audio.paint("call");
+        const call = trace.starts.slice(strike.length);
+        const replaced = before.some(voice => trace.stops.slice(before.length).some(next => next.id === voice.id && next.when < voice.when));
+        const starts = trace.starts.length;
+        audio.mute();
+        const mutedWin = audio.paint("settle") === "win";
+        trace.playback = { strike, call, replaced, mutedWin, afterMute: trace.starts.length - starts };
+      });
+    };
     audio.paint("discard");
-    const strike = trace.starts.slice();
-    const before = trace.stops.slice();
-    audio.paint("call");
-    const call = trace.starts.slice(strike.length);
-    const replaced = before.some(voice => trace.stops.slice(before.length).some(next => next.id === voice.id && next.when < voice.when));
-    const starts = trace.starts.length;
-    audio.mute();
-    audio.paint("settle");
-    return { strike, call, replaced, afterMute: trace.starts.length - starts };
   });
+  const playback = (await (await page.waitForFunction(() => (window as AudioWindow).fixtureAudio.playback,
+    undefined, { timeout: 8500 })).jsonValue())!;
   expect(playback.strike.some(voice => voice.noise)).toBe(true);
   expect(playback.strike.some(voice => !voice.noise)).toBe(true);
   expect(playback.call.filter(voice => voice.noise).length).toBeGreaterThan(playback.strike.filter(voice => voice.noise).length);
   expect(playback.replaced).toBe(true);
+  expect(playback.mutedWin).toBe(true);
   expect(playback.afterMute).toBe(0);
 });

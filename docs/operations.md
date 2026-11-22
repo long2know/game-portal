@@ -16,9 +16,12 @@ Run one portal process per data directory. The `long2know/game-portal` Linux/amd
 | `GamePortal__DataDirectory` | Directory holding the SQLite database and key ring. The image defaults to `/data`. |
 | `GamePortal__BehindHttpsProxy` | Defaults to `false`. Set `true` only behind a TLS edge that preserves `Host` and the path and has exclusive access to the HTTP upstream. |
 | `Mahjong__AllowHttpLoopbackOrigin` | Local quickstart only; allows HTTP from a matching loopback browser origin through Docker. Omit in production. |
+| `Portal__Enabled` | Enables Jade Court portal mode. Newly scheduled Mahjong bot decisions wait 1,000 ms in portal mode instead of the standalone 700 ms. |
 | `Portal__StockfishPath` | Optional path to a local UCI binary for native runs. Without it, Chess uses a built-in legal bot. The image supplies its own exact pin. |
 
 Each `GamePortal__` setting takes precedence over its corresponding `Mahjong__DataDirectory` or `Mahjong__BehindHttpsProxy` alias, even when the new proxy setting is `false`. An empty or invalid new value stops startup instead of falling back. The image keeps its `/data` default on the legacy alias so a deployed `Mahjong__DataDirectory` override still works.
+
+`Mahjong__Testing__BotDelayMilliseconds` still overrides bot pacing only in the `Testing` environment.
 
 `GET /portal/health/live` checks HTTP; `/portal/health/ready` requires startup migrations, recovery and a usable SQLite directory. The Docker healthcheck follows the image mount. Keep `/data` writable by only the intended user: it holds SQLite and ASP.NET Data Protection keys. The keys are not automatically encrypted at rest.
 
