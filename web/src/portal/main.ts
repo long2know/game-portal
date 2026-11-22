@@ -50,7 +50,7 @@ const music = new MusicControl(mount, enabled => changeProfile(({ preferences })
 const brand = link("", mount, "brand");
 brand.setAttribute("aria-label", "Jade Court · All games");
 brand.append(el("span", "brand-tile"), el("span", "brand-name", "Jade Court"));
-const nav = el("nav", "site-nav", music.button, isBoardId(route) || isExpansionId(route)
+const nav = el("nav", "site-nav", music.button, isBoardId(route) || isExpansionId(route) || route === "lantern-run"
   ? link("‹ All games", mount, "button")
   : link("Mahjong table ↗", `${mount}mahjong/`, "button"));
 nav.setAttribute("aria-label", "Court navigation");
@@ -91,6 +91,10 @@ const expansions = {
 };
 if (isBoardId(route)) void openGame(catalog[route].name, async () => new (await import("./room")).GameRoom(route, host));
 else if (isExpansionId(route)) void openGame(catalog[route].name, async () => (await expansions[route]()).mount(host));
+else if (route === "lantern-run") {
+  void openGame(catalog[route].name, async () => (await import("./games/lantern-run")).mount(host));
+  if (music.remembered) void openGuest().catch(() => music.preferencesUnavailable());
+}
 else {
   main.append(lobby(mount));
   if (music.remembered) void openGuest().catch(() => music.preferencesUnavailable());

@@ -13,7 +13,7 @@ assert(/^(?:[0-9a-f]{40}|unknown)$/.test(commitSha), 'Expected a full Git SHA or
 const app = new URL(url);
 const { origin, pathname } = app;
 const mount = pathname.slice(0, -1);
-const expansionRoutes = ['holdem', 'solitaire', 'sudoku', 'word-tiles', 'farkle', 'backgammon'];
+const extraClientRoutes = ['holdem', 'solitaire', 'sudoku', 'word-tiles', 'farkle', 'backgammon', 'lantern-run'];
 assert(['http:', 'https:'].includes(app.protocol) && ['/portal', '/game-portal'].includes(mount)
   && url === `${origin}${mount}/`,
   'APP_URL must be the HTTP(S) /portal/ or /game-portal/ mount, with no query or fragment');
@@ -65,14 +65,14 @@ async function checkApplication() {
   assert.deepEqual((await json('health/ready')).value, { status: 'ready' });
   assert.deepEqual((await json('health/live')).value, { status: 'live' });
   assert.deepEqual((await json('api/version')).value, { appVersion, protocolVersion: 1, commitSha });
-  const missing = ['no-such-board/', 'farkle/not-a-table/', 'backgammon/not-a-table/', 'assets/infra-smoke-missing.js'];
+  const missing = ['no-such-board/', 'farkle/not-a-table/', 'backgammon/not-a-table/', 'lantern-run/private-table/', 'assets/infra-smoke-missing.js'];
   if (app.protocol === 'http:') missing.push('/api/version', '/mahjong/');
   for (const path of missing) {
     const response = await fetchApp(path);
     assert.equal(response.status, 404, `Portal unexpectedly served ${path}`);
     await response.body?.cancel();
   }
-  for (const path of [mount, 'chess', ...expansionRoutes]) {
+  for (const path of [mount, 'chess', ...extraClientRoutes]) {
     const response = await fetchApp(`${path}?from=smoke%2Fredirect`, { redirect: 'manual' });
     assert.equal(response.status, 308, `${path} did not redirect to its canonical route`);
     assert.equal(response.headers.get('location'), `${new URL(path, app).pathname}/?from=smoke%2Fredirect`);
@@ -82,7 +82,7 @@ async function checkApplication() {
   const title = 'Jade Court · Board Games';
   const html = await checkShell('', title);
   await checkShell('mahjong/', 'Jade Court · Changsha Mahjong');
-  for (const game of expansionRoutes) await checkShell(`${game}/`, title);
+  for (const game of extraClientRoutes) await checkShell(`${game}/`, title);
   const { games } = (await json('api/board/games')).value;
   assert(Array.isArray(games), 'Missing the mounted catalog');
   for (const id of ['chess', 'checkers', 'chinese-checkers', 'go', 'reversi']) {

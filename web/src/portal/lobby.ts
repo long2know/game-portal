@@ -6,9 +6,9 @@ import { el, link } from "./dom";
 export function lobby(mount: string): HTMLElement {
   const h1 = el("h1", "", "Find your ", el("em", "", "next move."));
   const hero = el("section", "lobby-hero", el("div", "hero-copy",
-    el("p", "eyebrow", "The tabletop collection"),
+    el("p", "eyebrow", "The Jade Court collection"),
     h1,
-    el("p", "intro", "A quiet place for board games, cards and puzzles. Play on your own or bring a friend to the table."),
+    el("p", "intro", "Board games, cards and puzzles, with an arcade run after dusk. Play solo or bring a friend to the table."),
     el("div", "hero-actions", link("Choose a game ↓", "#games", "button primary"),
       link("Play Mahjong", `${mount}mahjong/`, "button secondary")),
   ), el("figure", "hero-plate", el("div", "hero-study"),
@@ -20,7 +20,7 @@ export function lobby(mount: string): HTMLElement {
   heading.id = "catalog-heading";
   section.setAttribute("aria-labelledby", heading.id);
   const grid = el("div", "catalog-grid");
-  const games: GameId[] = ["mahjong", ...boardIds, ...expansionIds];
+  const games: GameId[] = ["mahjong", ...boardIds, ...expansionIds, "lantern-run"];
   for (const game of games) {
     const info = catalog[game];
     const flagship = game === "mahjong";

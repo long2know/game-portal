@@ -26,10 +26,10 @@ internal sealed class ClientShells(string baseHref, bool portalEnabled)
         return path switch
         {
             "/" or "" or null or "/chess/" or "/go/" or "/reversi/" or "/checkers/" or "/chinese-checkers/"
-                or "/holdem/" or "/solitaire/" or "/sudoku/" or "/word-tiles/" or "/farkle/" or "/backgammon/" =>
+                or "/holdem/" or "/solitaire/" or "/sudoku/" or "/word-tiles/" or "/farkle/" or "/backgammon/" or "/lantern-run/" =>
                 Send(context, _portal),
             "/mahjong" or "/chess" or "/go" or "/reversi" or "/checkers" or "/chinese-checkers"
-                or "/holdem" or "/solitaire" or "/sudoku" or "/word-tiles" or "/farkle" or "/backgammon" =>
+                or "/holdem" or "/solitaire" or "/sudoku" or "/word-tiles" or "/farkle" or "/backgammon" or "/lantern-run" =>
                 // A Location with no fragment lets the browser retain the current fragment.
                 Results.Redirect(baseHref + path[1..] + "/" + context.Request.QueryString.ToUriComponent(),
                     permanent: true, preserveMethod: true),
