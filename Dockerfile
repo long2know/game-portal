@@ -11,6 +11,9 @@ COPY global.json Directory.Build.props Directory.Build.targets ./
 COPY src/Mahjong.Rules/Mahjong.Rules.csproj src/Mahjong.Rules/packages.lock.json src/Mahjong.Rules/
 COPY src/JadeCourt.Games/JadeCourt.Games.csproj src/JadeCourt.Games/packages.lock.json src/JadeCourt.Games/
 COPY src/JadeCourt.Chess/JadeCourt.Chess.csproj src/JadeCourt.Chess/packages.lock.json src/JadeCourt.Chess/
+COPY src/JadeCourt.Poker/JadeCourt.Poker.csproj src/JadeCourt.Poker/packages.lock.json src/JadeCourt.Poker/
+COPY src/JadeCourt.Solo/JadeCourt.Solo.csproj src/JadeCourt.Solo/packages.lock.json src/JadeCourt.Solo/
+COPY src/JadeCourt.Words/JadeCourt.Words.csproj src/JadeCourt.Words/packages.lock.json src/JadeCourt.Words/
 COPY src/Mahjong.Server/Mahjong.Server.csproj src/Mahjong.Server/packages.lock.json src/Mahjong.Server/
 RUN dotnet restore src/Mahjong.Server/Mahjong.Server.csproj -p:RestoreLockedMode=true
 
@@ -24,7 +27,8 @@ RUN dotnet publish src/Mahjong.Server/Mahjong.Server.csproj -c Release --no-rest
       -p:UseAppHost=false -p:ContinuousIntegrationBuild=true \
       -p:Version="$BUILD_VERSION" -p:InformationalVersion="$BUILD_VERSION+$SOURCE_COMMIT" \
       -p:IncludeSourceRevisionInInformationalVersion=false \
-    && test -s /out/index.html && test -s /out/portal.html
+    && test -s /out/index.html && test -s /out/portal.html \
+    && test -s /out/JadeCourt.Poker.dll && test -s /out/JadeCourt.Solo.dll && test -s /out/JadeCourt.Words.dll
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.15-noble@sha256:12b1135f5f8b3c0a214f2a680ff2033dff4f684f445d6c697d9524ceeb303586 AS aspnet
 

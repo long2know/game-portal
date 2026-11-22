@@ -32,7 +32,7 @@ jobs:
         run: |
           npm --prefix web ci
           npm --prefix web run build
-      - name: Test Mahjong, portal games, Chess and the server with locked dependencies
+      - name: Test the rules engines and server with locked dependencies
         run: |
           dotnet test tests/Mahjong.Rules.Tests/Mahjong.Rules.Tests.csproj -c Release -p:RestoreLockedMode=true \
             -- RunConfiguration.TreatNoTestsAsError=true
@@ -41,6 +41,12 @@ jobs:
           dotnet test tests/JadeCourt.Games.Tests/JadeCourt.Games.Tests.csproj -c Release -p:RestoreLockedMode=true \
             -- RunConfiguration.TreatNoTestsAsError=true
           dotnet test tests/JadeCourt.Chess.Tests/JadeCourt.Chess.Tests.csproj -c Release -p:RestoreLockedMode=true \
+            -- RunConfiguration.TreatNoTestsAsError=true
+          dotnet test tests/JadeCourt.Poker.Tests/JadeCourt.Poker.Tests.csproj -c Release -p:RestoreLockedMode=true \
+            -- RunConfiguration.TreatNoTestsAsError=true
+          dotnet test tests/JadeCourt.Solo.Tests/JadeCourt.Solo.Tests.csproj -c Release -p:RestoreLockedMode=true \
+            -- RunConfiguration.TreatNoTestsAsError=true
+          dotnet test tests/JadeCourt.Words.Tests/JadeCourt.Words.Tests.csproj -c Release -p:RestoreLockedMode=true \
             -- RunConfiguration.TreatNoTestsAsError=true
       - name: Publish the server with built assets
         run: |
@@ -73,6 +79,12 @@ jobs:
           SMOKE_PLAYWRIGHT_OUTPUT_DIR: test-results/portal
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/portal
         run: bash scripts/smoke-published.sh artifacts/publish "$BUILD_VERSION" "$SOURCE_COMMIT" --with-browser
+      - name: Verify the custom portal mount with trusted loopback TLS
+        env:
+          Portal__Enabled: 'true'
+          SMOKE_PATH_BASE: /game-portal
+          SMOKE_HTTPS: 'true'
+        run: bash scripts/smoke-published.sh artifacts/publish "$BUILD_VERSION" "$SOURCE_COMMIT"
       - name: Preserve browser evidence and failure logs
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="JadeCourt.Words.Tests" />
+    <EmbeddedResource Include="Lexicon/words.txt" LogicalName="JadeCourt.Words.Lexicon.words.txt" />
+    <EmbeddedResource Include="Lexicon/SCOWL-Copyright.txt" LogicalName="JadeCourt.Words.Lexicon.SCOWL-Copyright.txt" />
+    <None Update="Lexicon/SCOWL-Copyright.txt"
+          TargetPath="licenses/SCOWL-2020.12.07.txt" CopyToPublishDirectory="PreserveNewest"
+          Pack="true" PackagePath="licenses/SCOWL-2020.12.07.txt" />
+  </ItemGroup>
+</Project>

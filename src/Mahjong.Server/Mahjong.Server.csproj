@@ -12,6 +12,9 @@
     <ProjectReference Include="../Mahjong.Rules/Mahjong.Rules.csproj" />
     <ProjectReference Include="../JadeCourt.Games/JadeCourt.Games.csproj" />
     <ProjectReference Include="../JadeCourt.Chess/JadeCourt.Chess.csproj" />
+    <ProjectReference Include="../JadeCourt.Poker/JadeCourt.Poker.csproj" />
+    <ProjectReference Include="../JadeCourt.Words/JadeCourt.Words.csproj" />
+    <ProjectReference Include="../JadeCourt.Solo/JadeCourt.Solo.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.15" />
     <Content Include="$(ClientDist)/index.html" Condition="Exists('$(ClientDist)/index.html')"
              Link="index.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

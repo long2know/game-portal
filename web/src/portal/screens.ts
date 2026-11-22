@@ -1,48 +1,18 @@
 import type { Guest } from "../protocol";
-import type { GameDefinition, Move, Table } from "./api";
+import { isLive } from "./api";
+import type { BotDifficulty, GameDefinition, Move, Table } from "./api";
 import { side, sideName, tableau } from "./art";
 import { BoardView } from "./board";
-import { boardIds, catalog } from "./catalog";
-import type { BoardId, GameId } from "./catalog";
-import { button, el, link, text } from "./dom";
-
-export function lobby(mount: string): HTMLElement {
-  const h1 = el("h1", "", "Find your ", el("em", "", "next move."));
-  const hero = el("section", "lobby-hero", el("div", "hero-copy",
-    el("p", "eyebrow", "The board game parlor"),
-    h1,
-    el("p", "intro", "Six classic games, one quiet court. Play a bot at your own pace, or invite a friend to a private table."),
-    el("div", "hero-actions", link("Choose a game ↓", "#games", "button primary"),
-      link("Play Mahjong", `${mount}mahjong/`, "button secondary")),
-  ), el("div", "hero-study"));
-  hero.setAttribute("aria-label", "Welcome to Jade Court");
-  const section = el("section", "catalog");
-  section.id = "games";
-  const heading = el("h2", "", "Choose a game");
-  heading.id = "catalog-heading";
-  section.setAttribute("aria-labelledby", heading.id);
-  const grid = el("div", "catalog-grid");
-  const games: GameId[] = ["mahjong", ...boardIds];
-  for (const game of games) {
-    const info = catalog[game];
-    const card = el("a", "game-card", tableau(game), el("div", "game-card-body",
-      el("p", "card-meta", game === "mahjong" ? "Flagship · 4 players" : info.seats),
-      el("h3", "", info.name),
-      el("p", "card-description", info.description),
-      el("span", "card-action", game === "mahjong" ? "Take a seat" : "Open game", el("span", "arrow", "↗")),
-    ));
-    card.href = `${mount}${game}/`;
-    card.setAttribute("aria-label", info.invitation);
-    grid.append(card);
-  }
-  section.append(el("div", "section-title", el("div", "", el("p", "eyebrow", "The collection"), heading),
-    el("p", "section-caption", "Six games, no account required.")), grid);
-  return el("div", "lobby", hero, section);
-}
+import { catalog } from "./catalog";
+import type { BoardId } from "./catalog";
+import { Confirmation } from "./confirm";
+import { button, el, text } from "./dom";
 
 function field(label: string, input: HTMLInputElement | HTMLSelectElement): HTMLLabelElement {
   return el("label", "field", el("span", "", label), input);
 }
+
+const difficulties: Record<BotDifficulty, string> = { easy: "Easy", standard: "Standard", hard: "Hard" };
 
 export class SetupView {
   readonly root = el("div", "setup");
@@ -50,6 +20,7 @@ export class SetupView {
   readonly name = el("input");
   readonly variant = el("select");
   readonly players = el("select");
+  readonly difficulty = el("select");
   private readonly variantField = field("Variant", this.variant);
   private readonly playerField = field("Players", this.players);
   private readonly options = el("div", "setup-options", this.variantField, this.playerField);
@@ -77,12 +48,21 @@ export class SetupView {
     this.retry.hidden = true;
     this.players.addEventListener("change", () => this.setModeLabels());
     const controls = invitation ? [this.join] : [this.bots, this.friends];
+    const chessBot = game === "chess" && !invitation;
+    if (chessBot) {
+      this.difficulty.append(...Object.entries(difficulties).map(([id, label]) => new Option(label, id)));
+      this.difficulty.value = "standard";
+      this.difficulty.setAttribute("aria-describedby", "bot-difficulty-hint");
+    }
+    const difficultyHint = el("p", "field-hint", "For bot games only.");
+    difficultyHint.id = "bot-difficulty-hint";
     const form = el("form", "setup-form", el("p", "eyebrow", invitation ? "Private invitation" : "New table"),
       el("h2", "", invitation ? "A friend saved you a seat." : "Set the table."),
       el("p", "muted", invitation ? "Join with the name your friends will see." :
         "Start right away against a bot, or get a private link to share."),
       el("div", "profile-field", field("Display name", this.name), this.nameHint),
       ...(invitation ? [] : [this.options]),
+      ...(chessBot ? [field("Bot difficulty", this.difficulty), difficultyHint] : []),
       el("div", "setup-actions", ...controls, this.retry), this.progress);
     form.addEventListener("submit", event => {
       event.preventDefault();
@@ -110,7 +90,7 @@ export class SetupView {
 
   state(ready: boolean, busy: boolean, canRetry: boolean, message = ""): void {
     const unavailable = !ready || busy;
-    this.name.disabled = this.variant.disabled = this.players.disabled = unavailable;
+    this.name.disabled = this.variant.disabled = this.players.disabled = this.difficulty.disabled = unavailable;
     this.bots.disabled = this.friends.disabled = this.join.disabled = unavailable;
     this.retry.hidden = !canRetry;
     this.retry.disabled = busy;
@@ -129,12 +109,15 @@ export class TableView {
   readonly heading: HTMLHeadingElement;
   readonly board: BoardView;
   readonly retry = button("Reconnect now", "button secondary");
+  readonly confirmation = new Confirmation();
+  private readonly exit = button("", "button secondary");
   private readonly newGame = button("Set up another game", "button primary");
   private readonly turn = el("strong", "turn-text");
   private readonly badge = el("p", "turn-badge", el("span", "turn-light"), this.turn);
   private readonly note = el("p", "match-note");
   private readonly last = el("p", "last-move");
   private readonly detail = el("p", "position-detail");
+  private readonly notes = el("div", "", this.last, this.detail);
   private readonly variant = el("p", "match-variant");
   private readonly seats = el("ol", "seats");
   private readonly count = el("p", "seat-count");
@@ -148,7 +131,8 @@ export class TableView {
   private readonly art: HTMLElement;
   private seatKey = "";
 
-  constructor(private readonly game: BoardId, private readonly href: string, send: (move: Move) => void, retry: () => void, newGame: () => void) {
+  constructor(private readonly game: BoardId, private readonly href: string, send: (move: Move) => void,
+    retry: () => void, newGame: () => void, private readonly end: (table: Table, action: "leave" | "resign") => void) {
     this.heading = el("h1", "", catalog[game].name);
     this.heading.tabIndex = -1;
     this.board = new BoardView(game, send);
@@ -164,8 +148,9 @@ export class TableView {
       el("div", "match-title", el("p", "eyebrow", "Jade Court table"), this.heading, this.variant),
       el("div", "match-state", this.badge, this.note, this.retry));
     const rail = el("aside", "match-rail", this.share, this.seatsSummary,
-      el("section", "match-card game-notes", el("h2", "", "Game notes"), this.last, this.detail, this.newGame));
-    this.root.append(el("div", "match-layout", head, this.board.root, this.art, rail));
+      el("section", "match-card game-notes", el("h2", "", "Game notes"), this.notes,
+        el("div", "board-tools", this.exit, this.newGame)));
+    this.root.append(el("div", "match-layout", head, this.board.root, this.art, rail), this.confirmation.root);
   }
 
   show(table: Table, variant: string, online: boolean, busy: boolean, reset: boolean): void {
@@ -175,16 +160,22 @@ export class TableView {
     this.root.dataset.state = status;
     this.badge.dataset.signal = !online ? "offline" : mine ? "turn" : status;
     const winners = position?.winners ?? [];
-    const outcome = winners.length === 0 ? "Draw." : winners.length > 1 ? `${winners.map(seatName).join(" and ")} tie.` :
+    const resignation = table.result?.cause === "resignation" ? table.result : null;
+    const outcome = resignation ? resignation.winnerSeat === seat ? "You won." : `${seatName(resignation.winnerSeat)} wins.` :
+      winners.length === 0 ? "Draw." : winners.length > 1 ? `${winners.map(seatName).join(" and ")} tie.` :
       winners[0] === seat ? "You won." : `${seatName(winners[0])} wins.`;
-    text(this.turn, !online ? "Reconnecting…" : status === "waiting" ? "Waiting for players" :
+    text(this.turn, status === "closed" ? "Table closed" : !online ? "Reconnecting…" : status === "waiting" ? "Waiting for players" :
       status === "finished" ? outcome : mine ? "Your turn" :
       position?.turn != null ? `${seatName(position.turn)}’s turn` : "Game in progress");
-    text(this.note, !online ? status === "waiting" ? "Your seat is saved. We’ll check whether your friends have joined." :
+    text(this.note, status === "closed" ? table.endedBySeat === seat ? "You left the table." :
+      table.endedBySeat != null ? `${seatName(table.endedBySeat)} left the table.` : "This table has ended." :
+      resignation ? resignation.loserSeat === seat ? "You resigned." : `${seatName(resignation.loserSeat)} resigned.` :
+      !online ? status === "waiting" ? "Your seat is saved. We’ll check whether your friends have joined." :
       "Your last board is still here. We’ll check for updates." :
       status === "waiting" ? "The game starts when every seat is filled." :
-      status === "finished" ? "Game over" : busy ? "Sending your move…" : mine ? "Make your next move." : "Watch the board for the next move.");
-    text(this.variant, `${variant} · ${table.seats.length} players`);
+      status === "finished" ? "Game over" : busy ? "Updating the table…" : mine ? "Make your next move." : "Watch the board for the next move.");
+    const bot = this.game === "chess" && table.seats.some(item => item.bot) ? ` · ${difficulties[table.botDifficulty ?? "standard"]} bot` : "";
+    text(this.variant, `${variant} · ${table.seats.length} players${bot}`);
     text(this.count, `${table.seats.filter(item => item.occupied).length} of ${table.seats.length} seats filled`);
     text(this.last, position?.lastMove ? `Last move: ${position.lastMove.label}` : "No moves yet.");
     text(this.detail, position?.detail ?? "");
@@ -192,10 +183,21 @@ export class TableView {
     this.retry.hidden = online;
     this.retry.disabled = busy;
     this.seatsSummary.hidden = false;
-    this.newGame.hidden = status !== "finished";
+    const live = isLive(table);
+    if (!live && document.activeElement === this.exit) this.heading.focus();
+    this.newGame.hidden = live;
+    this.exit.hidden = !live;
+    this.exit.disabled = busy || !online;
+    const resign = status === "playing" && this.game === "chess";
+    const label = resign ? "Resign" : "Leave table";
+    text(this.exit, label);
+    this.exit.onclick = () => this.confirmation.show(label,
+      resign ? "Resigning records a loss, even when it’s not your turn." :
+        "Leaving closes this table for everyone. It can’t be resumed.", this.exit,
+      () => this.end(table, resign ? "resign" : "leave"));
     this.board.root.hidden = !position;
     this.art.hidden = !!position;
-    this.last.parentElement!.hidden = !position;
+    this.notes.hidden = !position;
     if (position) this.board.update(position, mine, online && !busy, reset);
 
     const key = JSON.stringify([table.seats, seat, position?.turn, position?.scores]);

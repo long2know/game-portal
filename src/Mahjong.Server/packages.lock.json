@@ -115,6 +115,15 @@
       "jadecourt.games": {
         "type": "Project"
       },
+      "jadecourt.poker": {
+        "type": "Project"
+      },
+      "jadecourt.solo": {
+        "type": "Project"
+      },
+      "jadecourt.words": {
+        "type": "Project"
+      },
       "mahjong.rules": {
         "type": "Project"
       }

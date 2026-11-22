@@ -1,4 +1,6 @@
 using Mahjong.Server.Board;
+using Mahjong.Server.Seated;
+using Mahjong.Server.Solo;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mahjong.Server;
@@ -58,6 +60,9 @@ internal sealed class MahjongDb(DbContextOptions<MahjongDb> options) : DbContext
     public DbSet<ClockRow> Clock => Set<ClockRow>();
     public DbSet<BoardTableRow> BoardTables => Set<BoardTableRow>();
     public DbSet<BoardMembershipRow> BoardMemberships => Set<BoardMembershipRow>();
+    public DbSet<SeatedTableRow> SeatedTables => Set<SeatedTableRow>();
+    public DbSet<SeatedMembershipRow> SeatedMemberships => Set<SeatedMembershipRow>();
+    public DbSet<SoloSaveRow> SoloSaves => Set<SoloSaveRow>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -92,6 +97,13 @@ internal sealed class MahjongDb(DbContextOptions<MahjongDb> options) : DbContext
             clock.Property(c => c.Id).ValueGeneratedNever();
         });
         BoardPersistence.Configure(builder);
+        SeatedPersistence.Configure(builder);
+        builder.Entity<SoloSaveRow>(save =>
+        {
+            save.ToTable("SoloSaves");
+            save.HasKey(s => new { s.GuestId, s.Game });
+            save.HasOne<GuestRow>().WithMany().HasForeignKey(s => s.GuestId);
+        });
     }
 }
 

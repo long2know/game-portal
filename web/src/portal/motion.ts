@@ -10,7 +10,8 @@ const samePiece = (before: Cell | undefined, after: Cell) =>
 
 export function turnSteps(before: Table, after: Table, motion?: TurnMotion): MotionStep[] {
   if (before.id !== after.id || before.revision + 1 !== after.revision ||
-      before.status !== "playing" || !before.position || !after.position) return [];
+      before.status !== "playing" || after.status === "closed" || after.result?.cause === "resignation" ||
+      !before.position || !after.position) return [];
   if (motion !== undefined) {
     return motion?.fromRevision === before.revision && Array.isArray(motion.steps) && motion.steps.length <= 6
       ? motion.steps : [];

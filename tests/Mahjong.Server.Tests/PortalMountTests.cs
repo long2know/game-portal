@@ -23,7 +23,8 @@ public sealed class PortalMountTests
         Assert.NotEqual(portal, mahjong);
         Assert.Contains("Changsha Mahjong</title>", mahjong);
         Assert.Equal(mahjong, await ReadShell(Mount + "/mahjong/play/reconnect"));
-        foreach (var game in new[] { "", "mahjong", "chess", "go", "reversi", "checkers", "chinese-checkers" })
+        foreach (var game in new[] { "", "mahjong", "chess", "go", "reversi", "checkers", "chinese-checkers",
+            "holdem", "solitaire", "sudoku", "word-tiles" })
         {
             var bare = game.Length == 0 ? Mount : Mount + "/" + game;
             const string query = "?next=invite%2Ftoken&keep=1";

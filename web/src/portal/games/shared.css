@@ -1,0 +1,22 @@
+.feature { max-inline-size: 64rem; margin-inline: auto; }
+.feature-head { margin-block-end: clamp(14px, 3vw, 26px); }
+.feature-head h1 { font-size: clamp(2.6rem, 8vw, 4.65rem); margin-block: 4px 8px; }
+.feature-head .intro { max-inline-size: 56ch; }
+.feature-panel {
+  display: grid; align-content: start; gap: .65rem; min-inline-size: 0;
+  border: 1px solid var(--line); border-radius: 14px; padding: clamp(12px, 3vw, 22px);
+  background: linear-gradient(155deg, #274133, #1a2c23);
+}
+.feature .setup-form, .feature .invite-panel { max-inline-size: 30rem; }
+.feature .button[aria-disabled="true"] { opacity: .53; cursor: default; }
+.feature-stack { display: grid; gap: .8rem; min-inline-size: 0; }
+.feature-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 7px; }
+.feature-status { min-block-size: 1.5em; color: var(--brass); font-weight: 690; overflow-wrap: anywhere; }
+.feature-hint { color: var(--muted); font-size: .85rem; }
+.feature-grid { display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); }
+.feature-grid button { min-inline-size: 0; }
+.feature-grid button:focus-visible { z-index: 1; outline-offset: -2px; }
+.feature-scroll { min-inline-size: 0; overflow-x: auto; overscroll-behavior-inline: contain; }
+.invite-panel .button { justify-self: start; }
+.waiting-roster { display: grid; gap: .6rem; padding: 0; margin: 0; list-style: none; }
+.waiting-roster li { padding: .5rem .75rem; background: #253e31; border-radius: 8px; }

@@ -1,26 +1,19 @@
 import { gzipSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
-import type { APIRequestContext, Locator, Page, Response } from "@playwright/test";
+import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import type { Guest } from "../src/protocol";
 import type { MoveReply, Table } from "../src/portal/api";
+import { fitsPhone, observeMotion, projected, receive, state, tap, urls } from "./portal-support";
+import type { MotionPage, Point } from "./portal-support";
 
 const boardGames = [
   ["chess", "Chess"], ["go", "Go"], ["reversi", "Reversi"],
   ["checkers", "Checkers"], ["chinese-checkers", "Chinese Checkers"],
 ] as const;
 
-const portal = (baseURL: string) => new URL("/portal/", baseURL);
-const urls = (baseURL: string) => (path = "") => new URL(path, portal(baseURL)).href;
-const projected = (response: Response) => response.json() as Promise<Table>;
 const squareAt = (board: Locator, row: number, column: number) => board.locator(`[data-row="${row}"][data-column="${column}"]`);
 const cellById = (board: Locator, id: string) => board.locator(`[data-cell=${JSON.stringify(id)}]`);
-const state = (page: Page) => page.locator(".turn-text");
 const boardOn = (page: Page, name: string) => page.getByRole("group", { name: `${name} board`, exact: true });
-const tap = (page: Page, name: string | RegExp) => page.getByRole("button", { name, exact: true }).tap();
-
-function receive(page: Page, url: string, method: string) {
-  return page.waitForResponse(response => response.url() === url && response.request().method() === method);
-}
 
 type ClipboardPage = typeof window & { clipboardWrites: string[] };
 
@@ -31,61 +24,6 @@ async function observeClipboard(page: Page) {
     Object.defineProperty(navigator, "clipboard", { value: { writeText: async (value: string) => { writes.push(value); } } });
   });
   return () => page.evaluate(() => (window as ClipboardPage).clipboardWrites);
-}
-
-async function fitsPhone(page: Page) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
-}
-
-type Point = [number, number];
-type MotionTrace = {
-  effect: string; side: string; piece: string; start: Point; path: Point[]; delay: number;
-  flipTilt?: number[];
-  sample?: { center: Point; height: number; opacity: number }; finished?: boolean; cancelled?: boolean;
-};
-type MotionPage = Window & { motion: MotionTrace[]; holdMotion: boolean };
-
-async function observeMotion(page: Page) {
-  await page.addInitScript(() => {
-    const probe = window as unknown as MotionPage;
-    probe.motion = [];
-    const animate = Element.prototype.animate;
-    Element.prototype.animate = function (frames, options) {
-      const layer = this.closest<HTMLElement>(".motion-layer");
-      if (!layer) return animate.call(this, frames, options);
-      const origin = layer.getBoundingClientRect();
-      const center = ({ x, y, width, height }: DOMRect): Point =>
-        [x + width / 2 - origin.x, y + height / 2 - origin.y];
-      const start = center(this.getBoundingClientRect());
-      const art = this.querySelector<HTMLElement>(".token")!;
-      const animation = animate.call(this, frames, options);
-      const effect = (animation.effect as KeyframeEffect);
-      const transforms = effect.getKeyframes().map(frame => new DOMMatrix(frame.transform as string | undefined));
-      const entry: MotionTrace = {
-        effect: [...this.classList].find(name => name !== "motion-piece")!.slice("motion-".length),
-        side: art.dataset.side!, piece: art.dataset.piece!, start,
-        path: transforms.map(transform => [start[0] + transform.m41, start[1] + transform.m42]),
-        delay: effect.getTiming().delay!,
-      };
-      if (entry.effect === "flip") entry.flipTilt = transforms.map(transform => transform.m22);
-      probe.motion.push(entry);
-      const sample = () => {
-        if (!this.isConnected || animation.playState === "idle" || animation.playState === "finished") return;
-        const progress = effect.getComputedTiming().progress ?? 0;
-        if (progress < .16 || progress > .85) {
-          requestAnimationFrame(sample);
-          return;
-        }
-        const rect = this.getBoundingClientRect();
-        entry.sample = { center: center(rect), height: rect.height, opacity: Number(getComputedStyle(this).opacity) };
-        if (probe.holdMotion) animation.pause();
-      };
-      requestAnimationFrame(sample);
-      void animation.finished.then(() => { entry.finished = true; }, () => { entry.cancelled = true; });
-      return animation;
-    };
-  });
-  return () => page.evaluate(() => (window as unknown as MotionPage).motion);
 }
 
 async function boardCenters(board: Locator) {
@@ -162,7 +100,7 @@ test.describe("mounted Jade Court portal", () => {
     test.skip(!baseURL || !/^\/portal\/?$/.test(new URL(baseURL).pathname), "Requires the published runtime with the portal mounted at /portal/.");
   });
 
-  test("lobby presents six real destinations and keeps assets and links at the mount", async ({ page, baseURL, request }, info) => {
+  test("lobby presents ten real destinations and keeps assets and links at the mount", async ({ page, baseURL, request }, info) => {
     const url = urls(baseURL!);
     const assets = new Set<string>();
     page.on("request", event => {
@@ -177,6 +115,7 @@ test.describe("mounted Jade Court portal", () => {
     expect((await heroStudy).ok()).toBe(true);
     await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", /^\/portal\/assets\/jade-court-[\w-]+\.svg$/);
     await expect(page.getByRole("link", { name: "Take a seat", exact: true })).toHaveAttribute("href", "/portal/mahjong/");
+    await expect(page.locator(".game-card")).toHaveCount(10);
     expect([...assets].map(asset => new URL(asset).pathname)).toEqual(expect.arrayContaining([
       expect.stringMatching(/\/portal-[\w-]+\.js$/), expect.stringMatching(/\/portal-[\w-]+\.css$/),
       expect.stringMatching(/\/court-study-[\w-]+\.svg$/), expect.stringMatching(/\/jade-court-[\w-]+\.svg$/),
@@ -191,6 +130,10 @@ test.describe("mounted Jade Court portal", () => {
     await expect(music).toBeInViewport();
     expect((await music.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await page.screenshot({ path: info.outputPath("lobby-phone.png"), fullPage: true });
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("main")).toBeFocused();
 
     for (const [game, name] of boardGames) {
       const card = page.getByRole("link", { name: `Set up ${name}`, exact: true });
@@ -239,7 +182,14 @@ test.describe("mounted Jade Court portal", () => {
       expect(initial.seats).toHaveLength(game === "chinese-checkers" ? 3 : 2);
       expect(initial.seats[0].name).toBe("Court Guest");
       expect(initial.seats.slice(1).every(seat => seat.bot && seat.occupied)).toBe(true);
-      expect(initialResponse.request().postDataJSON()).toEqual({ game, variant: initial.variant, players: initial.seats.length, bots: true });
+      expect(initialResponse.request().postDataJSON()).toEqual({
+        game, variant: initial.variant, players: initial.seats.length, bots: true,
+        ...(game === "chess" ? { botDifficulty: "standard" } : {}),
+      });
+      if (game === "chess") {
+        expect(initial.botDifficulty).toBe("standard");
+        await expect(page.getByText("Standard · 2 players · Standard bot", { exact: true })).toBeVisible();
+      }
       await expect(state(page)).toHaveText("Your turn");
       const board = boardOn(page, name);
       const position = initial.position!;
@@ -778,7 +728,7 @@ test.describe("mounted Jade Court portal", () => {
       expect.stringMatching(/\/index-[\w-]+\.js$/), expect.stringMatching(/\/index-[\w-]+\.css$/),
       expect.stringMatching(/\/jade-court-[\w-]+\.svg$/),
     ]));
-    expect([...assets].every(asset => !/\/(?:portal-|actors-|ambient-|court-study-|hall-dragon-)/.test(new URL(asset).pathname))).toBe(true);
+    expect([...assets].every(asset => !/\/(?:portal-|actors-|ambient-|court-study-|hall-dragon-|holdem-|solitaire-|sudoku-|words-|multiplayer-|solo-|cards-|shared-|room-)/.test(new URL(asset).pathname))).toBe(true);
     const compressed = await Promise.all([...assets].map(async asset => {
       const response = await request.get(asset);
       expect(response.ok()).toBe(true);

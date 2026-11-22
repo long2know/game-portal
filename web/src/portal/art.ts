@@ -77,6 +77,15 @@ export function tableau(game: GameId): HTMLElement {
     case "reversi": pieces.append(token(game, 1, "disc"), token(game, 0, "disc"), token(game, 1, "disc")); break;
     case "checkers": pieces.append(token(game, 0, "man"), token(game, 1, "king")); break;
     case "chinese-checkers": pieces.append(token(game, 3, "peg"), token(game, 0, "peg"), token(game, 1, "peg")); break;
+    case "holdem":
+    case "solitaire":
+      pieces.append(el("span", "art-card", "A♠"), el("span", "art-card red", game === "holdem" ? "A♥" : "2♥"));
+      break;
+    case "sudoku":
+    case "word-tiles":
+      pieces.append(...(game === "sudoku" ? ["2", "7", "4"] : ["J", "A", "D", "E"])
+        .map(glyph => el("span", "art-block", glyph)));
+      break;
   }
   scene.append(field, pieces);
   return scene;

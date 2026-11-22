@@ -4,12 +4,11 @@ import { defineConfig } from "vite";
 export default defineConfig(({ mode }) => ({
   base: "./",
   build: {
+    // Keep Rollup from sharing route preload helpers with Mahjong's cold entry.
+    emptyOutDir: mode !== "portal",
     modulePreload: { polyfill: false },
     rollupOptions: {
-      input: {
-        index: fileURLToPath(new URL("./index.html", import.meta.url)),
-        portal: fileURLToPath(new URL("./portal.html", import.meta.url)),
-      },
+      input: fileURLToPath(new URL(mode === "portal" ? "./portal.html" : "./index.html", import.meta.url)),
     },
   },
   server: mode === "geometry" ? { hmr: false, watch: null } : undefined,

@@ -3,6 +3,8 @@ using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using Mahjong.Server;
 using Mahjong.Server.Board;
+using Mahjong.Server.Seated;
+using Mahjong.Server.Solo;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Data.Sqlite;
@@ -38,6 +40,8 @@ if (portalEnabled)
     builder.Services.AddSingleton(services =>
         new BoardRegistry(stockfishPath, services.GetRequiredService<ILogger<BoardRegistry>>()));
     builder.Services.AddSingleton<BoardTables>();
+    builder.Services.AddSingleton<SeatedTables>();
+    builder.Services.AddSingleton<SoloTables>();
 }
 
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
@@ -73,8 +77,8 @@ builder.Services.AddRateLimiter(rate =>
     rate.AddPolicy("read", context => PerAddress(context, 120));
     if (portalEnabled)
     {
-        rate.AddPolicy("board-read", context => BoardApi.PerGuest(context, 90, 120));
-        rate.AddPolicy("board-write", context => BoardApi.PerGuest(context, 60, 60));
+        rate.AddPolicy(PortalApi.Read, context => PortalApi.PerGuest(context, 90, 120));
+        rate.AddPolicy(PortalApi.Write, context => PortalApi.PerGuest(context, 60, 60));
     }
 });
 
@@ -109,7 +113,13 @@ app.UseWebSockets(new WebSocketOptions
 });
 
 HttpApi.Map(app);
-if (portalEnabled) BoardApi.Map(app);
+if (portalEnabled)
+{
+    BoardApi.Map(app);
+    PokerRules.Map(app);
+    WordsRules.Map(app);
+    SoloApi.Map(app);
+}
 app.MapGet("/ws", (HttpContext context, Realtime realtime) => realtime.InvokeAsync(context)).RequireRateLimiting("read");
 app.MapGet("/health/live", () => Results.Json(new { status = "live" }, Wire.Json));
 app.MapGet("/health/ready", async (Rooms rooms, HttpContext context) =>
