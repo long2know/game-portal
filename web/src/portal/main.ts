@@ -55,9 +55,9 @@ const music = new MusicControl(mount, enabled => changeProfile(({ preferences })
 const brand = link("", mount, "brand");
 brand.setAttribute("aria-label", "Jade Court · All games");
 brand.append(el("span", "brand-tile"), el("span", "brand-name", "Jade Court"));
-const mahjong = link("", `${mount}mahjong/`, "button");
-mahjong.setAttribute("aria-label", "Mahjong table ↗");
-mahjong.append(el("span", "", "Mahjong", el("span", "wide-nav-label", " table"), " ↗"));
+const mahjong = link("", `${mount}mahjong/`, "button lobby-mahjong-link");
+mahjong.setAttribute("aria-label", "Mahjong table");
+mahjong.append(el("span", "", "Mahjong", el("span", "wide-nav-label", " table")));
 const socialButton = button("", "button court-lobby-trigger");
 socialButton.append(icon("globe"));
 const onlineGame = isInviteGame(route);
@@ -75,8 +75,8 @@ skip.addEventListener("click", event => {
   event.preventDefault();
   main.focus();
 });
-const footer = el("footer", "court-footer",
-  el("span", "footer-mark", "◆"), el("span", "", "Jade Court"), el("span", "", "A place for a good game."));
+const footer = el("footer", "court-footer", el("span", "footer-mark", "◆"), el("span", "", "Jade Court"));
+if (route) footer.append(el("span", "footer-note", "A place for a good game."));
 app.append(skip, el("div", "shell", el("header", "header", brand, nav, music.note), main, footer));
 
 const host: PortalHost = { main, mount, api, openGuest, changeProfile, forgetGuest: () => { guest = undefined; }, social };

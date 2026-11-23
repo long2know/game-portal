@@ -8,11 +8,11 @@ export function lobby(mount: string): HTMLElement {
   const hero = el("section", "lobby-hero", el("div", "hero-copy",
     el("p", "eyebrow", "The Jade Court collection"),
     h1,
-    el("p", "intro", "Board games, cards and puzzles, with an arcade run after dusk. Play solo or bring a friend to the table."),
+    el("p", "intro", "Play board games, cards, and puzzles solo, against bots, or with friends."),
     el("div", "hero-actions", link("Choose a game ↓", "#games", "button primary"),
       link("Play Mahjong", `${mount}mahjong/`, "button secondary")),
   ), el("figure", "hero-plate", el("div", "hero-study"),
-    el("figcaption", "plate-caption", el("span", "", "Table study 01"), el("span", "", "Go · stones on wood"))));
+    el("figcaption", "plate-caption", "Go · slate and shell on kaya")));
   hero.setAttribute("aria-label", "Welcome to Jade Court");
   const section = el("section", "catalog");
   section.id = "games";
@@ -27,8 +27,8 @@ export function lobby(mount: string): HTMLElement {
     const card = el("a", flagship ? "game-card game-card-featured" : "game-card",
       tableau(game, "index"),
       el("div", "game-card-body", el("p", "card-meta", flagship ? `Flagship · ${info.seats}` : info.seats),
-        el("h3", "", info.name), el("p", "card-description", info.description)),
-      el("span", "card-action", flagship ? "Take a seat" : "", el("span", "arrow", "↗")));
+        el("h3", "", info.name), el("p", "card-description", info.description)));
+    if (flagship) card.append(el("span", "card-action", "Take a seat"));
     card.href = `${mount}${game}/`;
     card.setAttribute("aria-label", info.invitation);
     grid.append(card);

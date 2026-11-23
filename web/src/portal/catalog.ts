@@ -9,67 +9,67 @@ const jadeLettersName = "Jade Letters";
 export const catalog: Record<GameId, { name: string; seats: string; description: string; invitation: string }> = {
   mahjong: {
     name: "Changsha Mahjong", seats: "4 players",
-    description: "Draw, discard and build a winning hand at the flagship table.",
+    description: "Draw and discard, claim melds, and complete a winning hand.",
     invitation: "Take a seat",
   },
   chess: {
     name: "Chess", seats: "2 players",
-    description: "Plot a few moves ahead and turn a quiet opening into checkmate.",
+    description: "Control the center, develop your pieces, and trap the king.",
     invitation: "Set up Chess",
   },
   go: {
     name: "Go", seats: "2 players",
-    description: "Place stones, surround territory, and find room to breathe.",
+    description: "Surround territory and capture stones on a 19×19 grid.",
     invitation: "Set up Go",
   },
   reversi: {
     name: "Reversi", seats: "2 players",
-    description: "Bracket your opponent’s discs to flip the board in your favor.",
+    description: "Trap opposing discs between your own to flip them.",
     invitation: "Set up Reversi",
   },
   checkers: {
     name: "Checkers", seats: "2 players",
-    description: "Jump, capture, and crown a piece on the far side of the board.",
+    description: "Jump to capture; reach the far rank to crown your checker.",
     invitation: "Set up Checkers",
   },
   "chinese-checkers": {
     name: "Chinese Checkers", seats: "2, 3, 4 or 6 players",
-    description: "Hop across a star and race to bring your whole crew home.",
+    description: "Chain jumps to move all your pegs to the opposite point.",
     invitation: "Set up Chinese Checkers",
   },
   holdem: {
     name: "Texas Hold’em", seats: "2–6 players",
-    description: "Read the table, build a hand and play for chips. No money changes hands.",
+    description: "Read the board, manage your stack, and play the odds with play chips only.",
     invitation: "Set up Texas Hold’em",
   },
   solitaire: {
     name: "Solitaire", seats: "Solo · Draw one",
-    description: "Uncover the tableau and build four foundations from Ace through King.",
+    description: "Build four suited piles from ace to king; alternate colors in the tableau.",
     invitation: "Play Solitaire",
   },
   sudoku: {
     name: "Sudoku", seats: "Solo · 3 difficulties",
-    description: "Fill the grid one number at a time, with hints when you need them.",
+    description: "Use each digit from 1 to 9 once per row, column, and box.",
     invitation: "Play Sudoku",
   },
   "word-tiles": {
     name: jadeLettersName, seats: "2 players",
-    description: "Play crossing words with seven tiles, blanks and premium squares.",
+    description: "Cross words with letter tiles; use premiums to score more.",
     invitation: `Set up ${jadeLettersName}`,
   },
   farkle: {
     name: "Farkle", seats: "2–6 players",
-    description: "Keep scoring dice and decide when to bank your points or risk another roll.",
+    description: "Keep scoring dice; bank your points or risk losing them on another roll.",
     invitation: "Set up Farkle",
   },
   backgammon: {
     name: "Backgammon", seats: "2 players",
-    description: "Race your checkers home, hit blots, and bear off before your opponent.",
+    description: "Hit blots to send them to the bar, then race your checkers home and bear off.",
     invitation: "Set up Backgammon",
   },
   "lantern-run": {
     name: "Lantern Run", seats: "Solo · Arcade",
-    description: "Carry the light through a twilight canal town. Dodge kilns, clear rails and gather lanterns.",
+    description: "Dodge kilns and rails, and collect lanterns along the canal.",
     invitation: "Play Lantern Run",
   },
 };
