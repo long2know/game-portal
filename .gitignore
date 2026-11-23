@@ -68,13 +68,24 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
-# Squad: ignore runtime state (logs, inbox, sessions)
-# Note: .squad/casting/* is identity and MUST be committed to main, not ignored
+# Squad: commit shared configuration, not local runtime state
 .squad/orchestration-log/
 .squad/log/
 .squad/decisions/inbox/
 .squad/sessions/
 .squad/.scratch/
 .squad/.cache/
+.squad/.first-run
+.squad/identity/now.md
+.squad/agents/*/history.md
+.squad/agents/*/history-archive.md
+.squad/rai/audit-trail.md
+.squad/fact-checker/audit-trail.md
+.squad/memory/*
+!.squad/memory/config.json
+# Keep the casting registry, history, policy and commit marker in Git.
+.squad/casting/*.lock
+.squad/casting/*.tmp
+.squad/casting/registry-history.transaction.*
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream

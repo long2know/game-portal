@@ -40,4 +40,20 @@ BASE_URL=/portal Portal__Enabled=true GamePortal__DataDirectory="$PWD/artifacts/
 
 The native quickstart uses the built-in legal chess bot without Stockfish. The container includes [pinned Stockfish, exact corresponding source and engine notices](docs/portal-engines.md).
 
-Licensed under the [GNU General Public License, version 3](LICENSE). See the [Changsha rules profile](docs/rules.md) and [asset provenance](docs/assets.md).
+## Contributor Squad
+
+The [Jade Court roster](.squad/team.md), [routing](.squad/routing.md), and
+[decisions](.squad/decisions.md) are versioned with the Copilot coordinator,
+skills, and repo-local MCP launcher. No Squad issue assignment or scheduled
+workflow is enabled. Session logs, agent histories, and draft decisions stay local.
+
+From a fresh clone with Node.js 22.5 or later, Squad CLI 2.0.0 or later, and GitHub Copilot CLI
+installed, run `squad health --json` and `squad status` at the repo root. Start the
+team with `copilot --agent squad` and trust the checkout when prompted so Copilot
+can load `.mcp.json`. Do not re-run `squad init`; the launcher uses this checkout's
+local `.squad` state, not the standalone Mahjong team's state.
+
+Jade Court is licensed under the [GNU General Public License, version 3](LICENSE).
+See the [Changsha rules profile](docs/rules.md) and [asset provenance](docs/assets.md).
+The Squad tooling includes the [Squad](.squad/templates/LICENSE.squad) and
+[agency-agents](.squad/templates/LICENSE.agency-agents) MIT notices.
