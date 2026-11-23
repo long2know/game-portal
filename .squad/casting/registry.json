@@ -1,0 +1,54 @@
+{
+  "schema": "squad-agent-provenance/v1",
+  "schema_version": 1,
+  "revision": 6,
+  "generated_at": "2026-11-23T04:33:00.139Z",
+  "agents": {
+    "lead": {
+      "display_name": "Lead",
+      "persistent_name": "Lead",
+      "role": "Lead / Architect",
+      "universe": "cli-cast",
+      "status": "active",
+      "created_at": "2026-11-23T04:32:57.647Z",
+      "updated_at": "2026-11-23T04:32:57.647Z"
+    },
+    "rules": {
+      "display_name": "Rules",
+      "persistent_name": "Rules",
+      "role": "Game Developer",
+      "universe": "cli-cast",
+      "status": "active",
+      "created_at": "2026-11-23T04:32:58.248Z",
+      "updated_at": "2026-11-23T04:32:58.248Z"
+    },
+    "backend": {
+      "display_name": "Backend",
+      "persistent_name": "Backend",
+      "role": "Backend Developer",
+      "universe": "cli-cast",
+      "status": "active",
+      "created_at": "2026-11-23T04:32:58.855Z",
+      "updated_at": "2026-11-23T04:32:58.855Z"
+    },
+    "frontend": {
+      "display_name": "Frontend",
+      "persistent_name": "Frontend",
+      "role": "Frontend Developer",
+      "universe": "cli-cast",
+      "status": "active",
+      "created_at": "2026-11-23T04:32:59.547Z",
+      "updated_at": "2026-11-23T04:32:59.547Z"
+    },
+    "infra": {
+      "display_name": "Infra",
+      "persistent_name": "Infra",
+      "role": "DevOps Engineer",
+      "universe": "cli-cast",
+      "status": "active",
+      "created_at": "2026-11-23T04:33:00.139Z",
+      "updated_at": "2026-11-23T04:33:00.139Z"
+    }
+  },
+  "transaction_id": "4e5cf59d-97e5-4493-aed2-99c945c3a154"
+}

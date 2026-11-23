@@ -1,0 +1,12 @@
+# Squad: merge and line-ending rules for team state files
+.squad/decisions.md merge=union
+.squad/agents/*/history.md merge=union
+.squad/log/** merge=union
+.squad/orchestration-log/** merge=union
+.squad/rai/audit-trail.md merge=union
+.squad/fact-checker/audit-trail.md merge=union
+.squad/casting/*.json text eol=lf
+
+# Preserve upstream template line endings and keep other whitespace checks on.
+.squad/ceremonies.md -text whitespace=cr-at-eol
+.squad/templates/** -text whitespace=cr-at-eol
