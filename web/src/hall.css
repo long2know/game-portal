@@ -87,53 +87,192 @@ body:has(.play)::before {
 }
 
 /* The portal's finish lives with the lazy Hall paint, not the landing shell. */
+[data-portal-mahjong] {
+  --hall-weave: url("./hall-weave.svg");
+  --hall-wood: url("./hall-wood.svg");
+  --hall-bone: url("./hall-bone.svg");
+}
+
+body:has([data-portal-mahjong] .play)::before {
+  background:
+    url("./hall-lantern-matte.svg") var(--hall-left) var(--hall-hang) / auto var(--hall-lamp) no-repeat,
+    url("./hall-lantern-matte.svg") var(--hall-right) var(--hall-hang) / auto var(--hall-lamp) no-repeat,
+    url("./hall-room-matte.svg") top / 100% var(--hall-horizon) no-repeat,
+    repeating-conic-gradient(from -8deg at 50% -29%, transparent 0deg 7.7deg, #4e3d34 7.7deg 8deg,
+      #292326 8deg 8.5deg, transparent 8.5deg 12deg) bottom / 100% calc(100% - var(--hall-horizon)) no-repeat,
+    linear-gradient(0deg, transparent 35%, #4d3e36 35% 35.4%, #2b2527 35.4% 35.85%, transparent 35.85% 57%,
+      #4b3a33 57% 57.4%, #292326 57.4% 57.65%, transparent 57.65% 72%,
+      #453832 72% 72.4%, #282326 72.4% 72.7%, transparent 72.7%) bottom / 100% calc(100% - var(--hall-horizon)) no-repeat,
+    url("./hall-wood.svg") 50% var(--hall-horizon) / 280px 34px repeat #342c2c;
+}
+
+[data-portal-mahjong] .play .board-stage {
+  background: none;
+}
+
 [data-portal-mahjong] .play .board-stage::before {
-  background: linear-gradient(0deg, #211916 4%, #775337 9%, #3e2b25 15% 40%, #6c4b33 46%, #35251e 57% 94%);
-  box-shadow: 0 2px #a27a4a, 0 5px #38231b, 0 10px 12px #100f12d9, 0 23px 31px #101016a6;
+  background: var(--hall-wood) 48% 100% / 148px 23px #594034;
+  box-shadow: inset 0 -3px #986947, 0 2px #302523, 0 5px #382a28, 0 13px 7px #221d1dd9;
 }
 
 [data-portal-mahjong] .play .board-plane {
   background:
-    repeating-linear-gradient(32deg, #e2e1b614 0 1px, transparent 1px 4px) padding-box,
-    repeating-linear-gradient(123deg, #10232329 0 1px, transparent 1px 4px) padding-box,
-    linear-gradient(148deg, #607655, #376657 46%, #254a44) padding-box,
-    linear-gradient(155deg, #dec18a, #a5764a 32%, #755038 66%, #bf935f) border-box;
-  box-shadow: inset 0 0 0 1px #f2d698b5, inset 0 0 0 3px #32251dbd,
-    inset 0 0 0 4px #d0a069a3, inset 0 0 20px #19392fd4, 0 1px #c08b5999;
+    var(--hall-weave) 0 0 / 30px 20px padding-box,
+    linear-gradient(#4b6956 0 0) padding-box,
+    var(--hall-wood) 45% 0 / 155px 37px border-box #946a49;
+  box-shadow: inset 1px 1px #cfaa77, inset 0 0 0 2px #523b2c,
+    inset 0 0 0 3px #ac855c, inset 0 -3px #354e41, 0 1px #b5875d;
 }
 
 [data-portal-mahjong] .play .board-plane::before {
-  border-color: #d7bc7799;
-  box-shadow: 0 0 0 2px #294537b3, inset 0 0 0 1px #253b32;
+  border-color: #bbaa74b3;
+  box-shadow: 0 0 0 1px #354c41, inset 0 0 0 1px #3f5a4a;
 }
 
 [data-portal-mahjong] .play .board-well {
-  background:
-    repeating-linear-gradient(39deg, #b9d2ae0e 0 .65px, transparent .65px 3px),
-    repeating-linear-gradient(129deg, #06172219 0 .65px, transparent .65px 3px),
-    linear-gradient(154deg, #315446, #1b3c36);
-  border-color: #a7ad7659;
-  box-shadow: inset 0 2px 8px #0d2f26bf, 0 1px #d5bb8054;
+  background: var(--hall-weave) 0 0 / 30px 20px #304f42;
+  border-color: #88916d;
+  box-shadow: inset 0 2px #233c35, 0 1px #948264;
 }
 
 [data-portal-mahjong] .play :is(.turnbar, .rack) {
-  border-color: #8c8060;
-  background: linear-gradient(165deg, #354b3e, #21352b 65%, #182c24);
-  box-shadow: inset 0 1px #e2c99552, inset 0 -2px #13251d;
+  border-color: #8a7959;
+  background: var(--hall-weave) 0 0 / 30px 20px #2b4138;
+  box-shadow: inset 0 1px #b7a27a91, inset 0 -2px #1c2b28;
 }
 
 [data-portal-mahjong] .play .hand-tile { -webkit-tap-highlight-color: transparent; }
 
-[data-portal-mahjong] .play .seat-label.current {
-  background: #4b3d2a;
-  box-shadow: inset 2px 0 #e9c888, 0 2px 5px #101811b3;
+[data-portal-mahjong] :where(.play, .modal) .tile-face {
+  border-color: #c7b08a;
+  background: var(--hall-bone) center / 100% 100% no-repeat #eaddbb;
+  box-shadow: inset 1px 1px #f0e3c1, 1px 3px #7a7952, 2px 4px #393e2e;
 }
 
+[data-portal-mahjong] .play .hand-tile[aria-pressed="true"] .tile-face {
+  background: var(--hall-bone) center / 100% 100% no-repeat #f4e4b7;
+  box-shadow: 0 0 0 2px #f0bb65, 0 0 0 3px #523d29, 1px 4px #99744c;
+}
+
+[data-portal-mahjong] .play .river-tile .tile-face {
+  box-shadow: inset 0 0 0 .65px #e1cda1;
+}
+
+[data-portal-mahjong] .play :is(.edge-melds, .edge-reveals, .center-trigger, .choice-tiles) .tile-face {
+  box-shadow: 0 1px #313b2b;
+}
+
+[data-portal-mahjong] .play .river-tile.last-discard .tile-face {
+  outline-color: #f5bf71;
+}
+
+[data-portal-mahjong] :where(.play, .modal) .tile-back {
+  border-color: #a3a175;
+  background: var(--hall-wood) center / 83px 14px #6a764e;
+  box-shadow: inset 0 0 0 2px #4a573e, 1px 3px #354331;
+}
+
+[data-portal-mahjong] .play .wall span {
+  background: var(--hall-wood) center / 53px 13px #748158;
+  box-shadow: inset 0 0 0 1px #a9ae7a;
+}
+
+[data-portal-mahjong] .play :is(.wall, .river) {
+  --upper: #c9b48f;
+  --lower: #68754c;
+}
+
+[data-portal-mahjong] .play .wall span::before,
+[data-portal-mahjong] .play .wall span::after {
+  background: linear-gradient(var(--flow), #b6a07f var(--lo), #546045 var(--lo) var(--seam),
+    #3a4837 var(--seam) calc(var(--seam) + .7px), #677551 calc(var(--seam) + .7px));
+}
+
+[data-portal-mahjong] .play .backs span { background: #354638; }
+[data-portal-mahjong] .play .backs span::before { background: var(--hall-wood) center / 58px 12px #78845a; }
+[data-portal-mahjong] .play .backs span::after { background: #d5c198; }
+
+[data-portal-mahjong] .play .seat-label {
+  background: #273d36;
+  box-shadow: 0 2px #1e2a25;
+}
+
+[data-portal-mahjong] .play .seat-label.current {
+  background: #523f32;
+  box-shadow: inset 2px 0 #e9c888, 0 2px #252821;
+}
+
+[data-portal-mahjong] .board-center:not(.board-center--dial) { background: #263e34; }
+
 [data-portal-mahjong] .hall-dial-plate {
-  --dial-ceramic: #36584a;
-  --dial-active: #976934;
-  box-shadow: inset 0 0 0 1px #dfbe82, inset 0 0 0 3px #4b3526, inset 0 0 0 4px #d7ac72a0,
-    0 3px #281f1b, 0 5px 8px #081e1bcc;
+  --dial-ceramic: #476056;
+  --dial-active: #88613b;
+  background:
+    url("./hall-clay.svg") center / 100% 100% no-repeat,
+    radial-gradient(circle, #293e33 0 38%, #a68653 38% 39.5%, #29352c 39.5% 41.5%, transparent 41.5%),
+    repeating-conic-gradient(from 44deg, #2c3831 0 1.35deg, #bf9b65 1.35deg 2deg, transparent 2deg 90deg),
+    conic-gradient(from 45deg, var(--dial-right, var(--dial-ceramic)) 0 25%,
+      var(--dial-near, var(--dial-ceramic)) 25% 50%, var(--dial-left, var(--dial-ceramic)) 50% 75%,
+      var(--dial-far, var(--dial-ceramic)) 75% 100%);
+  box-shadow: inset 0 0 0 1px #c2a574, inset 0 0 0 3px #4d392e, inset 0 0 0 4px #a27b53,
+    0 3px #3b312a, 0 5px #223b32;
+}
+
+[data-portal-mahjong] .hall-dial-die {
+  background: var(--hall-bone) 50% 50% / 100% 100% #e9d6ad;
+  fill: #263d35;
+  box-shadow: 0 1px #9f7953;
+}
+
+[data-portal-mahjong] .modal:has(.scoreboard) {
+  background: var(--hall-weave) 0 0 / 30px 20px #25382f;
+  box-shadow: inset 0 0 0 2px #a78b5980, 0 12px 20px #131a16cc;
+}
+
+[data-portal-mahjong] .modal:has(.scoreboard) .modal-head {
+  background: var(--hall-wood) 40% 0 / 154px 37px #4a3a32;
+}
+
+[data-portal-mahjong] .modal .winner {
+  background: #3a4033;
+}
+
+[data-portal-mahjong] .effect-flight {
+  box-shadow: 0 0 0 1px #192821, 0 3px #192821;
+}
+
+[data-portal-mahjong] .effect-flight::before {
+  background: linear-gradient(90deg, transparent 0 38%, var(--color) 38% 77%, var(--light) 77%);
+}
+
+[data-portal-mahjong] .effect-seal::after {
+  background:
+    var(--hall-bone) 50% 50% / 24px 31px,
+    repeating-conic-gradient(from 6deg, #fff4bf3d 0 8deg, transparent 8deg 25deg),
+    radial-gradient(ellipse, var(--paper) 0 61%, var(--paper-deep) 61%);
+}
+
+[data-portal-mahjong] .effect-impact {
+  box-shadow: 0 0 0 2px var(--color);
+}
+
+[data-portal-mahjong] .effect-ring {
+  box-shadow: 0 0 0 2px var(--paper-deep);
+}
+
+[data-portal-mahjong] .finale-lantern {
+  --finale-metal: #c99760;
+  --finale-paper: #c87948;
+  filter: drop-shadow(0 2px #432e26);
+}
+
+[data-portal-mahjong] .finale-lantern [data-light] { display: none; }
+[data-portal-mahjong] .finale-lantern [data-hatch] { display: inline; }
+[data-portal-mahjong] .finale-relay { filter: drop-shadow(0 1px #432e26); }
+[data-portal-mahjong] .finale-ember { box-shadow: none; }
+
+[data-portal-mahjong] .finale-wake {
+  background: linear-gradient(90deg, transparent 0 30%, #c38552 30% 75%, #f2cb8b 75%);
 }
 
 @media (max-width: 630px) and (orientation: portrait) {

@@ -71,18 +71,40 @@ test("the portal Mahjong finish is fetched with the Hall and leaves the landscap
   await tap(page, "Start match");
   await expect(page.locator(".hall-dial-plate")).toBeVisible();
   expect(hallStyles).toEqual([200]);
-  const plane = page.locator(".board-plane");
-  expect(await plane.evaluate(node => {
+  const paint = await page.locator(".board-plane").evaluate(node => {
     const app = node.closest("#app")!;
-    if (!app.hasAttribute("data-portal-mahjong")) return false;
-    const dressed = getComputedStyle(node).backgroundImage;
+    const inspect = () => ({
+      baize: getComputedStyle(node.querySelector(".board-well")!).backgroundImage,
+      cast: [...app.querySelectorAll<SVGSVGElement>(".seat-actor")].map(actor =>
+        ["[data-joint=head] > g > path", "[data-joint=body] > g > path"].map(selector => {
+          const fill = getComputedStyle(actor.querySelector(selector)!).fill;
+          const id = fill.match(/#([^"')]+)/)?.[1];
+          return id ? document.getElementById(id)?.localName : undefined;
+        })),
+      roomHasHalo: getComputedStyle(document.body, "::before").backgroundImage.includes("radial-gradient("),
+    });
+    const portal = inspect();
     app.removeAttribute("data-portal-mahjong");
-    try { return getComputedStyle(node).backgroundImage !== dressed; }
+    try { return { portal, standalone: inspect() }; }
     finally { app.setAttribute("data-portal-mahjong", ""); }
-  })).toBe(true);
+  });
+  expect(paint.portal.baize).toMatch(/^url\(/);
+  expect(paint.portal.baize).not.toContain("gradient(");
+  expect(paint.portal.roomHasHalo).toBe(false);
+  expect(paint.portal.cast).toEqual(Array.from({ length: 4 }, () => ["pattern", "pattern"]));
+  expect(paint.standalone.baize).toContain("radial-gradient(");
+  expect(paint.standalone.cast).toEqual(Array.from({ length: 4 }, () => ["linearGradient", "linearGradient"]));
   const tile = page.locator('.hand-tile[aria-disabled="false"]').first();
+  const hit = (await tile.boundingBox())!;
+  expect(hit.width).toBeGreaterThanOrEqual(44);
+  expect(hit.height).toBeGreaterThanOrEqual(44);
+  const face = tile.locator(".tile-face");
+  const grain = await face.evaluate(node => getComputedStyle(node).backgroundImage);
+  expect(grain).toMatch(/^url\(/);
   await tile.tap();
   await expect(tile).toHaveAttribute("aria-pressed", "true");
+  await expect(face).toHaveCSS("background-image", grain);
+  await expect(face).not.toHaveCSS("transform", "none");
   const confirm = page.getByRole("button", { name: /^Discard (?!tile$)/ });
   await expect(confirm).toBeInViewport({ ratio: 1 });
   await confirm.tap();

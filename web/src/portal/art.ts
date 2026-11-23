@@ -2,6 +2,7 @@ import type { GameId } from "./catalog";
 import { el, svg } from "./dom";
 
 const chessPieces = new URL("./assets/cburnett.svg?no-inline", import.meta.url).href;
+const catalogMarks = new URL("./catalog-marks.svg?no-inline", import.meta.url).href;
 const chessProfiles: Readonly<Record<string, string>> = {
   pawn: "P", knight: "N", bishop: "B", rook: "R", queen: "Q", king: "K",
 };
@@ -93,6 +94,15 @@ export function tableau(game: GameId | "farkle" | "backgammon", scale: "index" |
   scene.dataset.game = game;
   scene.dataset.scale = scale;
   scene.setAttribute("aria-hidden", "true");
+  if (scale === "index") {
+    const mark = svg("svg", {
+      viewBox: "0 0 72 60", class: "catalog-mark",
+      preserveAspectRatio: game === "mahjong" ? "xMidYMid meet" : "xMidYMid slice",
+    });
+    mark.append(svg("use", { href: `${catalogMarks}#${game}`, width: 72, height: 60 }));
+    scene.append(mark);
+    return scene;
+  }
   if (game === "lantern-run") {
     scene.append(lanternStudy());
     return scene;
@@ -102,7 +112,7 @@ export function tableau(game: GameId | "farkle" | "backgammon", scale: "index" |
   switch (game) {
     case "mahjong": pieces.append(...tiles()); break;
     case "chess":
-      if (scale === "table") pieces.append(token(game, 1, "rook"), token(game, 0, "knight"), token(game, 0, "pawn"));
+      pieces.append(token(game, 1, "rook"), token(game, 0, "knight"), token(game, 0, "pawn"));
       break;
     case "go": pieces.append(token(game, 0, "stone"), token(game, 1, "stone"), token(game, 0, "stone")); break;
     case "reversi": pieces.append(token(game, 1, "disc"), token(game, 0, "disc")); break;

@@ -25,8 +25,8 @@ const lantern = `
       <stop offset="1" stop-color="#f4934c" stop-opacity="0"/>
     </radialGradient>
   </defs>
-  <ellipse cx="110" cy="69" rx="105" ry="68" fill="url(#finale-light)"/>
-  <g fill="none" stroke="url(#finale-brass)" stroke-linecap="round">
+  <ellipse data-light cx="110" cy="69" rx="105" ry="68" fill="url(#finale-light)"/>
+  <g fill="none" stroke="var(--finale-metal, url(#finale-brass))" stroke-linecap="round">
     <path d="M20 111c12-12 59-18 90-18s78 6 90 18c-12 12-59 18-90 18s-78-6-90-18Z" opacity=".35"/>
     <path d="M41 113c17-7 39-12 69-12s52 5 69 12c-17 8-39 11-69 11s-52-3-69-11Z" opacity=".61"/>
     <path d="M64 92 52 79H39l-9-9 9-9h13l12-13m92 44 12-13h13l9-9-9-9h-13l-12-13M46 70h11m106 0h11" opacity=".73"/>
@@ -37,14 +37,16 @@ const lantern = `
   </g>
   <path d="M110 18v19m-4-13c0-6 8-6 8 0s-8 6-8 0Z" fill="none" stroke="#ffe0a2" stroke-width="1.75"/>
   <g stroke="#432820" stroke-width="2" stroke-linejoin="round">
-    <path d="M85 40q10-2 17-11h16q7 9 17 11l-3 6H88Z" fill="url(#finale-brass)"/>
-    <path d="M89 43h42q10 10 16 24-7 16-18 25H91Q79 84 73 67q6-14 16-24Z" fill="url(#finale-silk)"/>
+    <path d="M85 40q10-2 17-11h16q7 9 17 11l-3 6H88Z" fill="var(--finale-metal, url(#finale-brass))"/>
+    <path d="M89 43h42q10 10 16 24-7 16-18 25H91Q79 84 73 67q6-14 16-24Z" fill="var(--finale-paper, url(#finale-silk))"/>
     <path d="M102 44h16q12 11 14 23-2 14-14 24h-16Q90 81 88 67q2-12 14-23Z" fill="#ffd279" stroke="#a85533" stroke-width="1.2"/>
     <path d="M106 44h8q7 11 9 23-2 14-9 24h-8q-8-10-9-24 2-12 9-23Z" fill="#ffe5a0" stroke="#de994e" stroke-width="1.1"/>
-    <path d="M86 89h48l-8 9H94Z" fill="url(#finale-brass)"/>
+    <path d="M86 89h48l-8 9H94Z" fill="var(--finale-metal, url(#finale-brass))"/>
     <path d="m105 98 5 6 5-6" fill="#ffc874" stroke-width="1.4"/>
   </g>
   <path d="M90 42h40m-41 47h42m-35 6h28M77 67l7-4m52 0 7 4" fill="none" stroke="#ffe2a1" stroke-width="1.45" stroke-linecap="round"/>
+  <path data-hatch display="none" d="m90 52 7-3m-13 24 4 2m44-21 5 5m-4 16 6-2m-42 10 4 3m18-32 3 3m-1 25 4-4"
+    fill="none" stroke="#974e36" stroke-width="1.25" opacity=".72"/>
   <path d="M110 49c2 11 13 14 10 24-1 5-5 8-10 8s-10-3-10-9c0-9 8-13 10-23Z" fill="#ec8c36"/>
   <path d="M110 62c1 6 6 8 6 12 0 7-12 7-12 0 0-5 5-8 6-12Z" fill="#fff5c3"/>
   <path d="M110 102v14m-5 0 5-4 5 4-5 8Zm3 8-2 10m6-10 2 10" fill="#df9656" stroke="#e6ab60" stroke-linecap="round"/>

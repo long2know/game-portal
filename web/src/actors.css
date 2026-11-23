@@ -72,3 +72,11 @@
 .seat-actor[data-gesture="gather"] [data-hand="open"],
 .seat-actor[data-gesture="call"] [data-main-paw] [data-hand="point"],
 .seat-actor[data-gesture="win"] [data-hand="fist"] { display: inline; }
+[data-portal-mahjong] .seat-actor {
+  --actor-head: var(--matte-fur);
+  --actor-coat: var(--matte-coat);
+  --fur-pigment: color-mix(in srgb, var(--fur) 78%, #ad907d);
+  --coat-pigment: color-mix(in srgb, var(--coat) 76%, #76614d);
+}
+
+[data-portal-mahjong] .seat-actor [data-fur-ink] { display: inline; }

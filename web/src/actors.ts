@@ -59,7 +59,7 @@ const paw = `
 function arm(x: number, main = false): string {
   const [shoulder, elbow, wrist] = main ? ["shoulder", "elbow", "wrist"] : ["rear-shoulder", "rear-elbow", "rear-wrist"];
   return `<g transform="translate(${x} 71)">
-    <g data-joint="${shoulder}" fill="var(--coat)">
+    <g data-joint="${shoulder}" fill="var(--actor-coat, var(--coat))">
       <path d="M0-6q9-4 23-1 6 4 1 12-12 7-23 3C-6 5-6-2 0-6Z"/>
       <path d="M2-5q8-2 16-1" stroke="var(--trim)" stroke-opacity=".6" stroke-width="1.5" fill="none"/>
       <g transform="translate(22 0)">
@@ -81,7 +81,8 @@ function build(seat: Seat): SVGSVGElement {
   const coatId = `actor-coat-${seat}`;
   const template = document.createElement("template");
   template.innerHTML = `<svg class="seat-actor" viewBox="0 0 120 116" data-character="${name}" data-actor-seat="${seat}"
-    style="--fur:${fur};--shade:${shade};--light:${light};--ink:${ink};--coat:${coat};--trim:${trim}">
+    style="--fur:${fur};--shade:${shade};--light:${light};--ink:${ink};--coat:${coat};--trim:${trim};
+      --matte-fur:url(#${furId}-matte);--matte-coat:url(#${coatId}-matte)">
     <defs>
       <linearGradient id="${furId}" x2=".28" y2="1">
         <stop stop-color="${light}"/><stop offset=".36" stop-color="${fur}"/><stop offset="1" stop-color="${shade}"/>
@@ -89,6 +90,17 @@ function build(seat: Seat): SVGSVGElement {
       <linearGradient id="${coatId}" x2=".2" y2="1">
         <stop stop-color="${coat}"/><stop offset=".55" stop-color="${coat}"/><stop offset="1" stop-color="${ink}"/>
       </linearGradient>
+      <pattern id="${furId}-matte" width="71" height="52" patternUnits="userSpaceOnUse">
+        <path d="M0 0h71v52H0z" fill="var(--fur-pigment)"/>
+        <path d="m0 21 11 1 10-2 4 2-7 6-9 2H0Zm47 14 9-6-4 6 11-5-4 5 9-3-8 9-13 3Z" fill="${shade}" opacity=".24"/>
+        <path d="m6 26 9-1m-4 4 9-2m33 11 6-3M26 13l8-2m-1 4 4-1" fill="none" stroke="${shade}" stroke-width="1.2" opacity=".61"/>
+        <path d="m38 29 9-2m-7 6 5-1M16 7l9-3" fill="none" stroke="${light}" stroke-width="1.15" opacity=".69"/>
+      </pattern>
+      <pattern id="${coatId}-matte" width="23" height="19" patternUnits="userSpaceOnUse">
+        <path d="M0 0h23v19H0z" fill="var(--coat-pigment)"/>
+        <path d="M0 2h8m4 0h11M0 8h4m3 0h12M2 14h10m3 0h8m-2 5V7M4 0v10m5-2v11m6-19v8" fill="none" stroke="${ink}" stroke-width="1.1" opacity=".65"/>
+        <path d="M0 5h9m7 0h7M2 11h5m4 0h10M0 17h4m3 0h12m-7 2v-7M2 0v6m16 1v9" fill="none" stroke="${trim}" stroke-width=".85" opacity=".53"/>
+      </pattern>
     </defs>
     <g data-facing>
       <ellipse cx="59" cy="106" rx="40" ry="8" fill="#10231e" opacity=".3"/>
@@ -101,15 +113,17 @@ function build(seat: Seat): SVGSVGElement {
           <g data-joint="body">
             <g transform="translate(-58 -98)">
               ${arm(37)}
-              <path d="M34 80c2-11 11-16 24-16s23 5 25 17l3 15q-8 9-28 9-19 0-29-8Z" fill="url(#${coatId})"/>
+              <path d="M34 80c2-11 11-16 24-16s23 5 25 17l3 15q-8 9-28 9-19 0-29-8Z" fill="var(--actor-coat, url(#${coatId}))"/>
               <path d="M34 95q23 10 45 0" fill="none" stroke="${trim}" stroke-opacity=".63" stroke-width="1.5"/>
               <g fill="${trim}" stroke-width="1.5">${vest}</g>
               <g transform="translate(58 68)">
                 <g data-joint="head">
                   <g transform="translate(-58 -68)">
                     <g fill="${fur}">${ears}</g>
-                    <path d="${head}" fill="url(#${furId})"/>
+                    <path d="${head}" fill="var(--actor-head, url(#${furId}))"/>
                     <g fill="${light}" stroke="none">${mask}</g>
+                    <path data-fur-ink display="none" d="M25 48l4 2m-3 3 6 3m60-10-4 2m5 3-5 3M49 28l6-2m4 1 6-1"
+                      fill="none" stroke="${shade}" stroke-width="1.25" opacity=".63"/>
                     <path d="M37 53q3 2 8 2m35 0 5-2" stroke="${shade}" stroke-opacity=".65" stroke-width="2.4" fill="none"/>
                     <g data-brows fill="none" stroke-width="1.8">
                       <path d="M40 ${eyeY - 10}q5-4 11-2m23 0q5-2 10 2"/>
