@@ -1,8 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 68" fill="none">
-  <g stroke="#e4c790" stroke-width="1">
-    <rect x="1.5" y="1.5" width="45" height="65" rx="3"/>
-    <path opacity=".6" d="M5 14 14 5m20 0 9 9m0 40-9 9m-20 0-9-9M24 9l16 25-16 25L8 34Z"/>
-    <path fill="#234638" d="M24 24l10 10-10 10-10-10z"/>
-    <path d="M24 29c0 3 2 5 5 5-3 0-5 2-5 5 0-3-2-5-5-5 3 0 5-2 5-5Z"/>
+  <g stroke="#a8ab7f" stroke-width=".7" opacity=".55">
+    <path d="M4.5 17v34m39-34v34M16 4.5h16m-16 59h16M11 10l4-4m18 0 4 4m0 48-4 4m-18 0-4-4"/>
+    <path d="m7 23 6-9m22 0 6 9m0 22-6 9m-22 0-6-9M6 27l8-8m20 0 8 8M6 41l8 8m20 0 8-8M11 34l13-20 13 20-13 20Z"/>
   </g>
+  <g stroke="#d5b97f" stroke-width="1">
+    <rect x="1.5" y="1.5" width="45" height="65" rx="3"/>
+    <path opacity=".85" d="M5 14 14 5m20 0 9 9m0 40-9 9m-20 0-9-9M24 9l16 25-16 25L8 34Z"/>
+    <path fill="#273d34" d="M24 24l10 10-10 10-10-10z"/>
+    <path fill="#c4aa71" d="M24 29c0 3 2 5 5 5-3 0-5 2-5 5 0-3-2-5-5-5 3 0 5-2 5-5Z"/>
+  </g>
+  <path stroke="#2d473c" stroke-width="1.1" d="M14 1.5h3m16 0h1.4M1.5 23v1.8m45 17v2.2M8 66.5h2.4m25 0h4"/>
+  <path stroke="#d5bf95" stroke-width=".65" opacity=".75" d="m3 6 2-3m-2 2h2m36 60 3-2m-1 2 1-1M11 2h1m-9 58v1.5m41-49v3"/>
 </svg>

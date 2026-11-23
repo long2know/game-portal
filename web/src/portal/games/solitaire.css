@@ -1,24 +1,27 @@
+.feature-panel:has(> .feature-scroll > .solitaire-board) {
+  background: #253632; border-color: #746449; box-shadow: 0 2px #162722;
+}
 .solitaire-board {
+  --card-baize: #38514f;
   inline-size: min(100%, 52rem); min-inline-size: 23rem; margin-inline: auto;
   padding: 8px; border: 3px solid transparent; border-radius: 9px;
-  background: var(--court-cloth), linear-gradient(145deg, #415f61, #294747) padding-box, var(--court-timber) border-box;
-  box-shadow: inset 0 0 0 1px #b99b64, inset 0 0 0 3px #253c38;
+  box-shadow: inset 0 0 0 1px #4d3728;
 }
 .solitaire-row { display: grid; align-items: start; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: clamp(4px, 1.25vw, 11px); }
-.solitaire-columns { margin-block-start: 12px; border-block-start: 3px double #97a88d; padding-block-start: 6px; }
+.solitaire-columns { margin-block-start: 12px; border-block-start: 3px double #a6a082; padding-block-start: 6px; }
 .solitaire-pile { min-inline-size: 0; display: grid; }
 .pile-title {
-  color: #f6e8c4; font-size: clamp(.61rem, 1.4vw, .84rem); font-weight: 650;
+  color: #fff0d1; text-shadow: 0 1px #233a33; font-size: clamp(.61rem, 1.4vw, .84rem); font-weight: 650;
   text-align: center; min-block-size: 1.2rem; font-variant-numeric: tabular-nums;
 }
 .solitaire-card, .solitaire-under { padding: 0; border: 0; background: transparent; border-radius: 6px; line-height: 1; }
-.stock .card-back { box-shadow: inset 0 1px #fff5cb66, 0 2px #dac299, 0 3px #694f3c, 0 5px #142b2a; }
+.stock .card-back { box-shadow: inset 1px 0 #e4d1a9, 0 2px #c6ad83, 0 3px #896c50, 0 5px #223733; }
 .solitaire-columns :is(.solitaire-card, .solitaire-under) + :is(.solitaire-card, .solitaire-under) { margin-block-start: -42%; }
 .solitaire-columns .solitaire-under + .solitaire-under { margin-block-start: -95%; }
 .solitaire-slot {
   display: grid; place-items: center; aspect-ratio: .71; border-radius: 7px;
-  border: 1px solid #b0c4af; color: #e7e3cd; font: 1.2rem var(--serif);
-  background: #213d3d66; box-shadow: inset 0 2px 4px #132d2d90;
+  border: 1px solid #a5ad92; color: #f0deba; font: 1.2rem var(--serif);
+  background: #243d3b66; box-shadow: inset 0 1px #203531;
 }
 .solitaire-card[aria-disabled="true"] { cursor: default; }
 .solitaire-card:is([data-target], [aria-pressed="true"], :focus-visible) {

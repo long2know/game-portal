@@ -1,11 +1,22 @@
+.poker-felt, .solitaire-board {
+  position: relative; isolation: isolate;
+  background: #735137 url("./card-table-timber.svg") 0 0 / 216px 56px;
+}
+.poker-felt::before, .solitaire-board::before {
+  content: ""; position: absolute; inset: 3px; z-index: -1; pointer-events: none;
+  border: 1px solid #26302a; border-radius: 5px;
+  background: var(--card-baize) url("./card-table-baize.svg") 0 0 / 72px 48px;
+  box-shadow: 0 0 0 1px #a17d53, inset 0 0 0 1px #141e1866;
+}
 .playing-card {
   display: grid; min-inline-size: 0; inline-size: 100%; aspect-ratio: .71;
   container-type: inline-size; isolation: isolate;
-  color: #262822; background: linear-gradient(150deg, #fffbeb, #f1e4cc); border: 1px solid #e6d8ba;
-  border-radius: clamp(4px, 1vw, 7px); box-shadow: inset 0 1px #fffdf4, 0 1px #b79b69, 1px 3px 3px #14251e90;
+  color: #242821; background: #f2e6ca url("./card-linen.svg") center / 76px 64px; border: 1px solid #dfcda4;
+  border-radius: clamp(4px, 1vw, 7px);
+  box-shadow: inset 1px 0 #f9edd4, inset 0 -1px #d7c39e, 0 1px #a88b65, 1px 2px #1e2e25;
   user-select: none;
 }
-.playing-card:is([data-suit="hearts"], [data-suit="diamonds"]) { color: #912e32; }
+.playing-card:is([data-suit="hearts"], [data-suit="diamonds"]) { color: #862d30; }
 .playing-card-art {
   --index-size: clamp(.66rem, 29cqi, 1.42rem);
   position: relative; min-block-size: 0; overflow: hidden;
@@ -32,9 +43,11 @@
   .card-pips, .card-court { inset-block: 28% 7%; block-size: 65%; }
   .card-court[data-illustrated] { inset-block-end: 7%; block-size: auto; }
 }
-.card-back { color: #e2d4aa; background: #234638; }
+.card-back {
+  color: #e8d5ae; background-color: #d6bf95; border-color: #c4ab80;
+  box-shadow: inset 1px 0 #e4d1a9, inset 0 -1px #b99e72, 0 1px #997e58, 1px 2px #1e2e25;
+}
 .card-back .playing-card-art {
   display: grid; place-items: center; margin: 5%;
-  background: url("./card-back.svg") center / 100% 100% no-repeat,
-    repeating-linear-gradient(135deg, #c7d2a725 0 1px, transparent 1px 4px);
+  background: url("./card-back.svg") center / 100% 100% no-repeat #2d473c;
 }
