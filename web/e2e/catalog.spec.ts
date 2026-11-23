@@ -60,11 +60,13 @@ test("lobby presents thirteen real destinations with local, cold catalog art", a
   assets.add(href((await page.locator('link[rel="icon"]').getAttribute("href"))!));
   const lobbyAssets = [...assets].map(asset => new URL(asset));
   expect(lobbyAssets.every(asset => asset.origin === mount.origin && asset.pathname.startsWith(`${mount.pathname}assets/`))).toBe(true);
-  expect(lobbyAssets.map(asset => asset.pathname.split("/").pop()).sort()).toEqual([
+  const coldAssets = [
     expect.stringMatching(/^catalog-marks-[\w-]+\.svg$/), expect.stringMatching(/^court-study-[\w-]+\.svg$/),
     expect.stringMatching(/^jade-court-[\w-]+\.svg$/), expect.stringMatching(/^portal-[\w-]+\.css$/),
     expect.stringMatching(/^portal-[\w-]+\.js$/),
-  ]);
+  ];
+  expect(lobbyAssets).toHaveLength(coldAssets.length);
+  expect(lobbyAssets.map(asset => asset.pathname.split("/").pop())).toEqual(expect.arrayContaining(coldAssets));
   const compressed = await Promise.all([...assets].map(async asset => {
     const response = await request.get(asset);
     expect(response.ok(), asset).toBe(true);
@@ -180,4 +182,43 @@ test("320px catalog keeps previews, copy and both hero actions usable", async ({
   await play.tap();
   await expect(page).toHaveURL(href("mahjong/"));
   await expect(page.locator(".connection")).toHaveAttribute("data-status", "online");
+});
+
+test.describe("desktop catalog artwork", () => {
+  test.use({ viewport: { width: 1440, height: 900 }, isMobile: false, hasTouch: false });
+
+  test("the feature rails and index edges paint without reframing the artwork or taking input", async ({ page }) => {
+    await page.goto("./");
+    const feature = page.getByRole("link", { name: "Take a seat", exact: true });
+    const chess = page.getByRole("link", { name: "Set up Chess", exact: true });
+    const studies = [page.locator(".hero-study"), feature.locator(".tableau"), chess.locator(".tableau")];
+    await page.addStyleTag({ content: `
+      [data-unframed]::before, [data-unframed]::after { display: none !important; }
+    ` });
+    for (const [index, study] of studies.entries()) {
+      await study.scrollIntoViewIfNeeded();
+      const inspect = () => study.evaluate(node => ({
+        bounds: node.getBoundingClientRect().toJSON(),
+        svgBounds: node.querySelector("use")?.getBoundingClientRect().toJSON(),
+        crop: getComputedStyle(node).backgroundSize,
+        registration: getComputedStyle(node, "::before").clipPath,
+      }));
+      const { registration, ...framed } = await inspect();
+      expect(registration !== "none", "only the Go study and featured preview get a registration mark").toBe(index < 2);
+      const painted = await study.screenshot();
+      await study.evaluate(node => node.setAttribute("data-unframed", ""));
+      const { registration: _, ...bare } = await inspect();
+      expect(bare).toEqual(framed);
+      expect((await study.screenshot()).equals(painted), "the rail must visibly paint").toBe(false);
+      await study.evaluate(node => node.removeAttribute("data-unframed"));
+    }
+
+    await expect.poll(() => page.evaluate(() => matchMedia("(hover: hover) and (pointer: fine)").matches)).toBe(true);
+    await feature.locator(".tableau").hover({ position: { x: 2, y: 2 } });
+    await expect(feature.and(page.locator(":hover"))).toHaveCount(1);
+    await feature.focus();
+    await page.keyboard.press("Tab");
+    await expect(chess).toBeFocused();
+    await expect(chess).toHaveCSS("outline-style", "solid");
+  });
 });
