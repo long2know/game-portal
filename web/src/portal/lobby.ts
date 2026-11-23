@@ -24,13 +24,23 @@ export function lobby(mount: string): HTMLElement {
   for (const game of games) {
     const info = catalog[game];
     const flagship = game === "mahjong";
+    const title = el("h3", "", info.name);
+    const seats = el("p", "card-meta", flagship ? `Flagship · ${info.seats}` : info.seats);
+    const summary = el("p", "card-description", info.description);
+    seats.id = `catalog-${game}-seats`;
+    summary.id = `catalog-${game}-summary`;
+    const descriptionIds = [seats.id, summary.id];
     const card = el("a", flagship ? "game-card game-card-featured" : "game-card",
       tableau(game, "index"),
-      el("div", "game-card-body", el("p", "card-meta", flagship ? `Flagship · ${info.seats}` : info.seats),
-        el("h3", "", info.name), el("p", "card-description", info.description)));
-    if (flagship) card.append(el("span", "card-action", "Take a seat"));
+      el("div", "game-card-body", ...(flagship ? [seats, title, summary] : [title, summary, seats])));
+    if (flagship) {
+      title.id = "catalog-mahjong-name";
+      descriptionIds.unshift(title.id);
+      card.append(el("span", "card-action", info.invitation));
+    }
     card.href = `${mount}${game}/`;
     card.setAttribute("aria-label", info.invitation);
+    card.setAttribute("aria-describedby", descriptionIds.join(" "));
     grid.append(card);
   }
   section.append(el("div", "section-title", heading,
