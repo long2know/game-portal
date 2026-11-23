@@ -116,23 +116,34 @@ body:has([data-portal-mahjong] .play)::before {
 }
 
 [data-portal-mahjong] .play .board-plane {
+  --hall-copper: #bc9066;
   background:
     var(--hall-weave) 0 0 / 30px 20px padding-box,
     linear-gradient(#4b6956 0 0) padding-box,
-    var(--hall-wood) 45% 0 / 155px 37px border-box #946a49;
-  box-shadow: inset 1px 1px #cfaa77, inset 0 0 0 2px #523b2c,
-    inset 0 0 0 3px #ac855c, inset 0 -3px #354e41, 0 1px #b5875d;
+    var(--hall-wood) 45% 0 / 155px 37px border-box #835d44;
+  box-shadow: inset 1px 1px #cfaa77, inset 0 0 0 2px #4e372b,
+    inset 0 0 0 3px var(--hall-copper), inset 0 -4px #354e41, 0 1px #a47655;
 }
 
 [data-portal-mahjong] .play .board-plane::before {
-  border-color: #bbaa74b3;
-  box-shadow: 0 0 0 1px #354c41, inset 0 0 0 1px #3f5a4a;
+  border-color: var(--hall-copper);
+  box-shadow: 0 0 0 1px #263e34, inset 0 0 0 1px #3b5547, inset 0 -2px #2c463b;
+}
+
+[data-portal-mahjong] .play .board-plane::after {
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  inset: calc(1px - var(--rim)) 0 auto; margin-inline: auto;
+  width: clamp(28px, 4.4vw, 56px); height: calc(var(--rim) - 1px);
+  background: #d7ac82;
+  clip-path: polygon(0 40%, calc(50% - 3px) 40%, 50% 0, calc(50% + 3px) 40%, 100% 40%,
+    100% 60%, calc(50% + 3px) 60%, 50% 100%, calc(50% - 3px) 60%, 0 60%);
 }
 
 [data-portal-mahjong] .play .board-well {
   background: var(--hall-weave) 0 0 / 30px 20px #304f42;
-  border-color: #88916d;
-  box-shadow: inset 0 2px #233c35, 0 1px #948264;
+  border-color: #9e7a5a;
+  box-shadow: 0 0 0 1px #253c34, 0 1px 0 1px var(--hall-copper),
+    inset 0 0 0 1px #775f47, inset 0 3px #203930;
 }
 
 [data-portal-mahjong] .play :is(.turnbar, .rack) {

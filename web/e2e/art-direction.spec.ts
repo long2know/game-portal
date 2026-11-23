@@ -7,6 +7,7 @@ test.beforeEach(async ({ baseURL }) => {
 
 test("Go marks the latest stone without covering the unplayed intersections", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 320, height: 740 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(new URL("go/", baseURL).href);
   await tap(page, "Play a bot");
   const board = page.locator(".board-grid");
@@ -27,6 +28,39 @@ test("Go marks the latest stone without covering the unplayed intersections", as
   await legal.focus();
   await expect(legal).toBeFocused();
   expect(await aimOpacity()).toBeGreaterThan(0);
+  await page.addStyleTag({ content: `
+    .board-frame[data-unframed]::before { display: none; }
+    .board-frame[data-unframed], .board-frame[data-unframed] .board-scroll { box-shadow: none; }
+  ` });
+  const rail = await page.locator(".board-frame").evaluate(frame => {
+    const target = frame.querySelector(".square[data-target]:focus")!;
+    const inspect = () => {
+      const square = target.getBoundingClientRect();
+      const field = frame.querySelector(".board-grid")!.getBoundingClientRect();
+      const mark = getComputedStyle(frame, "::before");
+      return {
+        finish: { rail: getComputedStyle(frame).boxShadow, mark: mark.clipPath, display: mark.display },
+        markGap: field.top - frame.getBoundingClientRect().top - parseFloat(getComputedStyle(frame).borderTopWidth)
+          - parseFloat(mark.top) - parseFloat(mark.height),
+        field: field.toJSON(),
+        square: square.toJSON(),
+        hit: document.elementFromPoint(square.x + square.width / 2, square.y + square.height / 2)?.closest(".square") === target,
+        focus: getComputedStyle(target).outlineStyle,
+        aim: getComputedStyle(target, "::after").opacity,
+      };
+    };
+    const { finish, markGap, ...play } = inspect();
+    frame.setAttribute("data-unframed", "");
+    const { finish: bare, markGap: _, ...barePlay } = inspect();
+    frame.removeAttribute("data-unframed");
+    return { finish, bare, markGap, play, barePlay };
+  });
+  expect(rail.finish.rail).not.toBe(rail.bare.rail);
+  expect(rail.finish.mark).not.toBe("none");
+  expect(rail.finish.display).not.toBe(rail.bare.display);
+  expect(rail.markGap).toBeGreaterThan(0);
+  expect(rail.play).toEqual(rail.barePlay);
+  expect(rail.play).toMatchObject({ hit: true, focus: "dashed", aim: "1" });
   await fitsPhone(page);
 });
 
@@ -73,8 +107,13 @@ test("the portal Mahjong finish is fetched with the Hall and leaves the landscap
   expect(hallStyles).toEqual([200]);
   const paint = await page.locator(".board-plane").evaluate(node => {
     const app = node.closest("#app")!;
+    const well = node.querySelector(".board-well")!;
     const inspect = () => ({
-      baize: getComputedStyle(node.querySelector(".board-well")!).backgroundImage,
+      baize: getComputedStyle(well).backgroundImage,
+      rail: getComputedStyle(node, "::before").borderColor,
+      register: getComputedStyle(node, "::after").content,
+      wellLip: getComputedStyle(well).boxShadow,
+      projection: [node, well, ...node.querySelectorAll(".plane-corner")].map(part => part.getBoundingClientRect().toJSON()),
       cast: [...app.querySelectorAll<SVGSVGElement>(".seat-actor")].map(actor =>
         ["[data-joint=head] > g > path", "[data-joint=body] > g > path"].map(selector => {
           const fill = getComputedStyle(actor.querySelector(selector)!).fill;
@@ -92,6 +131,11 @@ test("the portal Mahjong finish is fetched with the Hall and leaves the landscap
   expect(paint.portal.baize).not.toContain("gradient(");
   expect(paint.portal.roomHasHalo).toBe(false);
   expect(paint.portal.cast).toEqual(Array.from({ length: 4 }, () => ["pattern", "pattern"]));
+  expect(paint.portal.register).not.toBe("none");
+  expect(paint.portal.rail).not.toBe(paint.standalone.rail);
+  expect(paint.portal.wellLip).not.toBe(paint.standalone.wellLip);
+  expect(paint.portal.projection).toEqual(paint.standalone.projection);
+  expect(paint.standalone.register).toBe("none");
   expect(paint.standalone.baize).toContain("radial-gradient(");
   expect(paint.standalone.cast).toEqual(Array.from({ length: 4 }, () => ["linearGradient", "linearGradient"]));
   const tile = page.locator('.hand-tile[aria-disabled="false"]').first();
