@@ -40,7 +40,7 @@ h1, h2, h3 { font: 500 1.6rem/1.06 var(--serif); }
 h1 { letter-spacing: -.036em; }
 .muted, .intro { color: var(--muted); }
 .intro { max-inline-size: 41ch; font-size: clamp(1rem, 1.55vw, 1.125rem); }
-.eyebrow, .card-meta {
+.eyebrow {
   color: var(--brass);
   font-size: .7rem;
   font-weight: 720;
@@ -107,46 +107,50 @@ h1 { letter-spacing: -.036em; }
   opacity: .035; mix-blend-mode: overlay;
 }
 .lobby-hero {
-  display: grid; align-items: center; gap: clamp(24px, 4.2vw, 58px);
-  border-block-end: 1px solid var(--line); padding-block: 6px clamp(21px, 3.5vw, 45px);
+  display: grid; align-items: center; gap: clamp(14px, 3.6vw, 24px);
+  border-block-end: 1px solid var(--line); padding-block: 6px clamp(13px, 3vw, 21px);
 }
-.hero-copy .intro { min-block-size: 4.5em; }
 .hero-copy h1 { margin-block: .16em .23em; font-size: clamp(3.04rem, 7.1vw, 6.25rem); line-height: .94; }
 .hero-copy h1 em { display: block; color: var(--brass); font-weight: 400; }
 .hero-actions, .setup-actions, .choice-actions, .board-tools { display: flex; flex-wrap: wrap; gap: 9px; }
 .invite-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.hero-actions { margin-block-start: clamp(16px, 2vw, 25px); }
+.hero-actions { margin-block-start: clamp(12px, 3vw, 16px); }
 .hero-plate { min-inline-size: 0; margin: 0; }
 .hero-study {
   aspect-ratio: 5 / 3; background: var(--table-maple) url("./court-study.svg?no-inline") center / cover no-repeat;
 }
 .plate-caption {
-  margin-block-start: 8px; text-align: end;
+  margin-block-start: 5px; text-align: end;
   color: var(--muted); font-size: .76rem;
 }
-.catalog { margin-block: clamp(21px, 3.5vw, 45px); scroll-margin-block-start: 15px; }
-.section-title { display: flex; gap: 5px 14px; justify-content: space-between; align-items: baseline; flex-wrap: wrap; margin-block-end: 15px; }
+.catalog { margin-block: clamp(16px, 3.25vw, 21px); scroll-margin-block-start: 15px; }
+.section-title { display: flex; gap: 3px 9px; justify-content: space-between; align-items: baseline; flex-wrap: wrap; margin-block-end: 11px; }
 .section-title h2 { font-size: clamp(1.9rem, 4vw, 3rem); }
-.section-caption { color: var(--muted); font-size: .88rem; }
+.section-caption { color: var(--muted); font-size: .82rem; }
 .catalog-grid { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: clamp(17px, 3vw, 36px); }
 .game-card {
   position: relative; isolation: isolate;
-  display: grid; grid-template-columns: 58px minmax(0, 1fr) 18px; align-items: center; gap: clamp(8px, 1.6vw, 16px);
+  display: grid; grid-template-columns: clamp(70px, 19.5vw, 76px) minmax(0, 1fr); align-items: center; gap: clamp(8px, 1.6vw, 16px);
   min-inline-size: 0; min-block-size: 44px; border-block-end: 1px solid var(--line);
-  padding-block: 14px; text-decoration: none; background: #192820;
+  padding-block: clamp(11px, 2vw, 14px); text-decoration: none; background: #192820;
   box-shadow: inset 0 1px #bca57420;
 }
-.game-card:not(.game-card-featured) .game-card-body { display: flex; flex-direction: column; }
-.game-card:not(.game-card-featured) .card-meta { order: 1; margin-block-start: 3px; letter-spacing: .06em; }
+.card-meta { color: var(--brass); font-size: .76rem; font-weight: 650; letter-spacing: .025em; }
+.game-card:not(.game-card-featured) .card-meta { margin-block-start: 3px; }
 .game-card h3 { font-size: clamp(1.24rem, 2.5vw, 1.8rem); }
-.card-description { color: var(--muted); font-size: .86rem; margin-block-start: 5px; }
-.card-action { align-self: center; display: flex; align-items: center; min-block-size: 1.35rem; color: var(--brass); font-size: .87rem; font-weight: 680; }
-.game-card-featured {
-  grid-column: 1 / -1; grid-template-columns: clamp(76px, 16vw, 192px) minmax(0, 1fr);
-  padding: 12px; border: 0; background: #263d30;
+.card-description { color: var(--muted); font-size: .86rem; margin-block-start: 4px; }
+.card-action {
+  grid-area: action; justify-self: start;
+  color: var(--brass); font-size: .87rem; font-weight: 680;
+  text-decoration: underline; text-underline-offset: .2em;
 }
+.game-card-featured {
+  grid-column: 1 / -1; grid-template-columns: clamp(94px, 29vw, 152px) minmax(0, 1fr);
+  grid-template-areas: "study summary" "study action"; row-gap: 5px;
+  padding: 10px 8px; border: 0; background: #263d30;
+}
+.game-card-featured .game-card-body { grid-area: summary; }
 .game-card-featured h3 { margin-block-start: 3px; font-size: clamp(1.52rem, 3.8vw, 2.7rem); }
-.game-card-featured .card-action { grid-column: 2; justify-self: start; }
 @media (hover: hover) and (pointer: fine) {
   .game-card:hover {
     z-index: 1; background-color: #26392d;
@@ -164,7 +168,7 @@ h1 { letter-spacing: -.036em; }
 .tableau[data-scale="index"] { min-block-size: 0; aspect-ratio: 6 / 5; }
 .catalog-mark { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; pointer-events: none; }
 .game-card-featured .tableau[data-game="mahjong"] { background-color: #304939; }
-.game-card-featured .tableau { --study-scale: clamp(20px, 4.6vw, 52px); align-self: stretch; aspect-ratio: auto; }
+.game-card-featured .tableau { grid-area: study; align-self: stretch; aspect-ratio: auto; }
 .tableau[data-game="go"] { --study-ground: var(--table-maple); }
 .tableau[data-game="checkers"], .tableau[data-game="word-tiles"] { --study-ground: var(--table-walnut); }
 .tableau[data-game="chinese-checkers"] { --study-ground: #474a43; }
@@ -491,12 +495,22 @@ h1 { letter-spacing: -.036em; }
 @media (min-width: 640px) {
   .shell { padding-inline: max(24px, env(safe-area-inset-left)) max(24px, env(safe-area-inset-right)); }
   .catalog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .game-card-featured { grid-template-columns: clamp(76px, 16vw, 192px) minmax(0, 1fr) auto; }
-  .game-card-featured .card-action { grid-column: auto; padding-inline-end: 2rem; white-space: nowrap; }
+  .game-card-featured {
+    grid-template-columns: clamp(76px, 16vw, 192px) minmax(0, 1fr) auto;
+    grid-template-areas: "study summary action"; padding: 12px;
+  }
+  .game-card-featured .card-action { margin-inline-end: 2rem; white-space: nowrap; }
   .game-card-featured .tableau { min-block-size: 86px; }
   .game-card-featured .catalog-mark { inset: -7%; inline-size: 114%; block-size: 114%; }
   .match-head { grid-template-columns: minmax(0, 1fr) minmax(0, 45%); align-items: end; }
   .match-state { justify-items: end; text-align: right; }
+}
+@media (max-width: 480px) {
+  :where(.header:has(+ main > .lobby)) .brand { gap: 6px; }
+  :where(.header:has(+ main > .lobby)) .brand-tile { width: clamp(31px, 8vw, 42px); }
+  :where(.header:has(+ main > .lobby)) .brand-name { font-size: clamp(1.075rem, 3.8vw, 1.17rem); }
+  :where(.header:has(+ main > .lobby)) .site-nav { gap: 4px; }
+  :where(.header:has(+ main > .lobby)) .site-nav .button { font-size: .76rem; padding-inline: .36rem; }
 }
 @media (max-width: 360px) {
   .header { column-gap: 5px; }
@@ -512,8 +526,16 @@ h1 { letter-spacing: -.036em; }
   .hero-actions .button { font-size: .9rem; padding-inline: .64rem; }
 }
 @media (min-width: 720px) {
-  .lobby-hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
-  .hero-copy .intro { max-inline-size: 35ch; }
+  .lobby-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    gap: clamp(24px, 4.2vw, 58px); padding-block-end: clamp(21px, 3.5vw, 45px);
+  }
+  .hero-copy .intro { max-inline-size: 35ch; min-block-size: 4.5em; }
+  .hero-actions { margin-block-start: clamp(16px, 2vw, 25px); }
+  .plate-caption { margin-block-start: 8px; }
+  .catalog { margin-block: clamp(21px, 3.5vw, 45px); }
+  .section-title { gap: 5px 14px; margin-block-end: 15px; }
+  .section-caption { font-size: .88rem; }
   .setup { grid-template-columns: minmax(0, 1fr) minmax(0, .85fr); }
   .setup-study { grid-template-rows: minmax(0, 1fr) auto; }
   .match-layout { grid-template-columns: minmax(0, 1.85fr) minmax(218px, 1fr); grid-template-areas: "head head" "board rail"; }

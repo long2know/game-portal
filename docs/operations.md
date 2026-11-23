@@ -207,7 +207,7 @@ Check version and readiness, then reconnect from a browser with its original coo
 
 CI uses pinned action/tool and base-image versions, locked dependencies, and two read-only gates:
 
-- **Application:** Run all locked .NET test suites, including Poker, Solo, and Words. Chromium and WebKit test the same native publish; the original root and `/mahjong` specs keep `Portal__Enabled=false`. The portal specs run only at `/portal` with the built-in Chess fallback, using fresh data and rate limits for each spec and browser. The public-path smoke also tests `/game-portal/` over trusted loopback TLS.
+- **Application:** Run all locked .NET test suites, including Poker, Solo, and Words. Chromium and WebKit test the same native publish; the original root and `/mahjong` specs keep `Portal__Enabled=false`. The full portal browser suite runs at `/portal` with the built-in Chess fallback. The custom mount's HTTP browser smoke runs the catalog and mount-aware game checks. Both use fresh data and rate limits for each spec and browser. CI also tests `/game-portal/` over trusted loopback TLS without a browser.
 - **Image:** Smoke the **exact Linux/amd64 image ID**, non-root runtime, pinned Stockfish and bundled notices. Keep the 32 KiB Mahjong and 24 KiB portal cold shell budgets. Play Chess with a non-default bot preset and Reversi with an invited guest, then verify resign and leave. Play Hold’em and Jade Letters with bots and distinct guests, verify private hands and racks, and resume a draw-one Solitaire move and a mark in a uniquely solvable Sudoku after recreation. Both jobs must pass before any promotion.
 
 For local use, publish from a clean checkout with the pinned SDK and Node after building the client with `npm --prefix web ci && npm --prefix web run build`:
@@ -228,7 +228,7 @@ SMOKE_PATH_BASE=/game-portal Portal__Enabled=true SMOKE_HTTPS=true \
   bash scripts/smoke-published.sh "$publish" "$version" "$revision"
 ```
 
-Add `--with-browser` to the HTTP commands after installing the pinned Playwright Chromium/WebKit browsers. The TLS smoke uses OpenSSL to create an isolated, short-lived loopback certificate trusted only for that run; it does not change proxy or deployment settings. On a host with a working Docker daemon, run the actual image gate:
+Add `--with-browser` to the HTTP commands after installing the pinned Playwright Chromium/WebKit browsers. For custom-mount browser coverage, use `SMOKE_PATH_BASE=/game-portal Portal__Enabled=true` without `SMOKE_HTTPS`. The TLS smoke uses OpenSSL to create an isolated, short-lived loopback certificate trusted only for that run; it does not change proxy or deployment settings. On a host with a working Docker daemon, run the actual image gate:
 
 ```bash
 docker compose --env-file /dev/null config --quiet

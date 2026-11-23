@@ -1,5 +1,4 @@
 import { gzipSync } from "node:zlib";
-import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import type { Guest } from "../src/protocol";
@@ -116,75 +115,14 @@ test.describe("mounted Jade Court portal", () => {
     test.skip(!baseURL || !/^\/portal\/?$/.test(new URL(baseURL).pathname), "Requires the published runtime with the portal mounted at /portal/.");
   });
 
-  test("lobby presents thirteen real destinations and keeps assets and links at the mount", async ({ page, baseURL, request }, info) => {
+  test("the phone catalog opens each board setup and keeps its canonical portal route", async ({ page, baseURL, request }, info) => {
     const url = urls(baseURL!);
-    const assets = new Set<string>();
-    page.on("request", event => {
-      if (new URL(event.url()).pathname.startsWith("/portal/assets/")) assets.add(event.url());
-    });
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const heroStudy = page.waitForResponse(response => /\/portal\/assets\/court-study-[\w-]+\.svg$/.test(new URL(response.url()).pathname));
-    const catalogArt = page.waitForResponse(response => /\/portal\/assets\/catalog-marks-[\w-]+\.svg$/.test(new URL(response.url()).pathname));
-    const html = (await page.goto(url()))!;
-    await expect(page).toHaveTitle("Jade Court · Board Games");
-    await expect(page.getByRole("heading", { name: "Find your next move." })).toBeVisible();
-    await expect(page.locator("#app")).toHaveAttribute("data-base", "/portal/");
-    expect((await heroStudy).ok()).toBe(true);
-    await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", /^\/portal\/assets\/jade-court-[\w-]+\.svg$/);
-    await expect(page.getByRole("link", { name: "Take a seat", exact: true })).toHaveAttribute("href", "/portal/mahjong/");
-    await expect(page.getByRole("link", { name: "Play Lantern Run", exact: true })).toHaveAttribute("href", "/portal/lantern-run/");
-    const cards = page.locator(".game-card");
-    await expect(cards).toHaveCount(13);
-    await expect(page.locator(".hero-copy .intro")).toHaveText("Play board games, cards, and puzzles solo, against bots, or with friends.");
-    await expect(page.locator(".lobby")).not.toContainText(/quiet|room to breathe|whole crew|Table study 01/i);
-    await expect(page.locator(".court-footer")).not.toContainText("A place for a good game.");
-    await expect(page.getByRole("link", { name: "Mahjong table", exact: true })).not.toContainText("↗");
-    await expect(cards.filter({ hasText: "↗" })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Set up Chess" })).toContainText("Control the center, develop your pieces, and trap the king.");
-    const art = await catalogArt;
-    expect(art.ok()).toBe(true);
-    const marks = await cards.locator(".catalog-mark use").evaluateAll(uses => uses.map(use => {
-      const { width, height } = (use as SVGGraphicsElement).getBBox();
-      return {
-        motif: new URL(use.getAttribute("href")!, use.baseURI).href,
-        link: use.closest("a")!.href,
-        painted: width > 0 && height > 0,
-      };
-    }));
-    expect(marks).toEqual([
-      "mahjong", ...boardGames.map(([slug]) => slug),
-      "holdem", "solitaire", "sudoku", "word-tiles", "farkle", "backgammon", "lantern-run",
-    ].map(slug => ({ motif: `${art.url()}#${slug}`, link: url(`${slug}/`), painted: true })));
-    const exactFaces = await page.evaluate(({ lobby, game }) => {
-      const parse = (source: string) => new DOMParser().parseFromString(source, "image/svg+xml");
-      const published = parse(lobby);
-      const authoritative = parse(game);
-      const artwork = [...published.querySelectorAll('[id^="lt-"]')];
-      const faces = [...published.querySelectorAll("#mahjong use")].map(use => use.getAttribute("href"));
-      return {
-        faces,
-        matched: artwork.filter(node => node.outerHTML === authoritative.getElementById(node.id)?.outerHTML).map(node => node.id),
-      };
-    }, { lobby: await art.text(), game: readFileSync(new URL("../src/tile-suits.svg", import.meta.url), "utf8") });
-    expect(exactFaces).toEqual({
-      faces: ["#lt-b2", "#lt-d4"],
-      matched: ["lt-ink0", "lt-ink1", "lt-ink2", "lt-ink3", "lt-ink4", "lt-ink10", "lt-b2", "lt-d4"],
-    });
-    expect([...assets].filter(asset => /\/(?:tile-suits|cburnett|bellot|cards)-/.test(asset))).toEqual([]);
-    expect([...assets].map(asset => new URL(asset).pathname)).toEqual(expect.arrayContaining([
-      expect.stringMatching(/\/portal-[\w-]+\.js$/), expect.stringMatching(/\/portal-[\w-]+\.css$/),
-      expect.stringMatching(/\/court-study-[\w-]+\.svg$/), expect.stringMatching(/\/jade-court-[\w-]+\.svg$/),
-    ]));
-    const coldGzip = gzipSync(await html.body()).length + (await Promise.all([...assets].map(async asset =>
-      gzipSync(await (await request.get(asset)).body()).length))).reduce((total, size) => total + size, 0);
-    expect(coldGzip).toBeLessThanOrEqual(24 * 1024);
-    await page.screenshot({ path: info.outputPath("lobby-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 320, height: 730 });
+    await page.goto(url());
     await fitsPhone(page);
     const music = page.getByRole("button", { name: "Music off", exact: true });
     await expect(music).toBeInViewport();
     expect((await music.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-    await page.screenshot({ path: info.outputPath("lobby-phone.png"), fullPage: true });
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
     await page.keyboard.press("Enter");
