@@ -83,6 +83,46 @@ test("catalog links announce the game and player context without changing the in
     "Solo · Draw one Build four suited piles from ace to king; alternate colors in the tableau.");
 });
 
+test("the 320px and 390px landing header fits all controls in one row with room for wider fonts", async ({ page }) => {
+  await page.goto("./");
+  const header = page.getByRole("banner");
+  const controls = [
+    header.getByRole("link", { name: "Jade Court · All games", exact: true }),
+    header.getByRole("button", { name: "Music off", exact: true }),
+    header.getByRole("button", { name: "Online lobby", exact: true }),
+    header.getByRole("link", { name: "Mahjong table", exact: true }),
+  ];
+  for (const font of ["default", "wider"]) {
+    if (font === "wider") {
+      await page.addStyleTag({ content: `
+        .header .brand-name { font-family: "DejaVu Serif", Georgia, serif; }
+        .header .site-nav .button { font-family: "DejaVu Sans", system-ui, sans-serif; }
+      ` });
+      await page.evaluate(() => document.fonts.ready);
+    }
+    for (const width of [390, 320]) {
+      await test.step(`${width}px, ${font} font metrics`, async () => {
+        await page.setViewportSize({ width, height: 780 });
+        const [brand, music, online, headerTable] = await Promise.all(controls.map(async control => (await control.boundingBox())!));
+        expect(headerTable.y).toBeLessThan(brand.y + brand.height);
+        let lastRight = 0;
+        for (const box of [brand, music, online, headerTable]) {
+          expect(box.y).toBeLessThan(brand.y + brand.height);
+          expect(box.x).toBeGreaterThanOrEqual(lastRight);
+          expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+          lastRight = box.x + box.width;
+        }
+        expect(lastRight).toBeLessThanOrEqual(width);
+        await fitsPhone(page);
+        await controls[2].focus();
+        await page.keyboard.press("Tab");
+        await expect(controls[3]).toBeFocused();
+        await expect(controls[3]).toHaveCSS("outline-style", "solid");
+      });
+    }
+  }
+});
+
 test("320px catalog keeps previews, copy and both hero actions usable", async ({ page, baseURL }) => {
   const href = (path: string) => new URL(path, baseURL).href;
   await page.setViewportSize({ width: 320, height: 740 });
@@ -122,12 +162,6 @@ test("320px catalog keeps previews, copy and both hero actions usable", async ({
     await page.setViewportSize({ width, height: 740 });
     await fitsPhone(page);
   }
-  await page.setViewportSize({ width: 390, height: 780 });
-  const brand = (await page.getByRole("link", { name: "Jade Court · All games" }).boundingBox())!;
-  const headerTable = (await page.getByRole("link", { name: "Mahjong table", exact: true }).boundingBox())!;
-  expect(headerTable.y).toBeLessThan(brand.y + brand.height);
-  expect(headerTable.height).toBeGreaterThanOrEqual(44);
-
   await page.setViewportSize({ width: 320, height: 740 });
   await choose.focus();
   for (const link of [play, featured, chess]) {

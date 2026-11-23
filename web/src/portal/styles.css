@@ -511,12 +511,15 @@ h1 { letter-spacing: -.036em; }
   :where(.header:has(+ main > .lobby)) .brand-name { font-size: clamp(1.075rem, 3.8vw, 1.17rem); }
   :where(.header:has(+ main > .lobby)) .site-nav { gap: 4px; }
   :where(.header:has(+ main > .lobby)) .site-nav .button { font-size: .76rem; padding-inline: .36rem; }
+  :where(.header:has(+ main > .lobby)) .site-nav .wide-nav-label { display: none; }
+  .header:has(+ main > .lobby) .lobby-mahjong-link { padding-inline-end: .36rem; }
 }
 @media (max-width: 360px) {
   .header { column-gap: 5px; }
   .brand { gap: 4px; }
   .brand-tile { width: 27px; }
   .brand-name { font-size: .96rem; }
+  :where(.header:has(+ main > .lobby)) .brand-name { font-size: .92rem; }
   .site-nav { gap: 3px; }
   .site-nav .button { font-size: .7rem; padding: 0 .36rem; }
   .site-nav .lobby-mahjong-link { padding-inline-end: calc(.36rem + .745rem); }
