@@ -108,7 +108,7 @@
   display: flex;
   align-items: end;
   padding: clamp(8px, 2.7vw, 23px);
-  background: linear-gradient(0deg, #192425ae, transparent 70%);
+  background: #1f28283b;
   overflow: auto;
 }
 .run-panel {
@@ -119,8 +119,8 @@
   border: 1px solid #d6b384;
   border-radius: 7px;
   color: #fff0d5;
-  background: #172824f2;
-  box-shadow: inset 0 0 0 3px #a7956a22, 0 5px 21px #0c13177a;
+  background: #253931;
+  box-shadow: inset 0 0 0 2px #a7956a4d, 0 4px #252821;
 }
 .run-panel h2 {
   margin-block: .12em .16em;
@@ -149,9 +149,9 @@
   border: 1px solid #70806c;
   border-radius: 5px;
   color: #ffedd0;
-  background: linear-gradient(155deg, #3a5043, #243c33);
+  background: #344c41;
   touch-action: manipulation;
-  box-shadow: inset 0 1px #ffffff18;
+  box-shadow: inset 0 -2px #253a32;
   font-weight: 690;
 }
 .run-control:hover:not(:disabled) { background: #405d4d; }
@@ -188,13 +188,13 @@
 
 @media (max-width: 510px) {
   .run-input-help { flex: 1 0 100%; order: -1; padding-block-start: 6px; }
-  .run-overlay { align-items: start; background: linear-gradient(180deg, #19242587, transparent 75%); }
+  .run-overlay { align-items: start; }
   .run-panel { align-self: start; margin-block-start: 0; }
 }
 @media (min-width: 690px) {
   .run-heading { grid-template-columns: minmax(max-content, 1fr) minmax(310px, 420px); }
   .run-stage { block-size: clamp(253px, 53dvh, 535px); }
-  .run-overlay { align-items: center; background: linear-gradient(90deg, #1222238c, transparent 59%); }
+  .run-overlay { align-items: center; }
   .run-panel { align-self: center; margin: 0; }
   .run-control { min-block-size: 47px; }
 }

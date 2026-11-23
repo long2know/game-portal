@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 300" preserveAspectRatio="none">
+  <defs>
+    <pattern id="plaster" width="173" height="67" patternUnits="userSpaceOnUse">
+      <path d="M0 0h173v67H0Z" fill="#373035"/>
+      <path d="m0 12 73-2 29 2 71-1v3l-87 2-20-2H0zm18 27 37-2 15 1-9 2-43 1zm79 21 29-3 32 2-23 2z" fill="#4b3d3d" opacity=".64"/>
+      <path d="m3 31 37-1m40-10 36 1m-50 37 31-1m43-26 23-1" fill="none" stroke="#221f25" opacity=".6"/>
+    </pattern>
+    <pattern id="paper" width="93" height="43" patternUnits="userSpaceOnUse">
+      <path d="M0 0h93v43H0Z" fill="#655e50"/>
+      <path d="m0 8 59-1 34 2v2l-40 1L0 10zm19 21 24-2 35 1-21 3z" fill="#9d8666" opacity=".35"/>
+      <path d="m9 18 27-1m21 4 28 1m-71 14 10-1m45-19 17 1" fill="none" stroke="#ac9a79" opacity=".44"/>
+    </pattern>
+    <pattern id="lattice" width="72" height="72" patternUnits="userSpaceOnUse">
+      <path d="M0 0h72v72H0ZM0 17h17V0m38 0v17h17M0 55h17v17m38 0V55h17M0 36h9l27-27 27 27h9M9 36l27 27 27-27" fill="none" stroke="#292729" stroke-width="2.5"/>
+      <path d="M18 36l18-18 18 18-18 18Z" fill="none" stroke="#c2a07a" opacity=".35"/>
+    </pattern>
+    <path id="screens" d="M78 64h422v165H78zm862 0h422v165H940zM551 77h338v152H551z"/>
+    <clipPath id="panels"><use href="#screens"/></clipPath>
+    <g id="post">
+      <path d="M-15 28h30v245h-30z" fill="#583c33"/>
+      <path d="m-14 48 9 1v53l-2 42 1 73-2 40h-6z" fill="#77543f"/>
+      <path d="M9 52v28l-2 3 1 54m2-17v107m-13-65-1 51m1-127-1 26m15 121 1 23" fill="none" stroke="#31262a"/>
+      <path d="M-22 35h44v13h-44zm-19 27h38v10h-38zm44 0h38v10H3zM-22 240h44v21h-44z" fill="#382c2c" stroke="#7d5945"/>
+      <path d="M-18 244h36m-31 11h22" stroke="#9c7351" opacity=".64"/>
+    </g>
+    <pattern id="sill" width="116" height="15" patternUnits="userSpaceOnUse">
+      <path d="M0 7h40l7-4h22l7 4h40M47 7h22l-5 4H52Z" fill="none" stroke="#b4815c" opacity=".4"/>
+    </pattern>
+  </defs>
+  <path d="M0 0h1440v300H0z" fill="url(#plaster)"/>
+  <path d="M58 50h460v190H58zm864 0h460v190H922zM533 63h374v177H533z" fill="#292428" stroke="#8c6249" stroke-width="2"/>
+  <use href="#screens" fill="url(#paper)"/>
+  <g clip-path="url(#panels)">
+    <path d="M0 192q70-10 109-36t74 4q43 16 73-25t86-28q38 20 57 53 24 31 102 53L551 188q84-43 110-26 44 31 91-14 40-30 137 21l51 24q43-11 71-52t83-29q29 8 51 35t57 7q28-16 54 19t84 34l80-9v52H0Z" fill="#4d5449"/>
+    <path d="M0 213q115 8 205-29 61-28 108-1 67 34 162 25l76-7q94-19 160 6 65 21 178-12l51 12q101 0 162-28 48-19 103 11 69 39 235 19v41H0Z" fill="#333d3d"/>
+    <path d="m91 218 49-5 34-10m84-16 22 1 23 7m284 8 45-7 41 1m296 16 32-3 31-10m88-15 20 2 31 11" fill="none" stroke="#85866a" opacity=".45"/>
+    <path d="M78 64h422v165H78zm862 0h422v165H940z" fill="url(#lattice)" opacity=".86"/>
+    <g fill="none" stroke="#a78b69" opacity=".61">
+      <path d="M551 88h338M551 215h338m-282-138v152m57-152v152m112-152v152m57-152v152M79 120h421m440 0h422"/>
+      <circle cx="720" cy="147" r="44"/>
+      <path d="M672 147h-28m124 0h28m-76-48V88m0 107v20"/>
+    </g>
+  </g>
+  <use href="#screens" fill="none" stroke="#97785c"/>
+  <path d="M0 228h1440v72H0z" fill="#37292a"/>
+  <path d="M0 233h1440v15H0z" fill="url(#sill)"/>
+  <path d="M0 257h1440v4H0zm0 20h1440v3H0z" fill="#77513c"/>
+  <path d="M0 261h1440v16H0zm0 19h1440v20H0z" fill="#252327"/>
+  <path d="M0 229h1440m-1440 21h1440" stroke="#8c6048"/>
+  <use href="#post" x="48"/><use href="#post" x="522"/><use href="#post" x="918"/><use href="#post" x="1392"/>
+  <path d="M0 0h1440v25H0zM0 36h1440v10H0z" fill="#282327"/>
+  <path d="M0 14h1440v14H0z" fill="#44312e"/>
+  <path d="M0 26h1440m-1440 20h1440m-1370-28 119-1 64 2 83-2m318 3 52-2 91 1 50-1m198 0 59 2 77-1" fill="none" stroke="#78523e" opacity=".63"/>
+  <path d="M49 28h186l-15 7H73zM501 28h438l-22 8H523zm704 0h186l-24 7h-147z" fill="#795340" opacity=".68"/>
+</svg>
