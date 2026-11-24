@@ -124,6 +124,7 @@ if (portalEnabled)
     WordsRules.Map(app);
     FarkleRules.Map(app);
     BackgammonRules.Map(app);
+    BigTwoRules.Map(app);
     SoloApi.Map(app);
     SocialApi.Map(app);
 }

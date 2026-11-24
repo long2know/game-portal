@@ -8,13 +8,14 @@ internal sealed record SocialPulse(string TabId, bool Active, bool Busy, bool? A
 internal sealed record SocialTarget(string Game, string TableId)
 {
     public bool Mahjong => Game == "mahjong";
-    public bool Board => Game is "chess" or "go" or "reversi" or "checkers" or "chinese-checkers";
+    public bool Board => Game is "chess" or "go" or "reversi" or "checkers" or "chinese-checkers" or "xiangqi" or "gomoku";
     public SeatedRules? Seated => Game switch
     {
         "holdem" => PokerRules.Game,
         "word-tiles" => WordsRules.Game,
         "farkle" => FarkleRules.Game,
         "backgammon" => BackgammonRules.Game,
+        "big-two" => BigTwoRules.Game,
         _ => null
     };
     public bool Supported => Mahjong || Board || Seated is not null;

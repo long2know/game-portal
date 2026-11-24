@@ -2,13 +2,15 @@
 
 Set `Portal__Enabled=true` to enable the game APIs and portal shell (the default is off). With
 `BASE_URL=/portal`, the base for assets, HTTP and WebSocket URLs is `/portal/`, including on
-`/portal/chess/`, `/portal/go/`, `/portal/reversi/`, `/portal/checkers/`, and
+`/portal/chess/`, `/portal/go/`, `/portal/reversi/`, `/portal/checkers/`,
 `/portal/chinese-checkers/`, `/portal/holdem/`, `/portal/solitaire/`, `/portal/sudoku/`,
-`/portal/word-tiles/`, `/portal/farkle/`, `/portal/backgammon/`, and `/portal/lantern-run/`. `/portal/mahjong/` and
+`/portal/word-tiles/`, `/portal/farkle/`, `/portal/backgammon/`, `/portal/lantern-run/`,
+`/portal/xiangqi/`, `/portal/gomoku/`, `/portal/mahjong-solitaire/`, and `/portal/big-two/`. `/portal/mahjong/` and
 its nested SPA routes serve the existing Changsha Mahjong client. The bare routes return
 a 308 with the query intact. Browsers retain the original fragment because the redirect
 does not supply one. Other shell
 paths return 404. The build publishes `index.html` and `portal.html` outside `wwwroot`.
+The same routes and redirects use `/game-portal/` when configured with `BASE_URL=/game-portal`.
 
 Lantern Run has no game API, multiplayer rooms, or invite links. It runs in the browser
 and stores only the local best finished score, separately for each mount such as `/portal/`
@@ -62,7 +64,7 @@ other guest's current profile name, and expiry is UTC ISO 8601. These responses 
 guest identities, current games, table IDs, or link credentials.
 
 `game` is one of `mahjong`, `chess`, `go`, `reversi`, `checkers`, `chinese-checkers`,
-`holdem`, `word-tiles`, `farkle`, or `backgammon` (the existing HTTP paths for Hold'em
+`xiangqi`, `gomoku`, `holdem`, `word-tiles`, `farkle`, `backgammon`, or `big-two` (the existing HTTP paths for Hold'em
 and Word Tiles are still `/api/poker` and `/api/words`). Send uses the sender's own
 waiting table ID: the sender must be seated, or be the current host for Mahjong, and
 there must be an open human seat. Sending does not reserve a seat. An identical pending
@@ -233,6 +235,47 @@ faces or a random seed.
   `{kind: "move", from, to, die}` uses a move from `position.legalActions.moves`;
   points are numbered 1–24, with `from: 0` for the bar and `to: 25` for bearing off.
   `{kind: "pass"}` is allowed only where advertised by `position.legalActions.canPass`.
+
+## Big Two
+
+[Big Two](big-two-rules.md) is a single unranked hand for exactly four seats, with
+no wagers. The normal seated guest cookie, same-origin writes, limits, and error
+responses apply under the configured mount.
+
+| Method and path | Body and result |
+| --- | --- |
+| `POST /api/big-two/tables` | `{players: 4, bots}`. With `bots: true`, one guest and three bots start immediately. Otherwise the fourth human starts play, whether joining by link or private player invite (`big-two`). |
+| `POST /api/big-two/join` | `{invite}` seats the guest; reusing the invite as a member does not add a seat or deal again. |
+| `GET /api/big-two/tables/{id}` | A member's own view of the committed table. |
+| `GET /api/big-two/resume` | `{tableId}` for the caller's most recently joined or created, unexpired waiting or playing table; otherwise `null`. |
+| `POST /api/big-two/tables/{id}/actions` | `{revision, action}` with `{kind: "play", cards: [cardId, ...]}` or `{kind: "pass"}`. |
+| `POST /api/big-two/tables/{id}/leave` | `{revision}` closes a waiting or playing table with `endReason: "left"` and no winner. |
+
+The table envelope is `{id, revision, status, seat, seats, invite, position, endReason?}`,
+as for Hold'em. Waiting tables have `position: null` and an invite; once play starts
+the invite is `null`. There is no `/next` endpoint: create a new table for another hand.
+Use the **outer** `revision`; a human action plus at most three bot actions commits
+as one revision. On `stale_room` (409), reload before trying again. Malformed actions
+return `invalid_request`; legal-shaped moves using cards not in the caller's hand or
+violating game rules return `illegal_action` when it is the caller's turn.
+
+For a dealt table, `position` is exactly:
+
+- `turnSeat` and `winnerSeat`: zero-based seat numbers or `null`. The first player out
+  sets `winnerSeat`, ends the hand and clears `turnSeat`; closing also clears `turnSeat`.
+- `seats`: `{seat, cardsRemaining}` for all four seats. `ownCards` holds only the
+  caller's remaining cards, sorted by Big Two strength. Each card is `{id, rank, suit}`;
+  `rank` is 2–14 (ace is 14) and `suit` is 0 clubs, 1 diamonds, 2 hearts, 3 spades.
+- `lastPlay`: `null` before a lead or once three passes clear the trick, otherwise
+  `{seat, cards, kind}` with only the publicly played cards. `kind` is `single`, `pair`,
+  `triple`, `straight`, `flush`, `full-house`, `four-of-a-kind`, or `straight-flush`.
+- `legalMasks`: legal plays for the active caller, with bit `i` selecting `ownCards[i]`
+  from this exact revision. Send the corresponding distinct card IDs (0–51), not the
+  mask. A play must have one, two, three, or five cards, in any input order.
+  `canPass` is true only for the active caller following a play. Other views, including
+  closed and finished tables, have `legalMasks: []` and `canPass: false`.
+
+No recipient receives other hands, a shuffle seed, or the private checkpoint.
 
 ## Solitaire and Sudoku
 
