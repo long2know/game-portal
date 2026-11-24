@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using JadeCourt.Chess;
+using JadeCourt.Games;
 
 namespace Mahjong.Server.Tests;
 
@@ -16,7 +17,7 @@ public sealed class BoardTableTests
         await using var server = PortalServer();
         await server.StartAsync();
         var catalog = await Catalog(new User(server));
-        Assert.Equal(new[] { "checkers", "chess", "chinese-checkers", "go", "reversi" },
+        Assert.Equal(new[] { "checkers", "chess", "chinese-checkers", "go", "gomoku", "reversi", "xiangqi" },
             catalog.Select(g => g.Text("id")).Order(StringComparer.Ordinal));
         var reversi = Definition(catalog, "reversi");
         var host = await Guest(server, "Host");
@@ -131,6 +132,84 @@ public sealed class BoardTableTests
         AssertNoMotion(read);
         Assert.Equal(Revision(committed), Revision(read));
         Assert.True(JsonElement.DeepEquals(Position(committed), Position(read)));
+    }
+
+    [Theory]
+    [InlineData("xiangqi", "standard", 10, 9, 44, "e4", "e5", "soldier")]
+    [InlineData("gomoku", "freestyle", 15, 15, 225, null, "r7c7", "stone")]
+    public async Task NewBoardBotTablesCommitBothPliesAndResumeAfterRestart(
+        string game, string variant, int rows, int columns, int legalCount, string? from, string to, string piece)
+    {
+        await using var server = PortalServer();
+        await server.StartAsync();
+        var guest = await Guest(server, "Host");
+        var definition = Definition(await Catalog(guest), game);
+        Assert.Equal(2, Assert.Single(definition.GetProperty("playerCounts").EnumerateArray()).GetInt32());
+        Assert.Equal(variant, Assert.Single(definition.GetProperty("variants").EnumerateArray()).Text("id"));
+
+        var before = await Create(guest, definition, 2, bots: true);
+        var opened = Position(before);
+        Assert.Equal((game, variant, "playing"), (before.Text("game"), before.Text("variant"), before.Text("status")));
+        Assert.Equal(0, before.GetProperty("seat").GetInt32());
+        Assert.Equal(0, opened.GetProperty("turn").GetInt32());
+        Assert.Equal((rows, columns), (opened.GetProperty("rows").GetInt32(), opened.GetProperty("columns").GetInt32()));
+        Assert.Collection(before.GetProperty("seats").EnumerateArray(),
+            human => Assert.False(human.GetProperty("bot").GetBoolean()),
+            bot => Assert.True(bot.GetProperty("bot").GetBoolean()));
+        var cells = Cells(before).ToDictionary(cell => cell.Text("id"), StringComparer.Ordinal);
+        Assert.Equal(rows * columns, cells.Count);
+        if (from is not null)
+        {
+            foreach (var (cellId, row, owner) in new[] { ("e1", rows - 1, 0), ("e10", 0, 1) })
+            {
+                var general = cells[cellId];
+                Assert.Equal((row, 4, owner, "general"), (general.GetProperty("row").GetInt32(),
+                    general.GetProperty("column").GetInt32(), general.GetProperty("owner").GetInt32(), general.Text("piece")));
+            }
+        }
+        else
+            Assert.All(cells.Values, cell => Assert.Equal(JsonValueKind.Null, cell.GetProperty("owner").ValueKind));
+
+        var moves = opened.GetProperty("moves");
+        Assert.Equal(legalCount, moves.GetArrayLength());
+        var humanMove = Assert.Single(moves.EnumerateArray(), move => move.Text("from") == from && move.Text("to") == to);
+        var revision = Revision(before);
+        var id = before.Text("id");
+        var path = Api + "/tables/" + id;
+        await Error(await guest.Request(HttpMethod.Post, path + "/moves", new { revision, moveId = "pass" }),
+            HttpStatusCode.BadRequest, "illegal_move");
+        var moveId = humanMove.Text("id");
+        var committed = await Ok(await guest.Request(HttpMethod.Post, path + "/moves", new { revision, moveId }));
+        var result = Position(committed);
+        Assert.Equal(0, result.GetProperty("turn").GetInt32());
+        var botMove = result.GetProperty("lastMove");
+        var engine = BoardGames.Find(game)!;
+        var afterHuman = engine.Apply(engine.Start(variant, 2), moveId);
+        Assert.Equal(engine.SelectBotMove(afterHuman), botMove.Text("id"));
+        Assert.Collection(AssertTurnMotion(before, committed),
+            human => AssertLanding(human, humanMove, 0, piece),
+            bot => AssertLanding(bot, botMove, 1, botMove.Text("from") is string origin ? cells[origin].Text("piece") : piece));
+
+        await AssertSaved();
+        await server.StopAsync();
+        await server.StartAsync();
+        await AssertSaved();
+
+        async Task AssertSaved()
+        {
+            Assert.Equal(id, await Resume(guest, game));
+            var read = await Ok(await guest.Request(HttpMethod.Get, path));
+            AssertNoMotion(read);
+            Assert.Equal(Revision(committed), Revision(read));
+            Assert.True(JsonElement.DeepEquals(result, Position(read)));
+        }
+
+        static void AssertLanding(JsonElement step, JsonElement move, int owner, string piece)
+        {
+            Assert.True(JsonElement.DeepEquals(move, step.GetProperty("move")));
+            var landing = Assert.Single(step.GetProperty("changes").EnumerateArray(), cell => cell.Text("id") == move.Text("to"));
+            Assert.Equal((owner, piece), (landing.GetProperty("owner").GetInt32(), landing.Text("piece")));
+        }
     }
 
     [Fact]
