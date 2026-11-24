@@ -36,12 +36,12 @@ class LanternTable {
   private readonly notice = el("div", "notice", this.noticeText, el("div", "notice-actions", this.retryButton, this.dismissButton));
   private readonly audio = new LanternAudio(fromPortal ? `${mahjongPath}audio` : undefined);
   private readonly modal = new Modal(() => this.modalClosed());
-  private readonly chatButton = iconButton("chat", "Table chat", () => void this.openChat());
+  private readonly chatButton = iconButton("chat", "Table chat", () => this.openChat());
   private readonly settingsButton = iconButton("settings", "Settings", () => this.openSettings());
   private chat?: ChatPanel;
   private readonly home = new HomeScreen({
     quick: () => void this.enter({ op: "createRoom", payload: { visibility: "invite", matchHands: 1, fillBots: true } }),
-    create: () => void this.openCreate(),
+    create: () => this.openCreate(),
     resume: () => this.session.resume(),
     join: inviteCode => void this.enter({ op: "joinRoom", payload: { inviteCode } }),
     publicJoin: roomId => void this.enter({ op: "joinRoom", payload: { roomId } }),
@@ -51,7 +51,7 @@ class LanternTable {
     ready: ready => { const room = this.bound(); if (room) this.command({ op: "setReady", payload: { ...room, ready } }); },
     bot: (seat, enabled) => { const room = this.bound(); if (room) this.command({ op: "setBot", payload: { ...room, seat, enabled } }); },
     start: () => { const room = this.bound(); if (room) this.command({ op: "start", payload: room }); },
-    invite: () => void this.openInvite(),
+    invite: () => this.openInvite(),
     invitePlayers: fromPortal ? opener => this.social?.open(opener, true) : undefined,
     leave: () => this.leave(),
   });
@@ -65,7 +65,8 @@ class LanternTable {
       });
     },
     selected: () => this.audio.play("select"),
-    results: () => void this.openResults(true),
+    results: () => this.openTableDialog(true, true),
+    manage: () => this.openTableDialog(),
     motionStopped: () => this.finishResultReveal(),
     pause: () => {
       const room = this.bound();
@@ -93,6 +94,7 @@ class LanternTable {
   private connectionBefore: Connection = "connecting";
   private resultKey = "";
   private resultReveal = 0;
+  private restartPending = false;
   private message = "";
   private overlayActions: HTMLButtonElement[] = [];
 
@@ -103,11 +105,8 @@ class LanternTable {
       brand.href = appPath;
       brand.setAttribute("aria-label", "Back to all games in Jade Court");
     }
-    const rulesButton = iconButton("book", "Changsha rules", () => {
-      void import("./mahjong-forms").then(({ rulesContent }) => {
-        if (!this.modal.root.open) this.modal.show("rules", "Changsha rules", rulesContent(), rulesButton);
-      }).catch(() => this.showNotice("Rules couldn’t load. Please try again."));
-    });
+    const rulesButton = iconButton("book", "Changsha rules", () => void this.openForm(({ rulesContent }) =>
+      this.modal.show("rules", "Changsha rules", rulesContent(), rulesButton)));
     const actions = el("div", "header-actions", this.connection, rulesButton, this.chatButton, this.settingsButton);
     if (fromPortal) {
       const control = iconButton("globe", "Online lobby", () => {});
@@ -239,6 +238,7 @@ class LanternTable {
       this.chat?.reset();
       void this.refresh();
     }
+    if (command.op === "restartMatch") this.restartPending = true;
   }
 
   private leave(): void {
@@ -281,6 +281,8 @@ class LanternTable {
       }
     }
     const available = this.session.available && !this.profileBusy && !this.handoffFailed;
+    const restarted = this.restartPending && available;
+    if (restarted) this.restartPending = false;
     this.social?.update({
       ready: !this.handoffFailed && (!!state && state.room.status !== "complete" || this.session.available),
       busy: !!state && state.room.status !== "complete",
@@ -291,7 +293,7 @@ class LanternTable {
     const scene = state?.room.status === "waiting" ? "waiting" : state?.game ? "play" : "home";
     const interrupted = this.connectionBefore === "online" && this.session.status !== "online" ||
       this.scene === "play" && scene !== "play";
-    if (interrupted) {
+    if (interrupted || restarted) {
       this.table.clearEffects();
       this.audio.clearEffects();
     }
@@ -307,7 +309,7 @@ class LanternTable {
       const initial = this.scene === null;
       this.scene = scene;
       this.main.replaceChildren(scene === "home" ? this.home.root : scene === "waiting" ? this.waiting.root : this.table.root);
-      if (this.modal.kind === "create" || this.modal.kind === "invite" || this.modal.kind === "results" ||
+      if (this.modal.kind === "create" || this.modal.kind === "invite" || this.modal.kind === "results" || this.modal.kind === "match" ||
         (scene === "home" && this.modal.kind === "chat")) {
         this.modal.close();
       }
@@ -324,8 +326,9 @@ class LanternTable {
       this.chat?.update(state.room.chat ?? [], state.self.seat, available);
       if (scene === "waiting") this.waiting.update(state, available);
       // Remember the same-room waiting projection before the first live hand.
-      if (state.game || scene === "waiting") cue = this.table.update(state, available, this.session.now, effect);
+      if (state.game || scene === "waiting") cue = this.table.update(state, available, this.session.now, effect && !restarted);
     }
+    if (restarted && this.modal.kind === "match") this.modal.close();
     this.audio.setTableActive(scene === "play" && this.session.status === "online" && !state?.room.paused);
     if (cue) this.audio.play(cue);
     this.overlayActions.forEach(control => { control.disabled = !available; });
@@ -339,9 +342,9 @@ class LanternTable {
         if ((cue === "win" || cue === "exhausted") && this.table.motionEnabled) {
           this.resultReveal = window.setTimeout(() => {
             this.resultReveal = 0;
-            if (!this.modal.root.open) void this.openResults();
+            if (!this.modal.root.open) this.openTableDialog(true);
           }, 540);
-        } else void this.openResults();
+        } else this.openTableDialog(true);
       }
       if (!key && this.modal.kind === "results") this.modal.close();
     } else if (this.resultReveal && (interrupted || !this.table.motionEnabled)) {
@@ -358,7 +361,7 @@ class LanternTable {
   private finishResultReveal(): void {
     if (!this.resultReveal) return;
     this.cancelResultReveal();
-    if (!this.modal.root.open) void this.openResults();
+    if (!this.modal.root.open) this.openTableDialog(true);
   }
 
   private modalClosed(): void {
@@ -367,12 +370,18 @@ class LanternTable {
     this.audio.preview();
   }
 
-  private async openCreate(): Promise<void> {
+  private async openForm(show: (forms: typeof import("./mahjong-forms")) => void, replace = false): Promise<void> {
     try {
-      const { showCreate } = await import("./mahjong-forms");
-      if (!this.session.available || this.session.savedRoomId || this.modal.root.open) return;
+      const forms = await import("./mahjong-forms");
+      if (replace || !this.modal.root.open) show(forms);
+    } catch { this.showNotice("This dialog couldn’t load. Please try again."); }
+  }
+
+  private openCreate(): void {
+    void this.openForm(({ showCreate }) => {
+      if (!this.session.available || this.session.savedRoomId) return;
       this.overlayActions = [showCreate(this.modal, payload => void this.enter({ op: "createRoom", payload }))];
-    } catch { this.showNotice("Table setup couldn’t load. Please try again."); }
+    });
   }
 
   private async openSettings(): Promise<void> {
@@ -410,56 +419,38 @@ class LanternTable {
     }
   }
 
-  private async openChat(): Promise<void> {
-    try {
-      const { ChatPanel } = await import("./mahjong-forms");
-      if (!this.session.snapshot || this.modal.root.open) return;
+  private openChat(): void {
+    void this.openForm(({ ChatPanel }) => {
+      if (!this.session.snapshot) return;
       this.chat ??= new ChatPanel(message => {
         const state = this.session.snapshot;
         if (state) this.command({ op: "chat", payload: { roomId: state.roomId, text: message } });
       });
       this.modal.show("chat", "Table chat", this.chat.root, this.chatButton);
       this.render();
-    } catch { this.showNotice("Table chat couldn’t load. Please try again."); }
+    });
   }
 
-  private async openInvite(): Promise<void> {
-    try {
-      const { showShareLink } = await import("./mahjong-forms");
-      const state = this.session.snapshot;
-      if (state?.room.status !== "waiting" || state.room.visibility !== "invite" || !state.self.inviteCode || this.modal.root.open) return;
-      showShareLink(this.modal, fromPortal ? mahjongPath : appPath, state.self.inviteCode);
-    } catch { this.showNotice("The share link couldn’t load. Please try again."); }
+  private openInvite(): void {
+    void this.openForm(({ showShareLink }) =>
+      showShareLink(this.modal, fromPortal ? mahjongPath : appPath, this.session.snapshot));
   }
 
-  private async openResults(explicit = false): Promise<void> {
-    this.cancelResultReveal();
+  private openTableDialog(results = false, explicit = false): void {
+    if (results) this.cancelResultReveal();
     const key = this.resultKey;
-    try {
-      const { resultsContent } = await import("./mahjong-forms");
-      if (key === this.resultKey && (explicit || !this.modal.root.open)) this.showResults(resultsContent);
-    } catch { this.showNotice("Results couldn’t load. Please try again."); }
-  }
-
-  private showResults(resultsContent: typeof import("./mahjong-forms").resultsContent): void {
-    const state = this.session.snapshot;
-    if (!state?.game?.settlement) return;
-    if (this.modal.kind === "settings") this.modalClosed();
-    const complete = state.room.status === "complete";
-    const controls: HTMLButtonElement[] = [];
-    if (!complete) controls.push(button("Next hand", "btn primary", () => {
-      const room = this.bound();
-      if (room) this.command({ op: "nextHand", payload: room });
-    }));
-    if (complete && state.room.hostSeat === state.self.seat) controls.push(button("Rematch", "btn primary", () => {
-      const room = this.bound();
-      if (room) this.command({ op: "rematch", payload: room });
-    }));
-    if (complete) controls.push(button("Leave table", "btn subtle", () => this.leave()));
-    this.overlayActions = controls;
-    controls.forEach(control => { control.disabled = !this.session.available; });
-    const content = resultsContent(state, controls);
-    this.modal.show("results", complete ? "Match results" : "Hand results", content);
+    void this.openForm(({ showTableDialog }) => {
+      if (results ? key !== this.resultKey : !this.session.available) return;
+      if (this.modal.kind === "settings") this.modalClosed();
+      showTableDialog({
+        modal: this.modal, opener: this.table.optionsButton, snapshot: () => this.session.snapshot,
+        command: action => this.command(action),
+        actions: controls => {
+          this.overlayActions = controls;
+          controls.forEach(control => { control.disabled = !this.session.available; });
+        },
+      }, results);
+    }, explicit);
   }
 }
 

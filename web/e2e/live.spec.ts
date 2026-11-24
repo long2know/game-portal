@@ -297,6 +297,14 @@ test("invite table with two cookie sessions: settings, chat, retry, legal match 
     expect(paused.self.legalOptions).toHaveLength(0);
     if (paused.game?.window) expect(paused.game.window.deadlineUtc).toBeNull();
     await expect(page.getByText("Table paused", { exact: true })).toBeVisible();
+    for (const player of [host, visitor]) {
+      await expect(player.page.getByRole("button", { name: "Table options" })).toHaveCount(0);
+    }
+    await visitor.page.goto("about:blank");
+    await host.waitFor(state => state.room.seats.some(seat => seat.seat === joined.self.seat && seat.kind === "human" && !seat.connected));
+    await expect(page.getByRole("button", { name: "Table options" })).toHaveCount(0);
+    await visitor.open();
+    await host.waitFor(state => state.room.seats.some(seat => seat.seat === joined.self.seat && seat.connected));
     await page.screenshot({ path: testInfo.outputPath("live-two-human-table.png"), fullPage: true });
     await host.click("Resume");
     await host.waitFor(state => !state.room.paused);
@@ -306,6 +314,8 @@ test("invite table with two cookie sessions: settings, chat, retry, legal match 
     expect(host.kinds.has("discard")).toBe(true);
     const result = page.getByRole("dialog", { name: "Match results" });
     await expect(result.getByRole("row")).toHaveCount(5);
+    await expect(result.getByRole("button", { name: "New game" })).toHaveCount(0);
+    await expect(result.getByRole("button", { name: "Leave table" })).toBeEnabled();
     expect(finished.game!.settlement!.seatResults.reduce((sum, score) => sum + score.delta, 0)).toBe(0);
     expect(await result.getByRole("row").nth(1).getByRole("cell").nth(1).textContent()).toBe(
       finished.game!.settlement!.seatResults[0].total > 0 ? `+${finished.game!.settlement!.seatResults[0].total}` :
@@ -355,6 +365,7 @@ test("normal pacing: public discovery, atomic bot table, takeover and a real dis
     await visitor.waitFor(state => state.roomId === publicTable.roomId);
     await visitor.click("Leave table");
     await expect(visitor.page.getByRole("heading", { name: "Find your fourth." })).toBeVisible();
+    await visitor.page.close();
     await host.click("Leave table");
     await expect(page.getByRole("heading", { name: "Find your fourth." })).toBeVisible();
 
@@ -421,7 +432,7 @@ test("normal pacing: public discovery, atomic bot table, takeover and a real dis
         return {
           board: bounds(".board-plane"), rack: bounds(".hand-grid"), controls: bounds(".table-actions"),
           tile: bounds(`[data-tile-id="${CSS.escape(id)}"]`),
-          confirm: bounds(".discard-confirm"), pause: bounds(".pause-btn"),
+          confirm: bounds(".discard-confirm"), pause: bounds(".pause-btn"), options: bounds('[aria-label="Table options"]'),
           documentWidth: document.documentElement.scrollWidth,
           documentHeight: document.documentElement.scrollHeight, scrollY: window.scrollY,
         };
@@ -435,7 +446,7 @@ test("normal pacing: public discovery, atomic bot table, takeover and a real dis
       expect(after.rack.y).toBeGreaterThan(after.board.bottom);
       expect(after.rack.bottom).toBeLessThanOrEqual(height - insets[2]);
       expect(after.tile).toMatchObject(before);
-      for (const target of [after.tile, after.confirm, after.pause]) {
+      for (const target of [after.tile, after.confirm, after.pause, after.options]) {
         expect(Math.min(target.width, target.height)).toBeGreaterThanOrEqual(44);
         expect(target.transform).toBe("none");
         expect(target.x).toBeGreaterThanOrEqual(insets[3]);
@@ -470,7 +481,7 @@ test("normal pacing: public discovery, atomic bot table, takeover and a real dis
     await host.click("Settings");
     await host.click("Back to lobby");
     await expect(page.getByRole("button", { name: "Resume your table" })).toBeEnabled();
-    await host.click("Resume your table");
+    await page.reload();
     await expect(page.getByRole("region", { name: "Mahjong table" })).toBeVisible();
     expect(host.state?.roomId).toBe(botTable.roomId);
     expect(host.errors).toEqual([]);

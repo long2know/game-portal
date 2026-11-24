@@ -251,12 +251,32 @@ public sealed class RealtimeTests
         Assert.Equal("stale_room", (await owner.Ack(secondId)).Error());
         var playing = await winner.Snapshot(s => s.Status() == "playing");
         Assert.Equal(1, playing.Table().GetProperty("handNumber").GetInt32());
-        (await winner.Command("leaveRoom", new { roomId, expectedRoomRevision = playing.RoomRevision() })).Ok();
+        (await owner.Command("setPaused", new { roomId, expectedRoomRevision = playing.RoomRevision(), paused = true })).Ok();
+        var paused = await winner.Snapshot(s => s.At("room", "paused").GetBoolean());
+        var expectedRoomRevision = paused.RoomRevision();
+        var version = new { roomId, expectedRoomRevision };
+        var abandon = new { roomId, expectedRoomRevision, abandon = true };
+        Assert.Equal("forbidden", (await winner.Command("restartMatch", version)).Error());
+        Assert.Equal("forbidden", (await winner.Command("leaveRoom", abandon)).Error());
+
+        var leaveId = Guid.NewGuid();
+        var left = await winner.Command("leaveRoom", version, leaveId);
+        left.Ok();
         var detached = await owner.Snapshot(s => s.Status() == "playing" && !s.Connected(3));
-        Assert.Equal(playing.RoomRevision(), detached.RoomRevision());
+        Assert.Equal(expectedRoomRevision, detached.RoomRevision());
+        Assert.Equal("invalid_state", (await owner.Command("restartMatch", version)).Error());
+        Assert.Equal("invalid_state", (await owner.Command("leaveRoom", abandon)).Error());
         Assert.Equal(roomId, (await winnerUser.Guest()).Text("resumeRoomId"));
         (await winner.Sync(roomId)).Ok();
-        Assert.True((await winner.Snapshot()).Connected(3));
+        var returned = await winner.Snapshot();
+        Assert.True(returned.Connected(3));
+        Assert.Equal(detached.Table().GetRawText(), returned.Table().GetRawText());
+        var replay = await winner.Command("leaveRoom", new { roomId, expectedRoomRevision, abandon = false }, leaveId);
+        Assert.Equal(left.GetRawText(), replay.GetRawText());
+        await winner.Send(new { v = 1, type = "renewLease" });
+        Assert.Equal("lease", (await winner.Take()).Text("type"));
+        Assert.Equal("request_conflict", (await winner.Command("leaveRoom", abandon, leaveId)).Error());
+        (await winner.Command("chat", new { roomId, text = "Still attached" })).Ok();
     }
 
     private static async Task<JsonElement[]> Listed(User user)

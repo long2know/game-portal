@@ -158,6 +158,7 @@ a.brand::before { content: "‹"; color: var(--gold); }
   background: linear-gradient(155deg, #253933, #15251f); border: 1px solid var(--line); border-radius: 10px;
 }
 .turn-ident, .turn-tools { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.turn-tools { flex: none; }
 .turn-title { color: #fff3d4; overflow-wrap: anywhere; line-height: 1.1; }
 .game-info { font-size: .77rem; line-height: 1.2; color: var(--muted); }
 .timer {
@@ -165,7 +166,7 @@ a.brand::before { content: "‹"; color: var(--gold); }
   border: 1px solid #6c8372; color: #e0f6e8; font-variant-numeric: tabular-nums; font-size: .82rem; background: #192d25;
 }
 .timer.urgent { border-color: #b68266; background: #502f25; color: #ffe0af; }
-.pause-btn { padding-inline: 8px; font-size: .82rem; }
+.pause-btn { min-width: 44px; padding-inline: 0; font-size: .82rem; }
 .board-stage {
   --plane-inset: 9% 10.5% 10%;
   --projection: perspective(var(--table-distance, 1000px)) rotateX(var(--table-tilt, 28deg));
@@ -479,6 +480,7 @@ a.brand::before { content: "‹"; color: var(--gold); }
 @media (max-width: 365px) {
   .brand-kicker { font-size: .64rem; }
   .connection { font-size: .72rem; white-space: normal; }
+  .turn-ident { flex-wrap: wrap; gap: 2px; }
   [data-portal-mahjong] .site-header:has([aria-label="Table chat"]:not([hidden])) .brand-symbol,
   [data-portal-mahjong] .site-header:has([aria-label="Table chat"]:not([hidden])) .brand::before { display: none; }
 }
@@ -546,7 +548,8 @@ a.brand::before { content: "‹"; color: var(--gold); }
   }
   .turnbar { flex-wrap: wrap; align-self: start; padding: 3px 7px; gap: 3px; }
   .turn-ident { flex: 1 1 72px; flex-direction: column; align-items: start; gap: 2px; }
-  .turn-tools { gap: 4px; }
+  .turn-tools { gap: 2px; }
+  .timer { padding-inline: 2px; }
   .board-stage {
     --plane-inset: 8% 7% 11%; --table-distance: 850px; --table-tilt: 31deg;
     height: clamp(166px, calc(100dvh - var(--safe-t) - var(--safe-b) - var(--dock-reserve)), 385px);
@@ -606,19 +609,14 @@ a.brand::before { content: "‹"; color: var(--gold); }
   .wall--near { top: 90%; }
   .play:not(:has(.local-melds > :nth-child(3), .local-melds > .meld-added)) .turnbar {
     display: grid; grid-template: "turn tools" auto "info info" auto / minmax(3rem, 1fr) minmax(0, max-content);
+    &:has(.icon-btn:not([hidden])) { grid-template: "turn info" "tools tools" / 1fr auto; }
   }
   .play:not(:has(.local-melds > :nth-child(3), .local-melds > .meld-added)) .turn-ident { display: contents; }
   .turn-title { grid-area: turn; }
   .game-info { grid-area: info; }
-  .turn-tools { grid-area: tools; flex: none; }
+  .turn-tools { grid-area: tools; }
   .play:not(:has(.local-melds > :nth-child(3), .local-melds > .meld-added)) .turn-tools {
-    flex-wrap: wrap; justify-content: flex-end; gap: 2px;
-  }
-  .play:not(:has(.local-melds > :nth-child(3), .local-melds > .meld-added)) .timer {
-    padding-inline: 3px; white-space: normal;
-  }
-  .play:not(:has(.local-melds > :nth-child(3), .local-melds > .meld-added)) .pause-btn {
-    min-width: 44px; padding-inline: 4px;
+    justify-content: flex-end;
   }
   .table-actions .discard-confirm { padding-inline: 5px; font-size: .875rem; }
   .rack { column-gap: 4px; }

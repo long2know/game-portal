@@ -1,8 +1,8 @@
 import type { Modal } from "./dialog";
 import { button, el, reconcile, winds } from "./dom";
-import type { ChatMessage, Face, Payloads, Seat, Snapshot } from "./protocol";
+import type { Action, ChatMessage, Face, Payloads, Seat, Snapshot } from "./protocol";
 import { field, submit, toggle } from "./screens";
-import { setMelds } from "./table";
+import { canManageMatch, setMelds } from "./table";
 import { tileLabel } from "./tile";
 
 export function showCreate(modal: Modal, enter: (payload: Payloads["createRoom"]) => void): HTMLButtonElement {
@@ -21,9 +21,10 @@ export function showCreate(modal: Modal, enter: (payload: Payloads["createRoom"]
   return create;
 }
 
-export function showShareLink(modal: Modal, path: string, inviteCode: string): void {
+export function showShareLink(modal: Modal, path: string, state: Snapshot | null): void {
+  if (state?.room.status !== "waiting" || state.room.visibility !== "invite" || !state.self.inviteCode) return;
   const link = new URL(path, location.origin);
-  link.hash = new URLSearchParams({ invite: inviteCode }).toString();
+  link.hash = new URLSearchParams({ invite: state.self.inviteCode }).toString();
   const input = el("input");
   input.readOnly = true;
   input.value = link.href;
@@ -117,13 +118,15 @@ function resultRack(name: string, tiles: Face[], style = ""): HTMLElement {
   return rack;
 }
 
-export function resultsContent(state: Snapshot, actions: HTMLElement[]): HTMLElement {
+function resultsContent(state: Snapshot, actions: HTMLElement[], managed: boolean): HTMLElement {
   const game = state.game!;
   const settlement = game.settlement!;
   const seatName = (seat: Seat) => state.room.seats.find(item => item.seat === seat)?.displayName ?? winds[seat];
   const summary = settlement.reason === "draw" ? "The hand ended in a draw." : `${settlement.winners.map(item => seatName(item.seat)).join(" and ")} won this hand.`;
   const root = el("div", "form", el("p", "eyebrow", `Hand ${game.handNumber} of ${state.room.matchHands}`),
     el("p", "detail", summary));
+  const actionRow = el("div", "row-actions", ...actions);
+  if (managed) root.append(actionRow);
   const head = el("thead", "", el("tr", "", el("th", "", "Seat"), el("th", "", "Hand"), el("th", "", "Total")));
   const deltas = el("tbody");
   settlement.seatResults.forEach(row => {
@@ -157,6 +160,77 @@ export function resultsContent(state: Snapshot, actions: HTMLElement[]): HTMLEle
     el("ul", "inline-list", ...settlement.transfers.map(transfer =>
       el("li", "", `${seatName(transfer.fromSeat)} → ${seatName(transfer.toSeat)}: ${transfer.points} (${transfer.reason})`)))));
   if (state.room.status === "betweenHands") root.append(el("p", "note", `Next dealer: ${seatName(settlement.nextDealerSeat)}.`));
-  if (actions.length) root.append(el("div", "row-actions", ...actions));
+  if (!managed && actions.length) root.append(actionRow);
   return root;
+}
+
+interface TableDialog {
+  modal: Modal;
+  opener: HTMLButtonElement;
+  snapshot: () => Snapshot | null;
+  actions: (controls: HTMLButtonElement[]) => void;
+  command: (action: Action) => void;
+}
+
+const matchActions = {
+  restartMatch: {
+    label: "New game",
+    warning: "Start over with the same bots and settings. This replaces the current match and clears its scores.",
+  },
+  quit: {
+    label: "Quit table",
+    warning: "End this match and return to the Mahjong lobby. You won’t be able to resume. To keep an ongoing match, use Back to lobby in Settings instead.",
+  },
+} as const;
+type MatchAction = keyof typeof matchActions;
+
+export function showTableDialog({ modal, opener, snapshot, actions, command }: TableDialog, results: boolean): void {
+  const state = snapshot();
+  const managed = canManageMatch(state);
+  if (!state?.game || (results ? !state.game.settlement : !managed)) return;
+  const complete = state.room.status === "complete";
+  const send = (op: MatchAction | "nextHand" | "rematch" | "leaveRoom") => {
+    const current = snapshot();
+    if (current?.roomId !== state.roomId ||
+      ((op === "restartMatch" || op === "quit") && !canManageMatch(current))) return;
+    const payload = { roomId: current.roomId, expectedRoomRevision: current.roomRevision };
+    command(op === "quit" ? { op: "leaveRoom", payload: { ...payload, abandon: true } } : { op, payload });
+  };
+  const controls: HTMLButtonElement[] = [];
+  const title = results ? complete ? "Match results" : "Hand results" : "Table options";
+  const show = () => {
+    modal.show(results ? "results" : "match", title, content, managed ? opener : undefined);
+    actions(controls);
+  };
+  if (results && !complete) controls.push(button("Next hand", "btn primary", () => send("nextHand")));
+  if (managed) {
+    const add = (op: MatchAction) => {
+      const { label, warning } = matchActions[op];
+      const choice = button(label, "btn secondary", () => {
+        const cancel = button("Cancel", "btn subtle", () => {
+          show();
+          choice.focus({ preventScroll: true });
+        });
+        const confirm = button(op === "restartMatch" ? "Start new game" : "Quit table", "btn primary", () => {
+          actions([confirm, cancel]);
+          send(op);
+        });
+        const detail = el("p", "detail", warning);
+        detail.id = "match-warning";
+        confirm.setAttribute("aria-describedby", detail.id);
+        modal.show("match", `${label}?`, el("div", "form", detail, el("div", "row-actions", cancel, confirm)));
+        actions([confirm]);
+        cancel.focus({ preventScroll: true });
+      });
+      controls.push(choice);
+    };
+    add("restartMatch");
+    add("quit");
+  } else if (complete) {
+    if (state.room.hostSeat === state.self.seat) controls.push(button("Rematch", "btn primary", () => send("rematch")));
+    controls.push(button("Leave table", "btn subtle", () => send("leaveRoom")));
+  }
+  const content = results ? resultsContent(state, controls, managed) : el("div", "form",
+    el("p", "detail", "Start over with these bots or leave this table permanently."), el("div", "row-actions", ...controls));
+  show();
 }

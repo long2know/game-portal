@@ -206,7 +206,15 @@ internal static class Wire
 
         if (!IsLocator(roomId) || !Revision(payload.Get("expectedRoomRevision"), out var revision))
             return null;
-        if (op is "start" or "nextHand" or "leaveRoom" or "rematch")
+        if (op == "leaveRoom")
+        {
+            var abandon = false;
+            var value = payload.Get("abandon");
+            return Fields(payload, "roomId", "expectedRoomRevision", "abandon")
+                && (value.ValueKind == JsonValueKind.Undefined || value.TryFlag(out abandon))
+                ? new(op, roomId, Flag: abandon, Revision: revision) : null;
+        }
+        if (op is "start" or "nextHand" or "rematch" or "restartMatch")
             return Fields(payload, "roomId", "expectedRoomRevision") ? new(op, roomId, Revision: revision) : null;
         var flagField = op switch { "setReady" => "ready", "setPaused" => "paused", "setBot" => "enabled", _ => null };
         if (flagField is null || !payload.Get(flagField).TryFlag(out var flag)) return null;

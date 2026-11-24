@@ -116,7 +116,7 @@ internal sealed class Kestrel : IAsyncDisposable
     }
 }
 
-internal sealed class User(Kestrel server)
+internal sealed class User(Kestrel server, string mount = "")
 {
     public CookieContainer Cookies { get; } = new();
 
@@ -125,7 +125,7 @@ internal sealed class User(Kestrel server)
     {
         using var handler = new HttpClientHandler { CookieContainer = Cookies, UseProxy = false };
         using var http = new HttpClient(handler) { BaseAddress = server.Address, Timeout = TimeSpan.FromSeconds(10) };
-        using var request = new HttpRequestMessage(method, path);
+        using var request = new HttpRequestMessage(method, mount + path);
         if (includeOrigin) request.Headers.TryAddWithoutValidation("Origin", origin ?? server.Origin);
         if (body is not null) request.Content = body as HttpContent ?? JsonContent.Create(body);
         return await http.SendAsync(request);
@@ -145,7 +145,7 @@ internal sealed class User(Kestrel server)
         ws.Options.Proxy = null;
         ws.Options.SetRequestHeader("Origin", server.Origin);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        await ws.ConnectAsync(new UriBuilder(server.Address) { Scheme = "ws", Path = path }.Uri, timeout.Token);
+        await ws.ConnectAsync(new UriBuilder(server.Address) { Scheme = "ws", Path = mount + path }.Uri, timeout.Token);
         var client = new Client(ws);
         var lease = await client.Take("lease");
         client.Lease = lease.GetProperty("lease").GetString()!;
@@ -187,15 +187,15 @@ internal sealed class Client(ClientWebSocket socket) : IDisposable
 
     public Task<JsonElement> Snapshot(Func<JsonElement, bool>? predicate = null) => Take("snapshot", predicate);
 
-    public async Task<JsonElement> Take(string type, Func<JsonElement, bool>? predicate = null)
+    public async Task<JsonElement> Take(string? type = null, Func<JsonElement, bool>? predicate = null)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         while (true)
         {
             var message = await Read(timeout.Token);
-            Assert.True(message.HasValue, $"Socket closed with code {socket.CloseStatus} while awaiting {type}.");
+            Assert.True(message.HasValue, $"Socket closed with code {socket.CloseStatus} while awaiting {type ?? "a message"}.");
             var value = message.Value;
-            if (value.Text("type") == type && (predicate is null || predicate(value))) return value;
+            if ((type is null || value.Text("type") == type) && (predicate is null || predicate(value))) return value;
         }
     }
 
