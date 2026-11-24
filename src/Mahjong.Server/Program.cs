@@ -126,6 +126,7 @@ if (portalEnabled)
     BackgammonRules.Map(app);
     BigTwoRules.Map(app);
     SoloApi.Map(app);
+    SavesApi.Map(app);
     SocialApi.Map(app);
 }
 app.MapGet("/ws", (HttpContext context, Realtime realtime) => realtime.InvokeAsync(context)).RequireRateLimiting("read");

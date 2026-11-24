@@ -29,6 +29,11 @@ internal sealed class SeatedMembershipRow
 
 internal static class SeatedPersistence
 {
+    public static IOrderedQueryable<SeatedMembershipRow> ResumableMemberships(MahjongDb db, Guid guest, long now) =>
+        db.SeatedMemberships.AsNoTracking()
+            .Where(m => m.GuestId == guest && m.Table.ExpiresAtTicks > now && (m.Table.Status == "waiting" || m.Table.Status == "playing"))
+            .OrderByDescending(m => m.JoinedAtTicks).ThenByDescending(m => m.TableId);
+
     public static void Configure(ModelBuilder builder)
     {
         builder.Entity<SeatedTableRow>(table =>

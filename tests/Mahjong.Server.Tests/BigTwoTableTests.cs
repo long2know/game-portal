@@ -44,6 +44,7 @@ public sealed class BigTwoTableTests
         Assert.Equal(0, Counts(after)[winner.Value]);
         Assert.Equal(winner.Value, Position(after).At("lastPlay", "seat").GetInt32());
         Assert.Null((await Read(host, Api + "/resume")).Text("tableId"));
+        Assert.Empty((await Read(host, "/api/saves")).GetProperty("saves").EnumerateArray());
         await Error(await host.Request(HttpMethod.Post, path + "/actions", Pass(Revision(after))),
             HttpStatusCode.BadRequest, "game_finished");
         await Error(await host.Request(HttpMethod.Post, path + "/next", new { revision = Revision(after) }),

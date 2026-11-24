@@ -30,6 +30,37 @@ protocol](protocol.md#commands) at `/portal/ws`, not the HTTP table routes below
 A sole human host can restart a bot match in place or explicitly abandon the room
 without a reservation; an ordinary leave from an ongoing match still reserves the seat.
 
+## Continue playing
+
+`GET /api/saves` is portal-only, relative to `BASE_URL` (for example
+`/portal/api/saves` or `/game-portal/api/saves`). It uses the shared portal read quota
+and returns `Cache-Control: no-store`. Without a valid protected guest cookie it
+returns `{saves: []}` without creating a guest or issuing `Set-Cookie`. A correctly
+signed cookie whose guest no longer exists returns `not_authenticated` (401).
+
+The response is `{saves: [{game, tableId, variant, players, botDifficulty, canStartFresh}]}`,
+sorted by `game`. Every entry includes all six keys, using `null` for inapplicable
+setup fields. These are the caller's own resumptions: no position, seat options,
+guest IDs, or invite credentials are included. Reading the list neither refreshes
+expiry nor changes a save. Continue using the existing member endpoint or Mahjong
+WebSocket `sync`; the list does not authorize a new membership or any write.
+
+| Game | Target and setup fields | When `canStartFresh` is true |
+| --- | --- | --- |
+| Shared boards | Catalog game ID, `tableId`, `variant`, `players`, and `botDifficulty` only for bot Chess (`standard` by default). | The guest owns the bot table. Creating another with those options preserves the prior table. |
+| Seated games | Catalog slug (`holdem`, `word-tiles`, `farkle`, `backgammon`, or `big-two`), `tableId` and `players`. | The guest owns the bot table. Create another for the same player count; the prior table is unchanged. |
+| Solitaire and Sudoku | `solitaire` or `sudoku` and the saved `variant`; `tableId` is `null`. | The guest has a save. Dealing that variant through the existing endpoint replaces it. |
+| Changsha Mahjong | `mahjong` and the durable member's `tableId` (room ID); other setup fields are `null`. | The member is the room host with exactly three bots, and the room is `playing`, `betweenHands`, or `complete`. Restart in place only after normal WebSocket attachment, using `restartMatch` with the current room revision. |
+
+For board and seated games the most recently joined or created eligible table per
+game is selected, with descending table ID breaking a timestamp tie, as on the
+game's resume endpoint. Expired and explicitly ended board tables are skipped;
+naturally finished board tables remain when resumable. Seated games only include
+unexpired waiting and playing tables. A shared seat, including a disconnected
+Mahjong reservation, can be listed without offering a fresh start. Mahjong waiting
+rooms never offer a fresh start. Browser-local Mahjong Solitaire and Lantern Run
+have no server saves.
+
 ## Private player invites
 
 These endpoints are portal-only. Paths are relative to `BASE_URL` (for example,

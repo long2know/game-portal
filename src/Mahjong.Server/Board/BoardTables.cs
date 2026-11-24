@@ -165,9 +165,7 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
         FindGame(game);
         await using var db = await factory.CreateDbContextAsync(stop);
         var now = time.GetUtcNow().UtcTicks;
-        return await db.BoardMemberships.AsNoTracking()
-            .Where(m => m.GuestId == guest && m.Table.Game == game && m.Table.EndReason == null && m.Table.ExpiresAtTicks > now)
-            .OrderByDescending(m => m.JoinedAtTicks).ThenByDescending(m => m.TableId)
+        return await BoardPersistence.ResumableMemberships(db, guest, now).Where(m => m.Table.Game == game)
             .Select(m => m.TableId).FirstOrDefaultAsync(stop);
     }
 
@@ -299,7 +297,10 @@ internal sealed class BoardTables(IDbContextFactory<MahjongDb> factory, BoardReg
     }
 
     private static string? Difficulty(BoardTableRow table) =>
-        table.Game == "chess" && table.Bots ? table.BotDifficulty ?? StandardDifficulty : null;
+        Difficulty(table.Game, table.Bots, table.BotDifficulty);
+
+    public static string? Difficulty(string game, bool bots, string? configured) =>
+        game == "chess" && bots ? configured ?? StandardDifficulty : null;
 
     private sealed record TurnResult(string Checkpoint, GamePosition Position);
 

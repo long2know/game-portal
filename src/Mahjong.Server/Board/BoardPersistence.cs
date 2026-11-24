@@ -31,6 +31,11 @@ internal sealed class BoardMembershipRow
 
 internal static class BoardPersistence
 {
+    public static IOrderedQueryable<BoardMembershipRow> ResumableMemberships(MahjongDb db, Guid guest, long now) =>
+        db.BoardMemberships.AsNoTracking()
+            .Where(m => m.GuestId == guest && m.Table.EndReason == null && m.Table.ExpiresAtTicks > now)
+            .OrderByDescending(m => m.JoinedAtTicks).ThenByDescending(m => m.TableId);
+
     public static void Configure(ModelBuilder builder)
     {
         builder.Entity<BoardTableRow>(table =>

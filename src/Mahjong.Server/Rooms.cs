@@ -186,6 +186,21 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
         return new { rooms };
     }
 
+    public static async Task<(string RoomId, bool CanStartFresh)?> ResumeTargetAsync(MahjongDb db, Guid guest, long now,
+        CancellationToken stop)
+    {
+        var saved = await (from member in db.Memberships.AsNoTracking()
+            join room in db.Rooms.AsNoTracking() on member.RoomId equals room.Id
+            where member.GuestId == guest && room.ExpiresAtTicks > now
+            select new { room.Id, member.Seat, Checkpoint = !room.Waiting && room.OccupiedSeats == 4 ? room.Checkpoint : null })
+            .SingleOrDefaultAsync(stop);
+        if (saved is null) return null;
+        if (saved.Checkpoint is null) return (saved.Id, false);
+        var checkpoint = RoomCheckpoint.Read(saved.Id, saved.Checkpoint);
+        return (saved.Id, checkpoint.HostSeat == saved.Seat && checkpoint.Seats[saved.Seat].GuestId == guest
+            && IsRestartableBotRoom(checkpoint));
+    }
+
     public void IssueLease(Peer peer)
     {
         var utc = time.GetUtcNow();
@@ -535,8 +550,7 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
             case "rematch" when room.Status == "complete":
                 RoomGame.Rematch(room);
                 return null;
-            case "restartMatch" when room.Status is "playing" or "betweenHands" or "complete":
-                if (room.Seats.Count(chair => chair.IsBot && !chair.GuestId.HasValue) != 3) return "invalid_state";
+            case "restartMatch" when IsRestartableBotRoom(room):
                 game.RestartMatch(room, utc);
                 return null;
             case "leaveRoom" when !intent.Flag || room.Seats.Count(chair => chair.GuestId.HasValue) == 1:
@@ -545,6 +559,10 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
                 return "invalid_state";
         }
     }
+
+    private static bool IsRestartableBotRoom(RoomCheckpoint room) =>
+        room.Status is ("playing" or "betweenHands" or "complete")
+        && room.Seats.Count(chair => chair.IsBot && !chair.GuestId.HasValue) == 3;
 
     private static string? Chat(RoomCheckpoint room, int seat, string text, DateTimeOffset utc)
     {

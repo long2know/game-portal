@@ -63,12 +63,14 @@ internal sealed class RoomCheckpoint
     private static long Increment(long revision) => revision < Wire.MaxRevision
         ? revision + 1 : throw new InvalidOperationException("The protocol revision limit was reached.");
 
-    public static RoomCheckpoint Read(RoomRow row)
+    public static RoomCheckpoint Read(RoomRow row) => Read(row.Id, row.Checkpoint);
+
+    public static RoomCheckpoint Read(string roomId, string checkpoint)
     {
-        var room = JsonSerializer.Deserialize<RoomCheckpoint>(row.Checkpoint, Wire.Json)
+        var room = JsonSerializer.Deserialize<RoomCheckpoint>(checkpoint, Wire.Json)
             ?? throw new InvalidOperationException("Missing room checkpoint.");
         if (room.CheckpointVersion != 1 || room.RulesVersion != CurrentRules
-            || room.Id != row.Id || room.Seats.Length != 4 || room.Totals.Length != 4
+            || room.Id != roomId || room.Seats.Length != 4 || room.Totals.Length != 4
             || room.Game is { } game && (game.CheckpointVersion != ChangshaEngine.CheckpointVersion
                 || game.ShuffleVersion != ChangshaEngine.ShuffleVersion)
             || room.Status is not ("waiting" or "playing" or "betweenHands" or "complete")
