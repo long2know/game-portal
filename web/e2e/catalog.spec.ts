@@ -1,13 +1,14 @@
 import { readFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
+import { exerciseStack } from "./east-court-support";
 import { fitsPhone } from "./portal-support";
 
 test.beforeEach(({ baseURL }) => {
   test.skip(!baseURL || !/^\/(?:game-)?portal\/$/.test(new URL(baseURL).pathname), "Requires the published portal.");
 });
 
-test("lobby presents thirteen real destinations with local, cold catalog art", async ({ page, baseURL, request }) => {
+test("lobby presents sixteen real destinations with local, cold catalog art", async ({ page, baseURL, request }) => {
   const mount = new URL(baseURL!);
   const href = (path: string) => new URL(path, mount).href;
   const assets = new Set<string>();
@@ -29,7 +30,7 @@ test("lobby presents thirteen real destinations with local, cold catalog art", a
   expect(art.ok()).toBe(true);
   expect((await heroStudy).ok()).toBe(true);
   const games = ["mahjong", "chess", "go", "reversi", "checkers", "chinese-checkers", "holdem", "solitaire",
-    "sudoku", "word-tiles", "farkle", "backgammon", "lantern-run"];
+    "sudoku", "word-tiles", "farkle", "backgammon", "lantern-run", "xiangqi", "gomoku", "mahjong-solitaire"];
   const cards = page.getByRole("region", { name: "Choose a game" }).getByRole("link");
   await expect(cards).toHaveCount(games.length);
   await expect(cards.filter({ hasText: "↗" })).toHaveCount(0);
@@ -83,6 +84,17 @@ test("catalog links announce the game and player context without changing the in
     "2 players Control the center, develop your pieces, and trap the king.");
   await expect(page.getByRole("link", { name: "Play Solitaire", exact: true })).toHaveAccessibleDescription(
     "Solo · Draw one Build four suited piles from ace to king; alternate colors in the tableau.");
+  await expect(page.getByRole("link", { name: "Play Mahjong Solitaire", exact: true })).toHaveAccessibleDescription(
+    "Solo · Tile matching Match free pairs from a four-tier lantern stack. Play and save in this browser.");
+});
+
+test("the mounted Mahjong Solitaire route paints and plays the local stack without creating a guest", async ({ page, baseURL, request }, info) => {
+  const mount = new URL(baseURL!);
+  const canonical = await request.get(new URL("mahjong-solitaire?fresh=1", mount).href, { maxRedirects: 0 });
+  expect(canonical.status()).toBe(308);
+  expect(canonical.headers().location).toBe(`${mount.pathname}mahjong-solitaire/?fresh=1`);
+  expect((await request.get(new URL("mahjong-solitaire/private-table/", mount).href)).status()).toBe(404);
+  await exerciseStack(page, new URL("mahjong-solitaire/", mount), info);
 });
 
 test("the 320px and 390px landing header fits all controls in one row with room for wider fonts", async ({ page }) => {

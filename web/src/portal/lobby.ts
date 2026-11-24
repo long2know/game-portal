@@ -1,5 +1,5 @@
-import { tableau } from "./art";
-import { boardIds, catalog, expansionIds } from "./catalog";
+import { catalogPreview } from "./catalog-art";
+import { catalog } from "./catalog";
 import type { GameId } from "./catalog";
 import { el, link } from "./dom";
 
@@ -20,7 +20,7 @@ export function lobby(mount: string): HTMLElement {
   heading.id = "catalog-heading";
   section.setAttribute("aria-labelledby", heading.id);
   const grid = el("div", "catalog-grid");
-  const games: GameId[] = ["mahjong", ...boardIds, ...expansionIds, "lantern-run"];
+  const games = Object.keys(catalog) as GameId[];
   for (const game of games) {
     const info = catalog[game];
     const flagship = game === "mahjong";
@@ -31,7 +31,7 @@ export function lobby(mount: string): HTMLElement {
     summary.id = `catalog-${game}-summary`;
     const descriptionIds = [seats.id, summary.id];
     const card = el("a", flagship ? "game-card game-card-featured" : "game-card",
-      tableau(game, "index"),
+      catalogPreview(game),
       el("div", "game-card-body", ...(flagship ? [seats, title, summary] : [title, summary, seats])));
     if (flagship) {
       title.id = "catalog-mahjong-name";

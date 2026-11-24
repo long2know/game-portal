@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 450" preserveAspectRatio="none">
+  <defs>
+    <pattern id="plank" width="63" height="151" patternUnits="userSpaceOnUse" patternTransform="rotate(4)">
+      <path d="M7-5q3 35 1 67t0 93M21-4q-3 43 .5 73t1 83m18-155q1 51-.7 80t.8 75m12-156-1 43 2 32-1 84" fill="none" stroke="#94785f" stroke-opacity=".42" stroke-width=".85"/>
+      <path d="m15-3 2 44-1 58 2 52h-2l-1-57 1-44-2-54zm19 17 2 30-1 28 .5 19-2-17 1-36zm25 81 1 26-2 26v-31z" fill="#eccea1" opacity=".59"/>
+      <path d="m3 17 1 16m25 11 .8 11m19-8 .5 12m-27 21 .2 8m25 12v23m-37-15v18m18 4 .3 16" stroke="#80614c" stroke-opacity=".42" stroke-width=".6"/>
+    </pattern>
+  </defs>
+  <path fill="#c6a67d" d="M0 0h450v450H0z"/>
+  <path d="M33 0h92l-4 112 6 121-4 217H40l5-179-7-91zm206 0h86l-4 157 6 107-1 186h-86l4-134-3-116z" fill="#d5b68b"/>
+  <path d="M0 0h450v6H0zm0 442 68 3 206-1 176-3v9H0zM0 0h5l4 211-2 239H0zm440 0h10v450h-9l2-206z" fill="#9d7c60"/>
+  <path fill="url(#plank)" d="M0 0h450v450H0z"/>
+  <path d="M9 8q51 2 100 0m233 1 99-1M10 441q82 2 140 0m252-.6 40-1" fill="none" stroke="#e9c69c" stroke-width="2"/>
+</svg>

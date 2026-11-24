@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 500" preserveAspectRatio="none">
+  <defs>
+    <pattern id="apricot" width="172" height="71" patternUnits="userSpaceOnUse" patternTransform="rotate(-3)">
+      <path d="M-5 8Q27 11 56 7T120 6l51 4M2 32q37 1 59-3t69 0l44 1M-4 58q33 2 57-1t58 0l70 2" fill="none" stroke="#a37251" stroke-opacity=".44"/>
+      <path d="M-4 19q32-4 65-1l25-1-26 3-34 2zm105 28 30-3 45 2-7 2-30-1-21 2zm-49 15 33-1 15 1-12 1-30 2-12-1z" fill="#eed09b" opacity=".56"/>
+      <path d="m12 13 13 .4m4-.9 5-.3m95 4 26 .55m-98 9 10-.4m-61 25 15 1m5-.3 6 .2m102 6 22 .7m-51 9 15 .3m6-.2 5 .4" stroke="#946444" stroke-opacity=".44" stroke-width=".7"/>
+    </pattern>
+  </defs>
+  <path fill="#d5aa76" d="M0 0h450v500H0z"/>
+  <path fill="#e1b982" d="M0 0h450v82Q328 58 207 79 94 99 0 91zm0 140q65 7 125-1t139 1l186 32v66H0zm0 173q108-12 247 2l203-7v47q-110 8-226-5-104-14-224 6zm115 132 131-17 204 1v47l-211 6z"/>
+  <path fill="#ba875f" d="M0 0h11l1 211-4 136 4 153H0zm438 0h12v500h-11l2-132-3-122zM0 484q85 10 183 3t267-1v14H0z"/>
+  <path fill="url(#apricot)" d="M0 0h450v500H0z"/>
+  <path fill="#ba805b" opacity=".72" d="m0 220 102 1 111-2 130 2 107-1v4H0zm0 58 120 1 108-2 89 .8 133-.6v3H0z"/>
+  <path fill="#eac593" d="M0 225h450v50H0z"/>
+  <path fill="#f3d9aa" d="M0 233l76 1 48 3 104-2 44 2 120-2 58 .2v8l-72-.5-110 4-74-2-77 3-63-4L0 244zm41 27 99-2 64 1 64-2 82 1-83 3-105 1-54 2z"/>
+  <path d="m1 268 88-2 53 2 67-1m83-34 86-3 24 1m-330 6 33 .7m247 29 69-2" stroke="#af865d" stroke-opacity=".53" fill="none"/>
+  <path d="M12 4q-3 38-1 91m1 210-1 102M440 65l-2 52m.5 271-.8 56M26 486q49 3 89 2m202 0 77-1" stroke="#f4d0a1" opacity=".64" fill="none" stroke-width="2"/>
+</svg>

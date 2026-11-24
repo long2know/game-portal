@@ -1,8 +1,8 @@
-export const boardIds = ["chess", "go", "reversi", "checkers", "chinese-checkers"] as const;
+export const boardIds = ["chess", "go", "reversi", "checkers", "chinese-checkers", "xiangqi", "gomoku"] as const;
 export const expansionIds = ["holdem", "solitaire", "sudoku", "word-tiles", "farkle", "backgammon"] as const;
 export type BoardId = typeof boardIds[number];
 export type ExpansionId = typeof expansionIds[number];
-export type GameId = BoardId | ExpansionId | "mahjong" | "lantern-run";
+export type GameId = BoardId | ExpansionId | "mahjong" | "lantern-run" | "mahjong-solitaire";
 
 const jadeLettersName = "Jade Letters";
 
@@ -71,6 +71,21 @@ export const catalog: Record<GameId, { name: string; seats: string; description:
     name: "Lantern Run", seats: "Solo · Arcade",
     description: "Dodge kilns and rails, and collect lanterns along the canal.",
     invitation: "Play Lantern Run",
+  },
+  xiangqi: {
+    name: "Xiangqi", seats: "2 players · Chinese chess",
+    description: "Guard your general, cross the river, and use your cannons to threaten the palace.",
+    invitation: "Set up Xiangqi",
+  },
+  gomoku: {
+    name: "Gomoku", seats: "2 players · Five in a row",
+    description: "Lay slate and shell stones on a 15×15 lattice. Five or more in a row wins.",
+    invitation: "Set up Gomoku",
+  },
+  "mahjong-solitaire": {
+    name: "Mahjong Solitaire", seats: "Solo · Tile matching",
+    description: "Match free pairs from a four-tier lantern stack. Play and save in this browser.",
+    invitation: "Play Mahjong Solitaire",
   },
 };
 

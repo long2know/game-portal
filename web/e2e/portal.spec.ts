@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import type { Ack, ClientMessage, Command, Guest, ServerMessage, Snapshot } from "../src/protocol";
 import type { MoveReply, Table } from "../src/portal/api";
+import { checkLattice, paintedUses } from "./east-court-support";
 import { fitsPhone, observeMotion, projected, receive, state, tap, urls } from "./portal-support";
 import type { MotionPage, Point } from "./portal-support";
 
@@ -10,6 +11,7 @@ const boardGames = [
   ["chess", "Chess"], ["go", "Go"], ["reversi", "Reversi"],
   ["checkers", "Checkers"], ["chinese-checkers", "Chinese Checkers"],
 ] as const;
+const eastCourtBoards = [["xiangqi", "Xiangqi"], ["gomoku", "Gomoku"]] as const;
 
 const squareAt = (board: Locator, row: number, column: number) => board.locator(`[data-row="${row}"][data-column="${column}"]`);
 const cellById = (board: Locator, id: string) => board.locator(`[data-cell=${JSON.stringify(id)}]`);
@@ -128,7 +130,7 @@ test.describe("mounted Jade Court portal", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByRole("main")).toBeFocused();
 
-    for (const [game, name] of boardGames) {
+    for (const [game, name] of [...boardGames, ...eastCourtBoards]) {
       const card = page.getByRole("link", { name: `Set up ${name}`, exact: true });
       await expect(card).toHaveAttribute("href", `/portal/${game}/`);
       await card.tap();
@@ -149,6 +151,68 @@ test.describe("mounted Jade Court portal", () => {
     expect(canonical.headers().location).toBe("/portal/chess/?from=bookmark");
     expect((await request.get(url("not-a-game/"))).status()).toBe(404);
   });
+
+  for (const [game, name] of eastCourtBoards) {
+    test(`${name}: real phone lattice, color labels and exact server move`, async ({ page, baseURL, request }, info) => {
+      const base = new URL(baseURL!);
+      const url = (path: string) => new URL(path, base).href;
+      const canonical = await request.get(url(`${game}?from=bookmark`), { maxRedirects: 0 });
+      expect(canonical.status()).toBe(308);
+      expect(canonical.headers().location).toBe(`${base.pathname}${game}/?from=bookmark`);
+      await page.setViewportSize({ width: 320, height: 730 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(url(`${game}/`));
+      const created = receive(page, url("api/board/tables"), "POST");
+      await tap(page, "Play a bot");
+      const initial = await projected(await created);
+      expect(initial).toMatchObject({ game, seat: 0, status: "playing", position: { turn: 0 } });
+      const board = boardOn(page, name);
+      const position = initial.position!;
+      const xiangqi = game === "xiangqi";
+      await checkLattice(board, game);
+      await fitsPhone(page);
+      await expect(page.locator(".seat-label small")).toHaveText(xiangqi ? ["You · red", "Bot · black"] : ["You · black", "Bot · white"]);
+      if (xiangqi) {
+        await expect(cellById(board, "a10")).toHaveAccessibleName("a10, black chariot");
+        await expect(cellById(board, "a1")).toHaveAccessibleName("a1, red chariot");
+        await paintedUses(board, ".xiangqi-seal use:not(.seal-cut)", 32);
+      }
+      const center = position.cells.find(({ row, column }) => row === 7 && column === 7)?.id;
+      const move = position.moves.find(({ from, to }) => xiangqi ? from === "a4" && to === "a5" : from === null && to === center);
+      expect(move).toBeDefined();
+      const destination = cellById(board, move!.to!);
+      if (move!.from) {
+        await cellById(board, move!.from).focus();
+        await page.keyboard.press("Enter");
+        await expect(cellById(board, move!.from)).toHaveAttribute("aria-pressed", "true");
+      }
+      await expect(destination).toHaveAttribute("data-target", "");
+      await page.screenshot({ path: info.outputPath(`${game}-320-ready.png`) });
+      const played = receive(page, url(`api/board/tables/${initial.id}/moves`), "POST");
+      await destination.tap();
+      const response = await played;
+      expect(response.request().postDataJSON()).toEqual({ revision: initial.revision, moveId: move!.id });
+      const committed = await projected(response);
+      expect(committed.revision).toBe(initial.revision + 1);
+      const landed = committed.position!.cells.find(({ id }) => id === move!.to)!;
+      await expect(destination).toHaveAccessibleName(`${landed.id}, ${landed.piece
+        ? `${landed.owner === 0 ? xiangqi ? "red" : "black" : xiangqi ? "black" : "white"} ${landed.piece}` : "empty"}`);
+      if (!xiangqi) {
+        expect(committed.position!.cells.filter(cell => cell.piece === "stone").map(cell => cell.owner).sort()).toEqual([0, 1]);
+        await paintedUses(board, ".gomoku-stone use", 2);
+        const inner = await board.locator(".gomoku-stone use").evaluateAll(uses => uses.map(use => use.getAttribute("href")!.split("#")[1]).sort());
+        expect(inner).toEqual(["shell", "slate"]);
+        await tap(page, "Enlarge board");
+        expect((await destination.boundingBox())!.width).toBeGreaterThanOrEqual(44);
+        await tap(page, "Fit board");
+      }
+      await expect(board.locator(".motion-layer")).toHaveCount(0);
+      await page.setViewportSize({ width: 740, height: 320 });
+      await fitsPhone(page);
+      await checkLattice(board, game);
+      await board.screenshot({ path: info.outputPath(`${game}-740x320.png`) });
+    });
+  }
 
   for (const [game, name] of boardGames) {
     test(`${name}: places a real bot move, aligns keyboard navigation, and resumes`, async ({ page, baseURL }, info) => {

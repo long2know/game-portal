@@ -1,14 +1,17 @@
 import type { GameId } from "./catalog";
+import { catalogPreview } from "./catalog-art";
 import { el, svg } from "./dom";
 
 const chessPieces = new URL("./assets/cburnett.svg?no-inline", import.meta.url).href;
-const catalogMarks = new URL("./catalog-marks.svg?no-inline", import.meta.url).href;
+const xiangqiSeals = new URL("./assets/xiangqi-seals.svg?no-inline", import.meta.url).href;
+const gomokuStones = new URL("./assets/gomoku-stones.svg?no-inline", import.meta.url).href;
 const chessProfiles: Readonly<Record<string, string>> = {
   pawn: "P", knight: "N", bishop: "B", rook: "R", queen: "Q", king: "K",
 };
 
 export function side(game: GameId, owner: number): string {
-  const set = game === "go" || game === "reversi" ? ["onyx", "ivory"] :
+  const set = game === "go" || game === "reversi" || game === "gomoku" ? ["onyx", "ivory"] :
+    game === "xiangqi" ? ["cinnabar", "onyx"] :
     game === "checkers" ? ["cinnabar", "ivory"] :
     game === "chinese-checkers" ? ["jade", "cinnabar", "ivory", "amber", "plum", "teal"] : ["ivory", "onyx"];
   return set[owner] ?? "onyx";
@@ -17,6 +20,7 @@ export function side(game: GameId, owner: number): string {
 export function sideName(game: GameId, owner: number): string {
   if (game === "chinese-checkers") return side(game, owner);
   if (game === "checkers") return owner === 0 ? "red" : "white";
+  if (game === "xiangqi") return owner === 0 ? "red" : "black";
   return (game === "chess" ? owner === 0 : owner === 1) ? "white" : "black";
 }
 
@@ -28,6 +32,15 @@ export function token(game: GameId, owner: number, piece: string): HTMLElement {
   if (game === "chess") {
     const shape = svg("svg", { viewBox: "0 0 45 45", class: "chess-form", "aria-hidden": "true" });
     shape.append(svg("use", { href: `${chessPieces}#${owner === 0 ? "w" : "b"}${chessProfiles[piece] ?? "P"}` }));
+    node.append(shape);
+  } else if (game === "xiangqi") {
+    const shape = svg("svg", { viewBox: "0 0 24 24", class: "xiangqi-seal" });
+    const href = `${xiangqiSeals}#${owner === 0 ? "red" : "black"}-${piece}`;
+    shape.append(svg("use", { href, class: "seal-cut" }), svg("use", { href }));
+    node.append(shape);
+  } else if (game === "gomoku") {
+    const shape = svg("svg", { viewBox: "0 0 28 28", class: "gomoku-stone" });
+    shape.append(svg("use", { href: `${gomokuStones}#${owner === 0 ? "slate" : "shell"}` }));
     node.append(shape);
   } else if (game === "checkers" && piece === "king") {
     const shape = svg("svg", { viewBox: "0 0 24 24", class: "checker-crown", "aria-hidden": "true" });
@@ -89,20 +102,12 @@ function lanternStudy(): SVGSVGElement {
   return mark;
 }
 
-export function tableau(game: GameId | "farkle" | "backgammon", scale: "index" | "table" = "table"): HTMLElement {
+export function tableau(game: GameId): HTMLElement {
+  if (game === "xiangqi" || game === "gomoku") return catalogPreview(game, "table");
   const scene = el("div", "tableau");
   scene.dataset.game = game;
-  scene.dataset.scale = scale;
+  scene.dataset.scale = "table";
   scene.setAttribute("aria-hidden", "true");
-  if (scale === "index") {
-    const mark = svg("svg", {
-      viewBox: "0 0 72 60", class: "catalog-mark",
-      preserveAspectRatio: game === "mahjong" ? "xMidYMid meet" : "xMidYMid slice",
-    });
-    mark.append(svg("use", { href: `${catalogMarks}#${game}`, width: 72, height: 60 }));
-    scene.append(mark);
-    return scene;
-  }
   if (game === "lantern-run") {
     scene.append(lanternStudy());
     return scene;

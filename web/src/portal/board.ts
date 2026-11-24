@@ -1,3 +1,4 @@
+import "./east-court-boards.css";
 import type { Cell, MotionStep, Move, Position } from "./api";
 import { sideName, token } from "./art";
 import type { BoardId } from "./catalog";
@@ -20,18 +21,46 @@ function rank(game: BoardId, rows: number, row: number): number {
   return game === "chess" || game === "go" ? rows - row : row + 1;
 }
 
-function coordinates(game: BoardId, rows: number, { row, column }: Cell): string {
+function coordinates(game: BoardId, rows: number, { id, row, column }: Cell): string {
+  if (game === "xiangqi" || game === "gomoku") return id;
   return `${file(game, column)}${rank(game, rows, row)}`;
 }
 
 function lattice(game: BoardId, { rows, columns, cells }: Position): SVGSVGElement {
   const art = svg("svg", { viewBox: `0 0 ${columns} ${rows}`, preserveAspectRatio: "none", class: "lattice", "aria-hidden": "true" });
-  if (game === "go") {
+  if (game === "xiangqi") {
+    const right = columns - .5;
+    const bottom = rows - .5;
+    const upperBank = rows / 2 - .5;
+    const lowerBank = rows / 2 + .5;
+    let ranks = "", files = `M.5 .5V${bottom}M${right} .5V${bottom}`;
+    for (let y = .5; y < rows; y++) ranks += `M.5 ${y}H${right}`;
+    for (let x = 1.5; x < right; x++) files += `M${x} .5V${upperBank}M${x} ${lowerBank}V${bottom}`;
+    art.append(svg("path", { class: "xiangqi-ranks", d: ranks }),
+      svg("path", { class: "xiangqi-files", d: files }),
+      svg("path", { class: "xiangqi-palaces", d: `M3.5 .5l2 2m0-2l-2 2M3.5 ${bottom - 2}l2 2m0-2l-2 2` }));
+    let cuts = "";
+    for (const [y, points] of [[2.5, [1.5, 7.5]], [3.5, [.5, 2.5, 4.5, 6.5, 8.5]],
+      [6.5, [.5, 2.5, 4.5, 6.5, 8.5]], [7.5, [1.5, 7.5]]] as const) {
+      for (const x of points) {
+        for (const dx of [-1, 1]) {
+          if (x + dx < .5 || x + dx > right) continue;
+          for (const dy of [-1, 1]) cuts += `M${x + dx * .23} ${y + dy * .11}h${-dx * .12}v${dy * .12}`;
+        }
+      }
+    }
+    art.append(svg("path", { class: "xiangqi-cuts", d: cuts }));
+    for (const [x, label] of [[2.5, "CHU RIVER"], [6.5, "HAN BANK"]] as const) {
+      const notice = svg("text", { x, y: rows / 2, class: "xiangqi-river", "text-anchor": "middle", "dominant-baseline": "central" });
+      notice.textContent = label;
+      art.append(notice);
+    }
+  } else if (game === "go" || game === "gomoku") {
     let lines = "";
     for (let x = .5; x < columns; x++) lines += `M${x} .5V${rows - .5}`;
     for (let y = .5; y < rows; y++) lines += `M.5 ${y}H${columns - .5}`;
     art.append(svg("path", { d: lines }));
-    const inset = rows <= 9 ? 2 : 3;
+    const inset = game === "gomoku" ? 3 : rows <= 9 ? 2 : 3;
     const star = [inset, (rows - 1) / 2, rows - 1 - inset];
     for (const [ix, x] of star.entries()) {
       for (const [iy, y] of star.entries()) {
@@ -103,6 +132,7 @@ export class BoardView {
     this.grid.addEventListener("keydown", event => this.navigate(event));
     this.root.append(this.frame, this.chooser, el("div", "board-instructions", this.hint, this.keys),
       el("div", "board-tools", this.actions, this.zoom), this.passNote, this.zoomNote);
+    if (game === "xiangqi") this.keys.append(" Black at the top; Red at the bottom.");
   }
 
   update(position: Position, mine: boolean, enabled: boolean, reset: boolean): void {
@@ -151,7 +181,9 @@ export class BoardView {
     this.grid.replaceChildren();
     this.grid.style.setProperty("--cols", String(position.columns));
     this.grid.style.setProperty("--rows", String(position.rows));
-    if (this.game === "go" || this.game === "chinese-checkers") this.grid.append(lattice(this.game, position));
+    if (this.game === "go" || this.game === "chinese-checkers" || this.game === "xiangqi" || this.game === "gomoku") {
+      this.grid.append(lattice(this.game, position));
+    }
     for (const cell of position.cells) {
       const { id, column, row } = cell;
       const square = button("", "square", () => this.choose(id));
@@ -275,6 +307,7 @@ export class BoardView {
       !this.moves.some(move => move.to !== null) && this.moves.length > 0 ? "No moves on the board. Use the action below." :
       this.selected ? "Choose a marked destination, or choose another piece." :
       this.game === "go" ? "Choose an empty intersection to place a stone." :
+      this.game === "gomoku" ? "Place a stone on a marked intersection." :
       this.game === "reversi" ? "Place a disc on a marked square." : "Choose a piece to see where it can move.";
     text(this.hint, instructions);
   }
