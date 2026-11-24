@@ -207,7 +207,8 @@ test("a private Chess invite crosses from a solo page and opens only the exact m
 
     const paths: string[] = [];
     guest.on("request", request => paths.push(new URL(request.url()).pathname));
-    const member = receive(guest, url(`api/board/tables/${target.id}`), "GET");
+    const memberUrl = url(`api/board/tables/${target.id}`);
+    const member = receive(guest, memberUrl, "GET");
     await accept(guest, url("chess/"), hostName);
     const joined = await (await member).json() as Table;
     expect(joined).toMatchObject({ id: target.id, seat: 1, status: "playing" });
@@ -215,9 +216,18 @@ test("a private Chess invite crosses from a solo page and opens only the exact m
     await page.locator('[data-cell="e2"]').tap();
     await page.locator('[data-cell="e4"]').tap();
     expect((await (await move).json() as Table).position?.lastMove).toMatchObject({ from: "e2", to: "e4" });
-    const reloaded = receive(guest, url(`api/board/tables/${target.id}`), "GET");
-    await guest.reload();
-    expect((await (await reloaded).json() as Table).id).toBe(target.id);
+    // The old document polls the same URL. Only count a request after the reload commits.
+    let committed = false;
+    guest.on("framenavigated", frame => { if (frame === guest.mainFrame()) committed = true; });
+    const reloaded = guest.waitForRequest(request => committed && request.url() === memberUrl &&
+      request.method() === "GET" && request.frame() === guest.mainFrame());
+    await Promise.all([reloaded, guest.reload()]);
+    const from = guest.locator('[data-cell="e2"]');
+    const to = guest.locator('[data-cell="e4"]');
+    await expect(to).toHaveAccessibleName("e4, white pawn");
+    await expect(to).toHaveAttribute("data-occupied", "");
+    await expect(from).toHaveAccessibleName("e2, empty");
+    await expect(from).not.toHaveAttribute("data-occupied");
     expect(paths).not.toContain(new URL(url("api/board/resume")).pathname);
   } finally { await Promise.all([guest.context().close(), off.context().close()]); }
 });
