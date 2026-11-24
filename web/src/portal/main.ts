@@ -99,6 +99,7 @@ const expansions = {
   "word-tiles": () => import("./games/words"),
   farkle: () => import("./games/farkle"),
   backgammon: () => import("./games/backgammon"),
+  "big-two": () => import("./games/big-two"),
 };
 if (localPuzzle) {
   void openGame(catalog[route].name, async () => (await import("./games/mahjong-solitaire")).mount({ main, mount }));

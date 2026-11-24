@@ -7,6 +7,12 @@ type Table<P> = {
 };
 type Solo<P> = { variant: string; revision: number; position: P };
 type Card = { rank: number; suit: number };
+type BigTwoCard = Card & { id: number };
+type BigTwo = {
+  turnSeat: number | null; winnerSeat: number | null; seats: { seat: number; cardsRemaining: number }[];
+  ownCards: BigTwoCard[]; legalMasks: number[]; canPass: boolean;
+  lastPlay: { seat: number; cards: BigTwoCard[]; kind: string } | null;
+};
 type Poker = {
   handNumber: number; actingSeat: number | null; ownCards: Card[]; board: Card[];
   legalActions: { raise?: { minTo: number; maxTo: number }; canFold: boolean; canCheck: boolean; callAmount: number | null } | null;
@@ -33,6 +39,7 @@ const routes = [
   ["word-tiles", "Jade Letters", "Set up Jade Letters", "words/resume", "words", "Play a bot"],
   ["farkle", "Farkle", "Set up Farkle", "farkle/resume", "farkle", "Play a bot"],
   ["backgammon", "Backgammon", "Set up Backgammon", "backgammon/resume", "backgammon", "Play a bot"],
+  ["big-two", "Big Two", "Set up Big Two", "big-two/resume", "big-two", "Play with bots"],
 ] as const;
 const button = (page: Page | Locator, name: string | RegExp) => page.getByRole("button", { name, exact: true });
 const watch = (page: Page, url: string, method = "POST") =>
@@ -141,7 +148,7 @@ test.describe("mounted Jade Court expansion", () => {
     await page.goto(url());
     await expect(page.getByRole("heading", { name: "Find your next move." })).toBeVisible();
     const featureAssets = () => [...seen].filter(path =>
-      /\/assets\/(?:holdem|solitaire|sudoku|words|farkle|backgammon|multiplayer|solo|cards|shared|room)-/.test(path));
+      /\/assets\/(?:holdem|solitaire|sudoku|words|farkle|backgammon|big-two|multiplayer|solo|cards|shared|room)-/.test(path));
     expect(featureAssets()).toEqual([]);
     for (const [route, name, linkName, api, chunk, entry] of routes) {
       const bare = await request.get(url(`${route}?from=bookmark`), { maxRedirects: 0 });
@@ -167,6 +174,133 @@ test.describe("mounted Jade Court expansion", () => {
       await expect(page).toHaveURL(url());
     }
     expect(errors).toEqual([]);
+  });
+
+  test("Big Two plays the exact opening card and rotates back to a real free lead", async ({ page, browser, baseURL }, info) => {
+    const url = (path: string) => new URL(path, baseURL).href;
+    await page.goto(url("big-two/"));
+    const create = watch(page, url("api/big-two/tables"));
+    await button(page, "Invite friends").tap();
+    const created = await create;
+    expect(created.request().postDataJSON()).toEqual({ players: 4, bots: false });
+    const waiting = await body<Table<BigTwo>>(created);
+    await expect(button(page, "Invite players")).toBeEnabled();
+    const invite = await page.getByRole("textbox", { name: "Invite link" }).inputValue();
+    expect(new URL(invite).pathname).toBe(new URL(url("big-two/")).pathname);
+    const peers = await Promise.all(["Ink", "Linen", "Copper"].map(async name => {
+      const context = await browser.newContext({ viewport: portrait, isMobile: true, hasTouch: true });
+      return { context, name, page: await context.newPage() };
+    }));
+    try {
+      const at = [page];
+      let joined = waiting;
+      for (const peer of peers) {
+        await peer.page.goto(invite);
+        await peer.page.getByRole("textbox", { name: "Display name" }).fill(peer.name);
+        const reply = watch(peer.page, url("api/big-two/join"));
+        await button(peer.page, "Join table").tap();
+        joined = await body<Table<BigTwo>>(await reply);
+        expect(joined.id).toBe(waiting.id);
+        at[joined.seat] = peer.page;
+      }
+      const endpoint = url(`api/big-two/tables/${waiting.id}`);
+      const opened = at[joined.position.turnSeat!];
+      const direct = (at: Page) => at.request.get(endpoint);
+      let initial = await (await direct(opened)).json() as Table<BigTwo>;
+      const opening = initial.position.ownCards.find(card => card.rank === 3 && card.suit === 1)!;
+      const chosen = opened.getByRole("group", { name: "Your cards", exact: true });
+      await expect(chosen.getByRole("button")).toHaveCount(13);
+      for (const [seat, user] of at.entries()) {
+        const board = user.getByRole("region", { name: "Big Two playing area" });
+        await expect(board.locator(".big-two-seat").first()).toHaveAttribute("data-seat", String(seat));
+        await expect(board.locator(".big-two-seat .big-two-count")).toHaveText(Array(4).fill("13 cards"));
+        await expect(board.getByRole("img", { name: "Face-down card" })).toHaveCount(0);
+      }
+      const pass = button(opened, "Pass");
+      const play = button(opened, "Play selected");
+      await targets(play, pass);
+      await expect(pass).toBeDisabled();
+      const nonOpening = chosen.locator(`button:not([data-card-id="${opening.id}"])`).first();
+      await nonOpening.focus();
+      await opened.keyboard.press("Enter");
+      await expect(nonOpening).toHaveAttribute("aria-pressed", "true");
+      await expect(play).toBeDisabled();
+      const diamond = button(chosen, "3 of diamonds");
+      await diamond.focus();
+      await opened.keyboard.press("Escape");
+      await diamond.tap();
+      await expect(diamond).toHaveAttribute("aria-pressed", "true");
+      await expect(opened.locator(".big-two-centre")).toHaveCSS("background-image", /big-two-baize-[\w-]+\.svg/);
+      await fits(opened);
+      for (const card of await chosen.getByRole("button").all()) {
+        expect((await card.boundingBox())!.width).toBeGreaterThanOrEqual(39);
+        await expect(card).toBeInViewport();
+      }
+      await opened.screenshot({ path: info.outputPath("big-two-320-opening.png") });
+      const send = watch(opened, `${endpoint}/actions`);
+      await play.tap();
+      const result = await send;
+      expect(result.request().postDataJSON()).toEqual({ revision: initial.revision, action: { kind: "play", cards: [opening.id] } });
+      initial = await body<Table<BigTwo>>(result);
+      expect(initial.position.lastPlay).toEqual({ seat: initial.seat, kind: "single", cards: [opening] });
+      await expect(chosen.getByRole("button")).toHaveCount(12);
+      for (let i = 0; i < 3; i++) {
+        const user = at[initial.position.turnSeat!];
+        const passed = watch(user, `${endpoint}/actions`);
+        await expect(user.getByRole("group", { name: "Last played cards" }).getByRole("img", { name: "3 of diamonds" })).toBeVisible();
+        await button(user, "Pass").tap();
+        const reply = await passed;
+        expect(reply.request().postDataJSON()).toEqual({ revision: initial.revision, action: { kind: "pass" } });
+        initial = await body<Table<BigTwo>>(reply);
+      }
+      expect(initial.position.lastPlay).toBeNull();
+      expect(initial.position.turnSeat).toBe(joined.position.turnSeat);
+      await expect(opened.getByText("Trick cleared · free lead", { exact: true })).toBeVisible();
+      await expect(pass).toBeDisabled();
+      const landscape = await browser.newContext({ storageState: await opened.context().storageState(),
+        viewport: { width: 740, height: 320 }, isMobile: true, hasTouch: true });
+      try {
+        const view = await landscape.newPage();
+        const resumed = watch(view, endpoint, "GET");
+        await view.goto(url("big-two/"));
+        expect((await body<Table<BigTwo>>(await resumed)).id).toBe(waiting.id);
+        await expect(view.getByRole("group", { name: "Your cards" }).getByRole("button")).toHaveCount(12);
+        await expect(view.getByText("Trick cleared · free lead", { exact: true })).toBeVisible();
+        await expect.poll(() => view.evaluate(() => innerWidth)).toBe(740);
+        await fits(view);
+        await expect(button(view, "Play selected")).toBeInViewport({ ratio: .95 });
+        await view.screenshot({ path: info.outputPath("big-two-740x320.png") });
+      } finally { await landscape.close(); }
+    } finally { await Promise.all(peers.map(({ context }) => context.close())); }
+  });
+
+  test("Big Two runs a four-seat bot hand to its authoritative winner", async ({ page, baseURL }) => {
+    const url = (path: string) => new URL(path, baseURL).href;
+    await page.goto(url("big-two/"));
+    const create = watch(page, url("api/big-two/tables"));
+    await button(page, "Play with bots").tap();
+    const response = await create;
+    expect(response.request().postDataJSON()).toEqual({ players: 4, bots: true });
+    let table = await body<Table<BigTwo>>(response);
+    expect(table.seats.map(seat => seat.bot)).toEqual([false, true, true, true]);
+    const origin = new URL(baseURL!).origin;
+    for (let i = 0; table.status === "playing" && i < 40; i++) {
+      const { legalMasks, ownCards } = table.position;
+      const mask = legalMasks.at(-1);
+      const next = await page.request.post(url(`api/big-two/tables/${table.id}/actions`), {
+        headers: { Origin: origin }, data: { revision: table.revision, action: mask === undefined ? { kind: "pass" } :
+          { kind: "play", cards: ownCards.filter((_, index) => mask & (1 << index)).map(card => card.id) } },
+      });
+      expect(next.ok()).toBe(true);
+      table = await next.json();
+    }
+    expect(table.status).toBe("finished");
+    const winner = table.position.winnerSeat!;
+    await expect(page.locator(".big-two-turn")).toHaveText(winner === table.seat ? "You won!" : `${table.seats[winner].name} wins.`);
+    await expect(page.locator(`[data-winner][data-seat="${winner}"] .big-two-count`)).toHaveText("0 cards");
+    await expect(button(page, "Play selected")).toBeDisabled();
+    await expect(button(page, "Pass")).toBeDisabled();
+    await expect(button(page, "Set up another game")).toBeEnabled();
   });
 
   test("Solitaire draws and moves real cards, then reloads and restarts", async ({ page, baseURL }, info) => {

@@ -1,0 +1,96 @@
+.feature:has(.big-two-layout) .feature-head h1 { font-size: clamp(2.4rem, 7vw, 4.1rem); }
+.big-two-layout { display: grid; gap: .75rem; min-inline-size: 0; }
+.big-two-table {
+  --rail-width: clamp(6px, 1.4vw, 12px);
+  display: grid; grid-template-areas: "seats" "centre" "rail"; gap: 7px;
+  isolation: isolate; min-inline-size: 0;
+}
+.big-two-seats {
+  grid-area: seats; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; margin: 0; padding: 0;
+  list-style: none;
+}
+.big-two-seat {
+  display: grid; align-content: start; gap: 1px; min-inline-size: 0; min-block-size: 54px; padding: 4px 5px;
+  background: #302825; border: 1px solid #a87b61; box-shadow: inset 0 1px #b8926666;
+  color: #f9e6c6; font-size: clamp(.72rem, 2.8vw, .96rem); line-height: 1.2;
+}
+.big-two-seat strong { overflow-wrap: anywhere; }
+.big-two-seat small { font-size: .68rem; }
+.big-two-seat[data-leading] { border-block-start: 2px solid #e2a56a; }
+.big-two-seat:is([data-acting], [data-winner]) { background: #633d36; border-color: #efbf89; }
+.big-two-count { color: #ffe1aa; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.big-two-centre, .big-two-rail {
+  min-inline-size: 0; padding: clamp(6px, 1.2vw, 12px);
+  border: 1px solid #ad7d5e; border-radius: 3px;
+  box-shadow: inset 0 0 0 2px #1a2e2f, inset 0 0 0 3px #a37a583a, 0 1px #362921;
+}
+.big-two-centre {
+  grid-area: centre; background: #3a514d url("../assets/big-two-baize.svg?no-inline") center / 100% 100% no-repeat;
+}
+.big-two-centre h2, .big-two-rail h2 { font-size: clamp(1.02rem, 2.4vw, 1.36rem); }
+.big-two-trick-note { color: #ffdeb0; font-size: .79rem; }
+.big-two-trick {
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  min-block-size: clamp(55px, 14vw, 92px); padding: 3px 4px;
+}
+.big-two-trick .playing-card { inline-size: min(17%, 56px); }
+.big-two-seal {
+  display: grid; place-items: center; min-inline-size: 38px; min-block-size: 42px; padding: 2px 6px;
+  border: 3px double #bda174; color: #ebc496; border-radius: 50%;
+  font: 500 1.34rem/1 var(--serif); background: #253e3c;
+}
+.big-two-rail { grid-area: rail; background: var(--court-linen) #2c4235; }
+.big-two-rail-title {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 1px 5px; margin-block-end: 4px;
+}
+.big-two-turn { color: #ffda9d; font-weight: 720; font-size: .89rem; overflow-wrap: anywhere; }
+.big-two-hand {
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; min-inline-size: 0;
+}
+.big-two-card {
+  display: grid; min-inline-size: 0; padding: 0; background: transparent; border: 0; border-radius: 4px;
+  box-shadow: 0 1px #13211b;
+}
+.big-two-card .playing-card { pointer-events: none; }
+.big-two-card[aria-disabled="true"] { cursor: default; }
+.big-two-card[aria-pressed="true"] {
+  outline: 2px solid #ffe3a2; outline-offset: -2px; box-shadow: 0 0 0 1px #563d2b;
+}
+.big-two-card[aria-pressed="true"] .playing-card {
+  background-color: #ffdf97; border-color: #a9523f; box-shadow: inset 0 0 0 2px #ae6048;
+}
+.big-two-card:focus-visible { outline: 2px dashed #613b32; outline-offset: -3px; z-index: 1; }
+.big-two-actions { display: flex; flex-wrap: wrap; gap: 5px 7px; align-items: center; margin-block-start: 6px; }
+.big-two-actions .button { font-size: .86rem; padding: .5rem .7rem; }
+.big-two-selection { font-size: .78rem; color: #fae3b9; }
+.big-two-empty { grid-column: 1 / -1; color: #fae3b9; }
+.big-two-rules { padding: .2rem .7rem .6rem; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); }
+.big-two-rules summary { display: list-item; min-block-size: 44px; padding-block-start: .55rem; cursor: pointer; color: var(--brass); }
+.big-two-rules p { margin-block: .2rem .5rem; font-size: .86rem; }
+@media (min-width: 375px) { .big-two-hand { grid-template-columns: repeat(7, minmax(0, 1fr)); } }
+@media (min-width: 660px) {
+  .big-two-hand { grid-template-columns: repeat(13, minmax(0, 1fr)); }
+}
+@media (orientation: landscape) and (min-width: 510px) and (max-height: 430px) {
+  body:has(.big-two-layout) .shell { padding-block-start: max(4px, env(safe-area-inset-top)); }
+  body:has(.big-two-layout) .header { margin-block-end: 5px; padding-block-end: 3px; }
+  .feature:has(.big-two-layout) .feature-head { margin-block-end: 7px; }
+  .feature:has(.big-two-layout) .feature-head h1 { font-size: 1.8rem; margin-block: 0; }
+  .feature:has(.big-two-layout:not([hidden])) .feature-head :is(.intro, .eyebrow) { display: none; }
+  .big-two-table {
+    --rail-width: 6px;
+    grid-template-areas: "seats rail" "centre rail"; grid-template-columns: minmax(0, .8fr) minmax(0, 1.65fr);
+  }
+  .big-two-seats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .big-two-seat { min-block-size: 42px; }
+  .big-two-trick { min-block-size: 45px; }
+  .big-two-hand { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .big-two-card { max-inline-size: 45px; }
+}
+@media (forced-colors: active) {
+  .big-two-seat, .big-two-centre, .big-two-rail { border-color: CanvasText; background: Canvas; }
+  .big-two-seat:is([data-acting], [data-leading], [data-winner]) { border-color: Highlight; }
+  .big-two-card .playing-card { forced-color-adjust: none; }
+  .big-two-card:is(:focus-visible, [aria-pressed="true"]) { outline-color: Highlight; }
+  .big-two-rules summary:focus-visible { outline: 2px solid Highlight; }
+}

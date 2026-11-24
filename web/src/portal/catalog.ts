@@ -1,5 +1,5 @@
 export const boardIds = ["chess", "go", "reversi", "checkers", "chinese-checkers", "xiangqi", "gomoku"] as const;
-export const expansionIds = ["holdem", "solitaire", "sudoku", "word-tiles", "farkle", "backgammon"] as const;
+export const expansionIds = ["holdem", "solitaire", "sudoku", "word-tiles", "farkle", "backgammon", "big-two"] as const;
 export type BoardId = typeof boardIds[number];
 export type ExpansionId = typeof expansionIds[number];
 export type GameId = BoardId | ExpansionId | "mahjong" | "lantern-run" | "mahjong-solitaire";
@@ -86,6 +86,11 @@ export const catalog: Record<GameId, { name: string; seats: string; description:
     name: "Mahjong Solitaire", seats: "Solo · Tile matching",
     description: "Match free pairs from a four-tier lantern stack. Play and save in this browser.",
     invitation: "Play Mahjong Solitaire",
+  },
+  "big-two": {
+    name: "Big Two", seats: "4 players · Card shedding",
+    description: "Open with the three of diamonds, beat the play, and be first to empty your hand.",
+    invitation: "Set up Big Two",
   },
 };
 
