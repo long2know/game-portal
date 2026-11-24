@@ -23,6 +23,11 @@ original Mahjong installation. Keep the portal's database and keys together acro
 restarts. With `GamePortal__BehindHttpsProxy=true`, the HTTPS edge must preserve the
 public `Host` and `/portal` path as for the existing Mahjong API.
 
+Mahjong table lifecycle commands use the [authenticated Mahjong WebSocket
+protocol](protocol.md#commands) at `/portal/ws`, not the HTTP table routes below.
+A sole human host can restart a bot match in place or explicitly abandon the room
+without a reservation; an ordinary leave from an ongoing match still reserves the seat.
+
 ## Private player invites
 
 These endpoints are portal-only. Paths are relative to `BASE_URL` (for example,

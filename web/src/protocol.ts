@@ -157,8 +157,9 @@ export interface Payloads {
   setPaused: RoomRevision & { paused: boolean };
   choose: { roomId: string; windowId: string; anchorGameRevision: number; optionId: string };
   nextHand: RoomRevision;
-  leaveRoom: RoomRevision;
+  leaveRoom: RoomRevision & { abandon?: boolean };
   rematch: RoomRevision;
+  restartMatch: RoomRevision;
   chat: { roomId: string; text: string };
 }
 

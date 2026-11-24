@@ -304,7 +304,7 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
                     code = Mutate(room, member.Seat, intent, utc);
                 }
                 leave = code is null && intent.Op == "leaveRoom";
-                if (leave && room.Status is "waiting" or "complete")
+                if (leave && (intent.Flag || room.Status is "waiting" or "complete"))
                 {
                     db.Memberships.Remove(member);
                     room.Seats[member.Seat] = Chair.Open;
@@ -498,8 +498,9 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
 
     private string? Mutate(RoomCheckpoint room, int seat, Intent intent, DateTimeOffset utc)
     {
-        if (intent.Op is "setBot" or "start" or "setPaused" or "rematch" && room.HostSeat != seat)
-            return "forbidden";
+        var hostOnly = intent.Op is "setBot" or "start" or "setPaused" or "rematch" or "restartMatch"
+            || intent.Op == "leaveRoom" && intent.Flag;
+        if (hostOnly && room.HostSeat != seat) return "forbidden";
         if (intent.Op == "choose") return game.Choose(room, intent, seat, utc);
         if (intent.Op == "chat") return Chat(room, seat, intent.Text!, utc);
         if (room.RoomRevision != intent.Revision) return "stale_room";
@@ -534,7 +535,11 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
             case "rematch" when room.Status == "complete":
                 RoomGame.Rematch(room);
                 return null;
-            case "leaveRoom":
+            case "restartMatch" when room.Status is "playing" or "betweenHands" or "complete":
+                if (room.Seats.Count(chair => chair.IsBot && !chair.GuestId.HasValue) != 3) return "invalid_state";
+                game.RestartMatch(room, utc);
+                return null;
+            case "leaveRoom" when !intent.Flag || room.Seats.Count(chair => chair.GuestId.HasValue) == 1:
                 return null;
             default:
                 return "invalid_state";

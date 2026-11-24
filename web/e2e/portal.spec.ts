@@ -1,7 +1,7 @@
 import { gzipSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
-import type { Guest } from "../src/protocol";
+import type { Ack, ClientMessage, Command, Guest, ServerMessage, Snapshot } from "../src/protocol";
 import type { MoveReply, Table } from "../src/portal/api";
 import { fitsPhone, observeMotion, projected, receive, state, tap, urls } from "./portal-support";
 import type { MotionPage, Point } from "./portal-support";
@@ -769,6 +769,7 @@ test.describe("mounted Jade Court portal", () => {
     expect([...sockets]).toEqual(["/portal/ws"]);
     const source = await html.body();
     expect(source.toString()).not.toContain("modulepreload");
+    expect(assets.size).toBe(3);
     expect([...assets].map(asset => new URL(asset).pathname)).toEqual(expect.arrayContaining([
       expect.stringMatching(/\/index-[\w-]+\.js$/), expect.stringMatching(/\/index-[\w-]+\.css$/),
       expect.stringMatching(/\/jade-court-[\w-]+\.svg$/),
@@ -792,5 +793,166 @@ test.describe("mounted Jade Court portal", () => {
     const link = new URL(invitation);
     expect(link.origin + link.pathname + link.search).toBe(url("mahjong/"));
     expect(link.hash).toMatch(/^#invite=[\w-]{16}$/);
+  });
+
+  test("a resumed Mahjong bot host can cancel, start a new game in place, or quit without a saved seat", async ({ page, baseURL }) => {
+    const url = urls(baseURL!);
+    const commands: Command[] = [];
+    const frames: (Ack | Snapshot)[] = [];
+    let sendStale: (() => void) | undefined;
+    let deliverDeal: (() => void) | undefined;
+    let deliverQuit: (() => void) | undefined;
+    let restartAck: Ack | undefined;
+    let droppedQuit = false;
+    await page.routeWebSocket("**/ws", route => {
+      const server = route.connectToServer();
+      route.onMessage(payload => {
+        const message = JSON.parse(payload.toString()) as ClientMessage;
+        if (message.type === "command") {
+          commands.push(message);
+          if (message.op === "restartMatch" && !sendStale) {
+            sendStale = () => server.send(payload);
+            return;
+          }
+        }
+        server.send(payload);
+      });
+      server.onMessage(payload => {
+        const message = JSON.parse(payload.toString()) as ServerMessage;
+        if (message.type === "ack" || message.type === "snapshot") frames.push(message);
+        if (message.type === "ack" && message.status === "ok") {
+          const command = commands.find(command => command.requestId === message.requestId);
+          if (command?.op === "restartMatch") restartAck = message;
+          if (command?.op === "leaveRoom" && command.payload.abandon) {
+            if (!droppedQuit) {
+              droppedQuit = true;
+              route.close({ code: 1012, reason: "test lost quit ack" });
+            } else deliverQuit = () => route.send(payload);
+            return;
+          }
+        }
+        if (!deliverDeal && message.type === "snapshot" && restartAck?.gameRevision === message.gameRevision) {
+          deliverDeal = () => route.send(payload);
+          return;
+        }
+        route.send(payload);
+      });
+    });
+    const snapshots = () => frames.filter((frame): frame is Snapshot => frame.type === "snapshot");
+    const latest = () => snapshots().at(-1)!;
+    const tools = page.locator(".turnbar").getByRole("button", { name: "Table options" });
+    const table = page.getByRole("region", { name: "Mahjong table" });
+    const dialog = (name: string) => page.getByRole("dialog", { name, exact: true });
+
+    await page.setViewportSize({ width: 320, height: 730 });
+    await page.goto(url("mahjong/"));
+    await tap(page, "Play with bots");
+    await tap(page, "Mark ready");
+    await tap(page, "Start match");
+    await tap(page, "Pause");
+    await expect(page.getByText("Table paused", { exact: true })).toBeVisible();
+    const paused = latest();
+    expect(paused.room.seats.map(seat => seat.kind)).toEqual(["human", "bot", "bot", "bot"]);
+
+    await tap(page, "Settings");
+    await expect(dialog("Settings").getByText(/Your seat stays reserved/)).toBeVisible();
+    await tap(page, "Back to lobby");
+    await expect(page.getByRole("button", { name: "Resume your table" })).toBeEnabled();
+    expect(commands.at(-1)?.op).toBe("leaveRoom");
+    expect(commands.at(-1)?.payload).toEqual({ roomId: paused.roomId, expectedRoomRevision: paused.roomRevision });
+    await page.reload();
+    await expect(table).toHaveCount(0);
+    await tap(page, "Resume your table");
+    await expect(page.getByText("Table paused", { exact: true })).toBeVisible();
+    expect(latest()).toMatchObject({ roomId: paused.roomId, gameRevision: paused.gameRevision,
+      game: { window: { windowId: paused.game!.window!.windowId } } });
+
+    await fitsPhone(page);
+    await expect(tools).toBeInViewport({ ratio: 1 });
+    const { width, height } = (await tools.boundingBox())!;
+    expect(Math.min(width, height)).toBeGreaterThanOrEqual(44);
+    await page.setViewportSize({ width: 667, height: 360 });
+    await fitsPhone(page);
+    await expect(tools).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole("timer")).toHaveAttribute("aria-label", /^Auto-resume in \d+ seconds$/);
+    expect(await page.locator(".turnbar").evaluate(bar =>
+      [...bar.querySelectorAll(".turn-tools > :not([hidden])")].every(control =>
+        control.getBoundingClientRect().right <= bar.getBoundingClientRect().right))).toBe(true);
+    await page.setViewportSize({ width: 320, height: 730 });
+    const count = commands.length;
+    await tools.focus();
+    await page.keyboard.press("Enter");
+    const newGame = dialog("Table options").getByRole("button", { name: "New game", exact: true });
+    await newGame.tap();
+    const restart = dialog("New game?");
+    const start = restart.getByRole("button", { name: "Start new game", exact: true });
+    await expect(restart.getByText(/clears its scores/)).toBeVisible();
+    await expect(restart.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await restart.getByRole("button", { name: "Cancel" }).tap();
+    await expect(newGame).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(tools).toBeFocused();
+    expect(commands.length).toBe(count);
+    expect(latest().game?.window?.windowId).toBe(paused.game!.window!.windowId);
+
+    await tools.tap();
+    await newGame.tap();
+    await start.tap();
+    await expect.poll(() => !!sendStale).toBe(true);
+    const rename = await page.request.patch(url("api/profile"), {
+      headers: { Origin: new URL(url()).origin }, data: { displayName: "Jade Host" },
+    });
+    expect(rename.ok()).toBe(true);
+    await expect.poll(() => latest().roomRevision).toBe(paused.roomRevision + 1);
+    sendStale!();
+    await expect(restart.getByText(/The room changed while you were acting/)).toBeVisible();
+    await expect(start).toBeEnabled();
+    const before = latest();
+    await start.tap();
+    await expect.poll(() => !!deliverDeal).toBe(true);
+    await expect(start).toBeDisabled();
+    await expect(restart.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await expect(page.getByText("Table paused", { exact: true })).toBeVisible();
+    const firstDeal = latest();
+    const restartCommand = commands.at(-1)!;
+    expect(restartCommand.payload).toEqual({ roomId: before.roomId, expectedRoomRevision: before.roomRevision });
+    expect(firstDeal).toMatchObject({ roomId: before.roomId, roomRevision: before.roomRevision + 1,
+      gameRevision: before.gameRevision + 1, room: { status: "playing", paused: false, autoResumeAtUtc: null,
+        matchHands: before.room.matchHands, seats: before.room.seats },
+      game: { handNumber: 1, dealerSeat: 0, settlement: null } });
+    expect(firstDeal.game!.window!.windowId).not.toBe(before.game!.window!.windowId);
+    expect(firstDeal.game!.seats.map(seat => seat.total)).toEqual([0, 0, 0, 0]);
+    expect(frames.indexOf(restartAck!)).toBeLessThan(frames.indexOf(firstDeal));
+    deliverDeal!();
+    await expect(restart).toHaveCount(0);
+    await expect(tools).toBeFocused();
+    await expect(table.locator(".table-caption")).toHaveText("Hand 1 / 1");
+    await expect(table.locator(".hand-tile[aria-pressed=true]")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Take a seat." })).toHaveCount(0);
+
+    await tap(page, "Pause");
+    await expect(page.getByText("Table paused", { exact: true })).toBeVisible();
+    const quitting = latest();
+    await tools.tap();
+    await dialog("Table options").getByRole("button", { name: "Quit table" }).tap();
+    const quit = dialog("Quit table?");
+    await expect(quit.getByText(/won’t be able to resume/)).toBeVisible();
+    await quit.getByRole("button", { name: "Quit table" }).tap();
+    const abandon = { roomId: quitting.roomId, expectedRoomRevision: quitting.roomRevision, abandon: true };
+    await expect.poll(() => commands.at(-1)?.payload).toEqual(abandon);
+    await expect.poll(() => !!deliverQuit).toBe(true);
+    await expect(quit.getByRole("button", { name: "Quit table" })).toBeDisabled();
+    expect(commands.at(-2)!.payload).toEqual(abandon);
+    // Compare the entire retry without dumping an ephemeral lease into the report.
+    expect(JSON.stringify(commands.at(-1)) === JSON.stringify(commands.at(-2))).toBe(true);
+    deliverQuit!();
+    await expect(page.getByRole("button", { name: "Play with bots" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Resume your table" })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Resume your table" })).toHaveCount(0);
+    await tap(page, "Play with bots");
+    await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
+    expect(latest().roomId).not.toBe(paused.roomId);
+    await tap(page, "Leave table");
   });
 });

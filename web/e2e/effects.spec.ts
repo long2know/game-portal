@@ -769,6 +769,7 @@ test("settled hands render before deferred art on first sync; that art never cat
     await route.continue();
   });
   const recovered = revealed(frame(61, 4, false));
+  recovered.room.seats[3].kind = "human";
   await open(page, recovered, false, true);
   const results = page.getByRole("dialog", { name: "Match results" });
   try {
@@ -776,6 +777,8 @@ test("settled hands render before deferred art on first sync; that art never cat
     await expect(results.getByRole("group", { name: "Concealed Kong" }).getByRole("img")).toHaveCount(4);
     await expect(results.getByRole("group", { name: "Winning tile" })).toHaveCount(2);
     await expect(results.getByRole("button", { name: "Rematch" })).toBeEnabled();
+    await expect(results.getByRole("button", { name: "Leave table" })).toBeEnabled();
+    await expect(results.getByRole("button", { name: "New game" })).toHaveCount(0);
     expect(await results.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
     await expect(page.locator(".seat-actor")).toHaveCount(0);
   } finally { release(); }
@@ -832,8 +835,12 @@ test("the finale skips draws and releases all effects on visibility loss, reconn
   wire.publish(last);
   const active = await art.elementHandle();
   const match = page.getByRole("dialog", { name: "Match results" });
-  await match.getByRole("button", { name: "Leave table" }).tap();
+  await expect(match.getByRole("button", { name: "New game" })).toBeVisible();
+  await match.getByRole("button", { name: "Quit table" }).tap();
+  await page.getByRole("dialog", { name: "Quit table?" })
+    .getByRole("button", { name: "Quit table" }).tap();
   await expect.poll(() => wire.commands[0]?.op).toBe("leaveRoom");
+  expect(wire.commands[0].payload).toEqual({ roomId: last.roomId, expectedRoomRevision: last.roomRevision, abandon: true });
   wire.publish(last, wire.commands[0]);
   await expect(page.getByRole("button", { name: "Play with bots" })).toBeVisible();
   expect(await active.evaluate(node => node.parentElement === null && node.getAnimations({ subtree: true }).length === 0)).toBe(true);
@@ -891,6 +898,37 @@ test("first sync, gaps, reconnect, duplicate snapshots and rematch obey revision
   await expect(page.locator(finale)).toHaveCount(0);
   wire.publish(frame(recovered.gameRevision + 1, 2));
   await expect(packets).toHaveCount(4);
+});
+
+test("bot-only hand results can restart without showing the previous scores or effects", async ({ page }) => {
+  const first = frame(91, 2);
+  const wire = await open(page, first, false, true);
+  await expect(page.locator(".seat-actor")).toHaveCount(4);
+  const scored = settled(first, [2]);
+  wire.publish(scored);
+  await expect(page.locator(`${finale} [data-finale-seat]`)).toHaveAttribute("data-finale-seat", "2");
+  const results = page.getByRole("dialog", { name: "Hand results", exact: true });
+  const newGame = results.getByRole("button", { name: "New game" });
+  await expect(results.getByRole("button", { name: "Next hand" })).toBeVisible();
+  await expect(results.getByRole("button", { name: "Quit table" })).toBeVisible();
+  await newGame.tap();
+  const confirm = page.getByRole("dialog", { name: "New game?" });
+  await confirm.getByRole("button", { name: "Cancel" }).tap();
+  await expect(newGame).toBeFocused();
+  await expect(results.getByRole("row", { name: "River (you) -8 -8" })).toBeVisible();
+  expect(wire.commands).toHaveLength(0);
+
+  await newGame.tap();
+  await confirm.getByRole("button", { name: "Start new game" }).tap();
+  await expect.poll(() => wire.commands[0]?.op).toBe("restartMatch");
+  expect(wire.commands[0].payload).toEqual({ roomId: scored.roomId, expectedRoomRevision: scored.roomRevision });
+  wire.publish({ ...frame(scored.gameRevision + 1), roomRevision: scored.roomRevision + 1 }, wire.commands[0]);
+  await expect(page.locator(".table-caption")).toHaveText("Hand 1 / 4");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Table options" })).toBeFocused();
+  await expect(page.locator(".seat-score")).toHaveText(["0", "0", "0", "0"]);
+  await expect(page.locator(`${layer} > *`)).toHaveCount(0);
+  await expect(page.locator(finale)).toHaveCount(0);
 });
 
 for (const preference of ["OS", "saved"] as const) {

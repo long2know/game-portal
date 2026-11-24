@@ -140,6 +140,21 @@ internal sealed class RoomGame(ServerOptions options, ILogger<RoomGame> log)
 
     public static void Rematch(RoomCheckpoint room)
     {
+        ResetMatch(room);
+        room.ResetReadiness();
+        room.TouchRevision();
+        room.AdvanceGameRevision();
+    }
+
+    public void RestartMatch(RoomCheckpoint room, DateTimeOffset utc)
+    {
+        ResetMatch(room);
+        // The waiting baseline is not committed; StartHand advances each revision once.
+        StartHand(room, utc);
+    }
+
+    private static void ResetMatch(RoomCheckpoint room)
+    {
         room.Game = null;
         room.Status = "waiting";
         room.WindowAnchor = null;
@@ -148,9 +163,6 @@ internal sealed class RoomGame(ServerOptions options, ILogger<RoomGame> log)
         room.AutoResumeAtUtc = null;
         room.PausedTicks = 0;
         room.Totals = new int[4];
-        room.ResetReadiness();
-        room.TouchRevision();
-        room.AdvanceGameRevision();
     }
 
     public long DueTicks(RoomRow row, RoomCheckpoint room)

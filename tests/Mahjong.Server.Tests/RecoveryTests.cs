@@ -249,6 +249,200 @@ public sealed class RecoveryTests
             new ChoicePayload(roomId, firstWindow, oldAnchor, "cannot-reuse"))).Error());
     }
 
+    [Fact]
+    public async Task PausedBotMatchRestartsInPlaceAndRecoversItsFreshDecisionOnThePortalMount()
+    {
+        await using var server = new Kestrel(("TurnSeconds", 60), ("ClaimSeconds", 2), ("BotDelayMilliseconds", 5000))
+            .WithSetting("BASE_URL", "/portal").WithSetting("Portal__Enabled", "true");
+        server.WithSetting("GamePortal__DataDirectory", server.DataDirectory);
+        await server.StartAsync();
+        var user = new User(server, "/portal");
+        await user.Guest("Host");
+        using var host = await user.Connect();
+        var turn = await DealerTurn(host, await Start(host, hands: 4));
+        var roomId = turn.Text("roomId");
+        var oldChoice = Choice(turn, turn.Private().GetProperty("legalOptions").EnumerateArray()
+            .First(option => option.Text("kind") == "discard"));
+        (await host.Command("chat", new { roomId, text = "<b>Keep this as text</b>" })).Ok();
+        var chatted = await host.Snapshot();
+        Assert.Equal("<b>Keep this as text</b>", chatted.At("room", "chat")[0].Text("text"));
+        (await host.Command("setPaused", new { roomId, expectedRoomRevision = chatted.RoomRevision(), paused = true })).Ok();
+        var paused = await host.Snapshot();
+        Assert.True(paused.At("room", "paused").GetBoolean());
+        Assert.Null(paused.Window().Text("deadlineUtc"));
+        Assert.Equal(turn.Window().Text("windowId"), paused.Window().Text("windowId"));
+
+        var expectedRoomRevision = paused.RoomRevision();
+        var restart = new { roomId, expectedRoomRevision };
+        Assert.Equal("stale_room", (await host.Command("restartMatch",
+            new { roomId, expectedRoomRevision = expectedRoomRevision - 1 })).Error());
+        Assert.Equal("stale_room", (await host.Command("leaveRoom",
+            new { roomId, expectedRoomRevision = expectedRoomRevision - 1, abandon = true })).Error());
+        Assert.Equal("invalid_request", (await host.Command("leaveRoom",
+            new { roomId, expectedRoomRevision, abandon = "true" })).Error());
+        Assert.Equal("invalid_request", (await host.Command("leaveRoom",
+            new { roomId, expectedRoomRevision, abandon = (bool?)null })).Error());
+        using (var unattached = await user.Connect())
+        {
+            foreach (var ack in new[]
+            {
+                await unattached.Command("restartMatch", restart),
+                await unattached.Command("leaveRoom", new { roomId, expectedRoomRevision, abandon = true })
+            })
+            {
+                Assert.Equal("invalid_state", ack.Error());
+                Assert.Null(ack.Text("roomId"));
+            }
+        }
+
+        var requestId = Guid.NewGuid();
+        var lease = host.Lease;
+        await host.Send(new { v = 1, type = "command", requestId, lease, op = "restartMatch", payload = restart });
+        var committed = await host.Take();
+        Assert.Equal("ack", committed.Text("type"));
+        Assert.Equal(requestId, committed.GetProperty("requestId").GetGuid());
+        committed.Ok();
+        var fresh = await host.Take();
+        Assert.Equal("snapshot", fresh.Text("type"));
+        AssertFreshMatch(paused, fresh);
+        Assert.Equal(fresh.RoomRevision(), committed.RoomRevision());
+        Assert.Equal(fresh.GameRevision(), committed.GameRevision());
+        Assert.NotEqual(oldChoice.windowId, fresh.Window().Text("windowId"));
+        var freshLimit = fresh.Window().Text("reason") == "opening" ? 2 : 60;
+        Assert.Equal(fresh.GetProperty("serverTimeUtc").GetDateTimeOffset().AddSeconds(freshLimit),
+            fresh.Window().GetProperty("deadlineUtc").GetDateTimeOffset());
+        var dealerTurn = await DealerTurn(host, fresh);
+
+        await server.StopAsync();
+        await server.StartAsync();
+        Assert.Equal(roomId, (await user.Guest()).Text("resumeRoomId"));
+        using var resumed = await user.Connect();
+        var replay = await resumed.Command("restartMatch", restart, requestId, lease);
+        Assert.Equal(committed.GetRawText(), replay.GetRawText());
+        await AssertNoSnapshotAfterAck(resumed);
+        (await resumed.Sync(roomId)).Ok();
+        var recovered = await resumed.Snapshot();
+        Assert.Equal(dealerTurn.RoomRevision(), recovered.RoomRevision());
+        Assert.Equal(dealerTurn.GameRevision(), recovered.GameRevision());
+        Assert.Equal(dealerTurn.Table().GetRawText(), recovered.Table().GetRawText());
+        Assert.Equal(dealerTurn.Private().GetRawText(), recovered.Private().GetRawText());
+        Assert.Equal("stale_window", (await resumed.Command("choose", oldChoice)).Error());
+        var discard = recovered.Private().GetProperty("legalOptions").EnumerateArray()
+            .First(option => option.Text("kind") == "discard");
+        var played = await resumed.Command("choose", Choice(recovered, discard));
+        played.Ok();
+        Assert.Equal(recovered.GameRevision() + 1, played.GameRevision());
+    }
+
+    [Theory]
+    [InlineData(1, "waiting")]
+    [InlineData(1, "playing")]
+    [InlineData(4, "betweenHands")]
+    [InlineData(1, "complete")]
+    public async Task SoleHostCanAbandonBotRoomWithoutReservationAcrossRecovery(int hands, string status)
+    {
+        var settle = status is "betweenHands" or "complete";
+        await using var server = new Kestrel(("TurnSeconds", 30), ("ClaimSeconds", settle ? 2 : 8),
+            ("BotDelayMilliseconds", settle ? 15 : 5000));
+        await server.StartAsync();
+        var user = new User(server);
+        await user.Guest("Host");
+        using (var profile = await user.Request(HttpMethod.Patch, "/api/profile",
+                   new { preferences = new { sound = false, music = false, volume = 0.25, reducedMotion = true } }))
+            profile.EnsureSuccessStatusCode();
+        using var host = await user.Connect();
+        JsonElement current;
+        if (status == "waiting")
+        {
+            (await host.Command("createRoom", new { visibility = "invite", matchHands = hands, fillBots = true })).Ok();
+            current = await host.Snapshot();
+            Assert.Equal("invalid_state", (await host.Command("restartMatch",
+                new { roomId = current.Text("roomId"), expectedRoomRevision = current.RoomRevision() })).Error());
+            Assert.Equal(JsonValueKind.Null, (await host.Snapshot()).Table().ValueKind);
+        }
+        else current = await Start(host, hands: hands);
+        var roomId = current.Text("roomId");
+        var inviteCode = current.Private().Text("inviteCode");
+        if (settle)
+        {
+            var settled = await PlayHand(host, current);
+            Assert.Equal(status, settled.Status());
+            (await host.Command("restartMatch", new { roomId, expectedRoomRevision = settled.RoomRevision() })).Ok();
+            var fresh = await host.Snapshot();
+            AssertFreshMatch(settled, fresh);
+            current = await PlayHand(host, fresh);
+        }
+        Assert.Equal(status, current.Status());
+
+        var quit = new { roomId, expectedRoomRevision = current.RoomRevision(), abandon = true };
+        var requestId = Guid.NewGuid();
+        var lease = host.Lease;
+        var left = await host.Command("leaveRoom", quit, requestId);
+        left.Ok();
+        Assert.Equal(roomId, left.Text("roomId"));
+        Assert.Equal(current.RoomRevision() + 1, left.RoomRevision());
+        Assert.Equal(current.GameRevision(), left.GameRevision());
+        await AssertNoSnapshotAfterAck(host);
+        Assert.Null((await user.Guest()).Text("resumeRoomId"));
+
+        await server.StopAsync();
+        await server.StartAsync();
+        var guest = await user.Guest("Ignored rename");
+        Assert.Null(guest.Text("resumeRoomId"));
+        Assert.Equal("Host", guest.Text("displayName"));
+        Assert.Equal(0.25, guest.At("preferences", "volume").GetDouble());
+        Assert.True(guest.At("preferences", "reducedMotion").GetBoolean());
+        using var resumed = await user.Connect();
+        var replay = await resumed.Command("leaveRoom", quit, requestId, lease);
+        Assert.Equal(left.GetRawText(), replay.GetRawText());
+        await AssertNoSnapshotAfterAck(resumed);
+        Assert.Equal("request_conflict", (await resumed.Command("leaveRoom", quit with { abandon = false }, requestId, lease)).Error());
+        Assert.Equal("room_not_found", (await resumed.Sync(roomId)).Error());
+        var retiredInvite = await resumed.Command("joinRoom", new { inviteCode });
+        Assert.Equal("room_not_found", retiredInvite.Error());
+        Assert.Null(retiredInvite.Text("roomId"));
+        (await resumed.Command("createRoom", new { visibility = "public", matchHands = 1 })).Ok();
+        var replacement = await resumed.Snapshot();
+        Assert.NotEqual(roomId, replacement.Text("roomId"));
+        Assert.Equal(replacement.Text("roomId"), (await user.Guest()).Text("resumeRoomId"));
+    }
+
+    private static void AssertFreshMatch(JsonElement prior, JsonElement fresh)
+    {
+        Assert.Equal("playing", fresh.Status());
+        Assert.Equal(prior.Text("roomId"), fresh.Text("roomId"));
+        Assert.Equal(prior.RoomRevision() + 1, fresh.RoomRevision());
+        Assert.Equal(prior.GameRevision() + 1, fresh.GameRevision());
+        foreach (var preserved in new[] { "hostSeat", "visibility", "matchHands", "rulesVersion", "seats", "chat" })
+            Assert.Equal(prior.At("room", preserved).GetRawText(), fresh.At("room", preserved).GetRawText());
+        Assert.Equal(prior.Private().Text("inviteCode"), fresh.Private().Text("inviteCode"));
+        Assert.Equal(prior.Private().GetProperty("seat").GetInt32(), fresh.Private().GetProperty("seat").GetInt32());
+        Assert.False(fresh.At("room", "paused").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, fresh.At("room", "autoResumeAtUtc").ValueKind);
+        Assert.Equal(1, fresh.Table().GetProperty("handNumber").GetInt32());
+        Assert.Equal(0, fresh.Table().GetProperty("dealerSeat").GetInt32());
+        Assert.Equal(55, fresh.Table().GetProperty("wallCount").GetInt32());
+        Assert.Equal(JsonValueKind.Null, fresh.Table().GetProperty("settlement").ValueKind);
+        Assert.Equal(fresh.GameRevision(), fresh.Window().GetProperty("anchorGameRevision").GetInt64());
+        Assert.All(fresh.Table().GetProperty("seats").EnumerateArray(), seat =>
+        {
+            Assert.Empty(seat.GetProperty("discards").EnumerateArray());
+            Assert.Empty(seat.GetProperty("melds").EnumerateArray());
+            Assert.Equal(0, seat.GetProperty("total").GetInt32());
+        });
+        var hand = fresh.Private().GetProperty("hand");
+        Assert.Equal(14, hand.GetArrayLength());
+        Assert.Empty(hand.EnumerateArray().Select(tile => tile.Text("tileId"))
+            .Intersect(prior.Private().GetProperty("hand").EnumerateArray().Select(tile => tile.Text("tileId"))));
+        AssertRedacted(fresh);
+    }
+
+    private static async Task AssertNoSnapshotAfterAck(Client client)
+    {
+        await client.Send(new { v = 1, type = "renewLease" });
+        Assert.Equal("lease", (await client.Take()).Text("type"));
+    }
+
     private static async Task<JsonElement> Start(Client host, Client? other = null, int hands = 1)
     {
         (await host.Command("createRoom", new { visibility = "invite", matchHands = hands, fillBots = other is null })).Ok();

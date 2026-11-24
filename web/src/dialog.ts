@@ -6,7 +6,7 @@ export class Modal {
   readonly notice = el("p", "note");
   private readonly title = el("h2");
   private opener: HTMLElement | null = null;
-  kind: "settings" | "rules" | "create" | "chat" | "results" | "invite" | null = null;
+  kind: "settings" | "rules" | "create" | "chat" | "results" | "invite" | "match" | null = null;
 
   constructor(closed: () => void) {
     const close = button("", "btn icon-btn", () => this.close());

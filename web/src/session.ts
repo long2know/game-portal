@@ -120,7 +120,7 @@ export class TableSession {
     this.intent = {
       message: { ...action, v: 1, type: "command", requestId: requestId(), lease: this.lease.lease },
       expiresAt: Date.parse(this.lease.expiresAtUtc),
-      reserveOnLeave: action.op === "leaveRoom" &&
+      reserveOnLeave: action.op === "leaveRoom" && !action.payload.abandon &&
         (this.snapshot?.room.status === "playing" || this.snapshot?.room.status === "betweenHands"),
       deliveries: 0,
     };
@@ -215,6 +215,7 @@ export class TableSession {
       if (this.intent.expiresAt > this.now) this.sendIntent();
       else {
         this.intent = null;
+        if (!this.roomId) this.clearRoom();
         this.hooks.notice(errorMessage("request_expired"));
       }
     }
@@ -263,8 +264,12 @@ export class TableSession {
         const code = ack.error?.code ?? "unavailable";
         this.sync = null;
         if (code === "room_not_found" || code === "forbidden") {
-          this.clearRoom();
-          if (this.intent?.message.op !== "leaveRoom") this.hooks.notice(errorMessage(code));
+          // A committed leave can delete membership before its ack is delivered.
+          if (this.intent?.message.op === "leaveRoom") this.roomId = null;
+          else {
+            this.clearRoom();
+            this.hooks.notice(errorMessage(code));
+          }
           this.online();
         } else {
           this.hooks.notice(errorMessage(code));
@@ -280,6 +285,7 @@ export class TableSession {
     clearTimeout(this.ackTimer);
     if (ack.status === "error") {
       const code = ack.error?.code ?? "unavailable";
+      if (!this.roomId && intent.message.op === "leaveRoom") this.clearRoom();
       this.hooks.notice(errorMessage(code));
       const next = expectation(ack);
       if (next && this.roomId === next.roomId && (!this.snapshot || !atLeast(this.snapshot, next.revisions!))) {

@@ -48,6 +48,11 @@ export function setMelds(parent: HTMLElement, melds: Meld[], dealer: Seat, local
 
 export type TableCue = "draw" | "discard" | "call" | "chi" | "peng" | "turn" | "win" | "exhausted";
 
+export function canManageMatch(state: Snapshot | null): boolean {
+  return !!state?.game && state.room.hostSeat === state.self.seat &&
+    state.room.seats.every(seat => seat.seat === state.self.seat || seat.kind === "bot");
+}
+
 const signed = (points: number) => points > 0 ? `+${points}` : points < 0 ? `−${-points}` : "0";
 
 interface Lane {
@@ -142,6 +147,7 @@ export interface TableHooks {
   selected: () => void;
   results: () => void;
   pause: () => void;
+  manage?: () => void;
   motionStopped?: () => void;
 }
 
@@ -164,6 +170,7 @@ export class TableView {
   private readonly discard = button("Discard tile", "btn primary discard-confirm", () => this.confirm());
   private readonly resultButton: HTMLButtonElement;
   private readonly pauseButton: HTMLButtonElement;
+  readonly optionsButton: HTMLButtonElement;
   private readonly reduceMotion = matchMedia(reducedMotionQuery);
   private readonly effects = new TableEffects();
   #cast?: SeatCast;
@@ -193,8 +200,12 @@ export class TableView {
     this.stage.prepend(this.plane);
     this.resultButton = button("View results", "btn primary", hooks.results);
     this.pauseButton = button("Pause", "btn subtle pause-btn", hooks.pause);
+    this.optionsButton = button("⋯", "btn icon-btn", hooks.manage);
+    this.optionsButton.title = "Table options";
+    this.optionsButton.setAttribute("aria-label", "Table options");
+    this.optionsButton.setAttribute("aria-haspopup", "dialog");
     const status = el("div", "turnbar", el("div", "turn-ident", this.phase, this.gameInfo),
-      el("div", "turn-tools", this.timer, this.pauseButton));
+      el("div", "turn-tools", this.timer, this.pauseButton, this.optionsButton));
     this.timer.setAttribute("role", "timer");
     this.timer.setAttribute("aria-live", "off");
     this.phase.setAttribute("role", "status");
@@ -343,13 +354,15 @@ export class TableView {
 
     text(this.wallText, game.wallCount);
     text(this.tableCaption, `Hand ${game.handNumber} / ${room.matchHands}`);
-    text(this.gameInfo, `${wind(self.seat, game.dealerSeat)} seat${self.seat === game.dealerSeat ? " · Dealer" : ""}`);
+    text(this.gameInfo, `${wind(self.seat, game.dealerSeat)}${self.seat === game.dealerSeat ? " · Dealer" : ""}`);
     text(this.phase, this.phaseText(game, room.seats, self.seat, room.paused));
     const trigger = game.window?.trigger;
     reconcile(this.trigger, trigger?.faces ?? [], (face, i) => `${i}:${face}`, face => tileLabel(face));
     this.trigger.setAttribute("aria-label", trigger ? `${wind(trigger.seat, game.dealerSeat)} played` : "");
     this.pauseButton.hidden = room.status !== "playing" || self.seat !== room.hostSeat;
     this.pauseButton.disabled = !canAct;
+    this.optionsButton.hidden = !this.hooks.manage || !canManageMatch(state);
+    this.optionsButton.disabled = !canAct;
     text(this.pauseButton, room.paused ? "Resume" : "Pause");
 
     const discards: { lane: Lane; seat: Seat; face: Tile["face"]; own: boolean }[] = [];
@@ -496,7 +509,7 @@ export class TableView {
     this.timer.classList.toggle("urgent", !room.paused && seconds <= 5 && this.options.length > 0);
     const timerLabel = room.paused ? `Auto-resume in ${seconds} seconds` : `${seconds} seconds remaining`;
     if (this.timer.getAttribute("aria-label") !== timerLabel) this.timer.setAttribute("aria-label", timerLabel);
-    text(this.timer, room.paused ? `Resume in ${seconds}s` : `${seconds}s`);
+    text(this.timer, `${seconds}s`);
     const open = this.canAct && !room.paused && !!game?.window && left > 0;
     if (force || open !== this.open) {
       this.open = open;
@@ -529,7 +542,7 @@ export class TableView {
     text(this.discard, selected ? `Discard ${faceName(selected.face)}` : "Discard tile");
     let message: string;
     if (game?.settlement) message = room?.status === "complete" ? "Match finished. See the final scores." : "Review the scores, then start the next hand.";
-    else if (room?.paused) message = "Decisions are frozen while the table is paused.";
+    else if (room?.paused) message = "Decisions are frozen until the timer ends or you resume.";
     else if (this.discardOptions.size) message = selected ? "Confirm your discard." : "Select a tile, then confirm.";
     else if (this.options.length) message = "Choose one of the available actions.";
     else message = game?.phase === "claim" ? "Waiting for eligible players to respond." : "Waiting for the next turn.";
