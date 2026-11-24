@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.Text.Json;
+using Xunit.Abstractions;
 
 namespace JadeCourt.Games.Tests;
 
-public sealed class BoardGameTests
+public sealed class BoardGameTests(ITestOutputHelper output)
 {
     [Theory]
     [InlineData("reversi", "standard", 2, 8, 8, 64)]
@@ -10,6 +12,8 @@ public sealed class BoardGameTests
     [InlineData("chinese-checkers", "standard", 6, 17, 25, 121)]
     [InlineData("go", "9x9", 2, 9, 9, 81)]
     [InlineData("go", "19x19", 2, 19, 19, 361)]
+    [InlineData("xiangqi", "standard", 2, 10, 9, 90)]
+    [InlineData("gomoku", "freestyle", 2, 15, 15, 225)]
     public void SavedOpeningReplaysWithAFreshEngine(
         string id, string variant, int players, int rows, int columns, int holes)
     {
@@ -70,19 +74,32 @@ public sealed class BoardGameTests
     [InlineData("chinese-checkers", "standard", 6, 600)]
     [InlineData("go", "9x9", 2, 220)]
     [InlineData("go", "19x19", 2, 750)]
+    [InlineData("xiangqi", "standard", 2, 500)]
+    [InlineData("gomoku", "freestyle", 2, 225)]
     public void SampledBotGamesReachATerminalPosition(string id, string variant, int players, int maxTurns)
     {
         var game = BoardGames.Find(id)!;
         var checkpoint = game.Start(variant, players);
+        var slowest = TimeSpan.Zero;
+        var plies = 0;
+        var timed = id is "xiangqi" or "gomoku";
         for (var turn = 0; turn < maxTurns; turn++)
         {
             var view = game.View(checkpoint);
             if (view.Status == "finished")
                 break;
             Assert.Equal(turn % players, view.Turn);
+            var start = timed ? Stopwatch.GetTimestamp() : 0;
             var bot = game.SelectBotMove(checkpoint);
+            if (timed)
+            {
+                var elapsed = Stopwatch.GetElapsedTime(start);
+                if (elapsed > slowest)
+                    slowest = elapsed;
+            }
             Assert.Contains(view.Moves, move => move.Id == bot);
             checkpoint = game.Apply(checkpoint, bot);
+            plies++;
         }
         var final = game.View(checkpoint);
         Assert.Equal("finished", final.Status);
@@ -91,5 +108,10 @@ public sealed class BoardGameTests
         Assert.NotNull(final.LastMove);
         Assert.Throws<InvalidOperationException>(() => game.SelectBotMove(checkpoint));
         Assert.Throws<ArgumentException>("moveId", () => game.Apply(checkpoint, final.LastMove.Id));
+        if (timed)
+        {
+            output.WriteLine($"{id}: {plies} legal bot turns; slowest selection {slowest.TotalMilliseconds:F1} ms.");
+            Assert.True(slowest < TimeSpan.FromSeconds(2), $"A bot turn took {slowest}.");
+        }
     }
 }
