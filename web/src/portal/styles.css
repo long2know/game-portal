@@ -285,48 +285,8 @@ h1 { letter-spacing: -.036em; }
 .court-confirm::backdrop { background: #0c1511cc; }
 .court-confirm p { margin-block: .8rem 1rem; }
 
-.match-layout { display: grid; gap: clamp(12px, 2vw, 24px); grid-template-areas: "head" "board" "rail"; }
-.match[data-state="waiting"] .match-layout { grid-template-areas: "head" "rail" "board"; }
-.match-head { grid-area: head; display: grid; gap: 9px; }
-.match-title h1 { margin-block: 4px 3px; font-size: clamp(2.2rem, 5.6vw, 3.65rem); }
-.match-variant, .match-note { color: var(--muted); font-size: .84rem; }
-.match-state { display: grid; justify-items: start; gap: 4px; }
-.turn-badge {
-  display: inline-flex; gap: 9px; align-items: center; max-width: 100%;
-  padding: 5px 11px; border: 1px solid #778772; border-radius: 999px; background: #243b30; color: var(--ivory);
-  overflow-wrap: anywhere;
-}
-.turn-badge[data-signal="turn"] { border-color: #d9c08c; background: #304334; }
-.turn-badge[data-signal="offline"] { border-color: #aa8359; background: #413629; }
-.turn-badge:is([data-signal="finished"], [data-signal="closed"]) { border-color: #a38256; background: #483c2b; }
-.turn-light { width: 8px; aspect-ratio: 1; flex: none; border-radius: 50%; background: #e1b982; }
-[data-signal="turn"] .turn-light { border-radius: 1px; transform: rotate(45deg); background: #ffd68f; }
-.match-rail { grid-area: rail; display: grid; align-content: start; gap: 11px; min-width: 0; }
-.match-card { display: grid; gap: 8px; padding: clamp(13px, 2vw, 22px); min-width: 0; }
-.match-card > .button, .board-tools > .button { justify-self: start; }
-.match-card .muted, .position-detail, .last-move { font-size: .9rem; }
-.match-card h2 { font-size: clamp(1.27rem, 3vw, 1.66rem); }
-.seats { display: grid; gap: 7px; padding: 0; margin: 0; list-style: none; }
-.seat {
-  min-width: 0; display: grid; grid-template-columns: 23px minmax(0, 1fr) auto;
-  align-items: center; gap: 10px; border: 1px solid #506452; border-radius: 8px;
-  padding: 6px 9px; background: #192c22;
-}
-.seat[data-current] { border-color: #b9a67f; background: #2e4536; box-shadow: inset 3px 0 #d5b37a; }
-.seat-label { min-width: 0; display: grid; word-break: break-word; font-size: .94rem; }
-.seat-label small { color: var(--muted); text-transform: capitalize; font-size: .77rem; }
-.seat-count, .position-detail { color: var(--muted); }
-.seat-count, .seat-score { font-size: .84rem; }
-.seat-score { color: var(--brass); font-variant-numeric: tabular-nums; }
-.seat-chip {
-  width: 21px; aspect-ratio: 1; border-radius: 50%; border: 1px dashed #809386;
-  background: #526b5a64;
-}
-.seat-chip[data-side] { border-style: solid; border-color: var(--piece-rim); background: var(--piece-face); }
-.share-card input { font-size: .85rem; }
+.board-tools > .button { justify-self: start; }
 .copy-status { color: var(--jade); }
-.waiting-study { grid-area: board; overflow: hidden; border-radius: 7px; border: 1px solid var(--line); }
-.waiting-study .tableau { min-height: clamp(128px, 30vw, 270px); height: 100%; }
 
 .board-deck { grid-area: board; min-width: 0; }
 .board-frame {
@@ -537,8 +497,6 @@ h1 { letter-spacing: -.036em; }
   .game-card-featured .card-action { margin-inline-end: 2rem; white-space: nowrap; }
   .game-card-featured .tableau { min-block-size: 86px; }
   .game-card-featured .catalog-mark { inset: -7%; inline-size: 114%; block-size: 114%; }
-  .match-head { grid-template-columns: minmax(0, 1fr) minmax(0, 45%); align-items: end; }
-  .match-state { justify-items: end; text-align: right; }
 }
 @media (max-width: 480px) {
   :where(.header:has(+ main > .lobby)) .brand { gap: 6px; }
@@ -576,8 +534,6 @@ h1 { letter-spacing: -.036em; }
   .section-caption { font-size: .88rem; }
   .setup { grid-template-columns: minmax(0, 1fr) minmax(0, .85fr); }
   .setup-study { grid-template-rows: minmax(0, 1fr) auto; }
-  .match-layout { grid-template-columns: minmax(0, 1.85fr) minmax(218px, 1fr); grid-template-areas: "head head" "board rail"; }
-  .match[data-state="waiting"] .match-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "head head" "rail board"; }
   .card-description { max-width: 36ch; }
 }
 @media (min-width: 1000px) {

@@ -112,7 +112,7 @@ test.describe("published Lantern Run", () => {
     await expect(stat(page, "best")).toHaveText("56");
     await page.reload();
     await expect(stat(page, "best")).toHaveText("0");
-    expect([...paths].filter(path => path.includes("/api/"))).toEqual([]);
+    expect([...paths].filter(path => path.includes("/api/"))).toEqual([`${mount}api/saves`]);
     expect(errors).toEqual([]);
   });
 

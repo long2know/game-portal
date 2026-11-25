@@ -149,7 +149,10 @@ export async function exerciseStack(page: Page, address: URL, info: TestInfo) {
   expect(await read()).toBe(untouched);
 
   await page.setViewportSize({ width: 740, height: 320 });
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.reload();
+  await expect(count).toHaveText("78 / 78 tiles left");
+  await expect.poll(() => page.evaluate(() => document.body.getBoundingClientRect().width)).toBe(740);
+  expect(await read()).toBe(untouched);
   await expect(board).toBeInViewport({ ratio: .99 });
   await fitsPhone(page);
   for (const control of await game.locator(".stack-actions button").all()) {
@@ -161,11 +164,15 @@ export async function exerciseStack(page: Page, address: URL, info: TestInfo) {
   await page.screenshot({ path: info.outputPath("mahjong-solitaire-740x320.png") });
 
   await game.getByRole("button", { name: "New game", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "New game" })).toBeInViewport();
   await dialog.getByRole("button", { name: "New game" }).click();
   await expect(action).toHaveText("A new solvable deal is ready.");
   const fresh = JSON.parse((await read())!);
   expect(fresh).toMatchObject({ version: 1, seed: expect.any(Number), moves: [] });
   expect(fresh.seed).not.toBe(328603);
+  await page.reload();
+  await expect(count).toHaveText("78 / 78 tiles left");
+  expect(JSON.parse((await read())!)).toEqual(fresh);
   expect(await page.evaluate(key => localStorage.getItem(key), otherKey)).toBe("unrelated");
   if (info.project.name === "chromium") {
     const tile = board.locator('[data-state="free"]').first();

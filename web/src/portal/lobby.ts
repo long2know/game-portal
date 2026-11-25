@@ -1,7 +1,26 @@
+import { apiCode, mountedJson } from "./api";
 import { catalogPreview } from "./catalog-art";
 import { catalog } from "./catalog";
 import type { GameId } from "./catalog";
 import { el, link } from "./dom";
+import { mahjongSolitaireProgressKey } from "./games/mahjong-solitaire-save";
+
+function discoverSaves(mount: string, before: HTMLElement): void {
+  const json = mountedJson(mount);
+  const refresh = async () => {
+    let local: string | null = null;
+    try { local = localStorage.getItem(mahjongSolitaireProgressKey(mount)); } catch { /* Optional storage. */ }
+    const result = await json<{ saves?: unknown; unavailable?: boolean }>("api/saves").catch(error =>
+      ({ saves: [], unavailable: apiCode(error) !== "not_authenticated" }));
+    const saves: unknown[] = Array.isArray(result?.saves) ? result.saves : [];
+    if (saves.length || local || result?.unavailable || before.previousElementSibling?.id === "continue-playing") {
+      try { await (await import("./saved-games")).showSaves(mount, before, saves, local, !!result?.unavailable); }
+      catch { /* Catalog links still open their game and its normal resume flow. */ }
+    }
+  };
+  void refresh();
+  window.addEventListener("pageshow", event => { if (event.persisted) void refresh(); });
+}
 
 export function lobby(mount: string): HTMLElement {
   const h1 = el("h1", "", "Find your ", el("em", "", "next move."));
@@ -45,5 +64,7 @@ export function lobby(mount: string): HTMLElement {
   }
   section.append(el("div", "section-title", heading,
     el("p", "section-caption", `${games.length} games · No account required`)), grid);
-  return el("div", "lobby", hero, section);
+  const root = el("div", "lobby", hero, section);
+  discoverSaves(mount, section);
+  return root;
 }

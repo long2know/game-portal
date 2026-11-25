@@ -61,6 +61,15 @@ Mahjong reservation, can be listed without offering a fresh start. Mahjong waiti
 rooms never offer a fresh start. Browser-local Mahjong Solitaire and Lantern Run
 have no server saves.
 
+The lobby's **Continue playing** shelf opens the listed seat, not whichever table
+happens to be newest at navigation time. No table ID or invite credential is added
+to the URL. **Start fresh** on a bot board or seated game creates another table
+with the same settings; it does not close or modify the previous table. For a server
+solo save, confirmation replaces the saved deal. A Mahjong restart replaces the match
+in place; if the restart cannot be confirmed, use **Continue** to check the table
+before trying again. Browser-local Mahjong Solitaire appears here only on a device with
+a valid save for this mount, and confirms the fresh deal on its own page.
+
 ## Private player invites
 
 These endpoints are portal-only. Paths are relative to `BASE_URL` (for example,
