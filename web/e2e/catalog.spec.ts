@@ -166,9 +166,10 @@ test("320px catalog keeps previews, copy and both hero actions usable", async ({
 
   const choose = page.getByRole("link", { name: "Choose a game ↓", exact: true });
   const play = page.getByRole("link", { name: "Play Mahjong", exact: true });
+  const daily = page.getByRole("link", { name: "Open Daily Court", exact: true });
   const featured = page.getByRole("link", { name: "Take a seat", exact: true });
   const chess = page.getByRole("link", { name: "Set up Chess", exact: true });
-  for (const link of [choose, play, featured, chess]) {
+  for (const link of [choose, play, daily, featured, chess]) {
     const { width, height } = (await link.boundingBox())!;
     expect(Math.min(width, height)).toBeGreaterThanOrEqual(44);
   }
@@ -200,10 +201,14 @@ test("320px catalog keeps previews, copy and both hero actions usable", async ({
   }
   await page.setViewportSize({ width: 320, height: 740 });
   await choose.focus();
-  for (const link of [play, featured, chess]) {
+  for (const link of [play, daily, featured, chess]) {
     await page.keyboard.press("Tab");
     await expect(link).toBeFocused();
     await expect(link).toHaveCSS("outline-style", "solid");
+    if (link === daily) {
+      await expect(daily).toBeInViewport({ ratio: 1 });
+      await expect(daily).toHaveCSS("outline-width", "3px");
+    }
   }
   await choose.tap();
   await expect(page).toHaveURL(href("#games"));
