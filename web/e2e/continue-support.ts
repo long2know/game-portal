@@ -147,6 +147,8 @@ export async function savedMahjong(page: Page, base: string) {
     const server = route.connectToServer();
     let restart: string | undefined;
     let ack: Ack | undefined;
+    let dealDelivered = false;
+    const heldDeals: (string | Buffer)[] = [];
     route.onMessage(payload => {
       const request = JSON.parse(payload.toString()) as ClientMessage;
       if (request.type === "command" && request.op === "restartMatch") {
@@ -163,8 +165,12 @@ export async function savedMahjong(page: Page, base: string) {
       }
       if (frame.type === "snapshot") {
         snapshots.push(frame);
-        if (ack && frame.gameRevision === ack.gameRevision && !release) {
-          release = () => route.send(payload);
+        if (!dealDelivered && ack?.gameRevision != null && frame.gameRevision >= ack.gameRevision) {
+          heldDeals.push(payload);
+          release ??= () => {
+            dealDelivered = true;
+            heldDeals.splice(0).forEach(frame => route.send(frame));
+          };
           return;
         }
       }
@@ -192,8 +198,10 @@ export async function savedMahjong(page: Page, base: string) {
   expect(intents).toEqual([{ roomId: before.roomId, expectedRoomRevision: before.roomRevision }]);
   await expect(page).toHaveURL(base);
   await expect(fresh).toBeDisabled();
-  expect(snapshots.at(-1)).toMatchObject({ roomId: before.roomId, roomRevision: before.roomRevision + 1,
-    room: { status: "playing", paused: false }, game: { handNumber: 1, settlement: null } });
+  const firstDeal = snapshots.find(frame => frame.gameRevision === latestRestart!.gameRevision);
+  expect(firstDeal).toMatchObject({ roomId: before.roomId, roomRevision: before.roomRevision + 1,
+    room: { status: "playing", paused: false, tableTotals: before.room.tableTotals },
+    game: { handNumber: 1, dealerSeat: before.game!.dealerSeat, settlement: null } });
   release!();
   await expect(page).toHaveURL(url("mahjong/"));
   await expect(page.getByRole("region", { name: "Mahjong table" })).toBeVisible();

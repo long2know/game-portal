@@ -868,6 +868,8 @@ test.describe("mounted Jade Court portal", () => {
     let deliverQuit: (() => void) | undefined;
     let restartAck: Ack | undefined;
     let droppedQuit = false;
+    let dealDelivered = false;
+    const heldDeals: (string | Buffer)[] = [];
     await page.routeWebSocket("**/ws", route => {
       const server = route.connectToServer();
       route.onMessage(payload => {
@@ -895,8 +897,14 @@ test.describe("mounted Jade Court portal", () => {
             return;
           }
         }
-        if (!deliverDeal && message.type === "snapshot" && restartAck?.gameRevision === message.gameRevision) {
-          deliverDeal = () => route.send(payload);
+        if (!dealDelivered && message.type === "snapshot" && restartAck?.gameRevision != null &&
+          message.gameRevision >= restartAck.gameRevision) {
+          // A bot dealer can commit successor snapshots before the test releases the new hand.
+          heldDeals.push(payload);
+          deliverDeal ??= () => {
+            dealDelivered = true;
+            heldDeals.splice(0).forEach(frame => route.send(frame));
+          };
           return;
         }
         route.send(payload);
@@ -998,7 +1006,7 @@ test.describe("mounted Jade Court portal", () => {
     await expect(start).toBeDisabled();
     await expect(restart.getByRole("button", { name: "Cancel" })).toBeDisabled();
     await expect(page.getByText("Table paused", { exact: true })).toBeVisible();
-    const firstDeal = latest();
+    const firstDeal = snapshots().find(frame => frame.gameRevision === restartAck!.gameRevision)!;
     const restartCommand = commands.at(-1)!;
     expect(restartCommand.payload).toEqual({ roomId: before.roomId, expectedRoomRevision: before.roomRevision });
     expect(firstDeal).toMatchObject({ roomId: before.roomId, roomRevision: before.roomRevision + 1,

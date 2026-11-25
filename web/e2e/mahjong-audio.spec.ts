@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Page, WebSocketRoute } from "@playwright/test";
 import type { ClientMessage, Guest, Meld, Seat, Snapshot } from "../src/protocol";
@@ -336,11 +337,27 @@ test("committed calls play the selected Mandarin PCM exactly once, independently
   expect(spoken).toMatchObject({ running: true, simultaneous: 1 });
   expect(spoken.fingerprint).not.toBe(lower[0].fingerprint);
   expect(spoken.fingerprint).not.toBe(higher[0].fingerprint);
+  const englishClip = requests.find(path => /\/cha-english-[\w-]+\.mp3$/.test(path));
+  expect(englishClip).toBeDefined();
+  const shipped = await page.request.get(new URL(englishClip!, baseURL).href);
+  expect(shipped.ok()).toBe(true);
+  expect(createHash("sha256").update(await shipped.body()).digest("hex"))
+    .toBe("4c5d494a23a16758367082775bb5888d5a52a80d2afaef4c140aefc024535c65");
 });
 
 test("a real published Mahjong game speaks a committed call", async ({ page, baseURL, browserName }, info) => {
   test.setTimeout(80000);
-  await page.setViewportSize({ width: 320, height: 730 });
+  const viewport = browserName === "chromium" ? { width: 320, height: 730 } : { width: 740, height: 320 };
+  await page.setViewportSize(viewport);
+  if (viewport.width === 740) {
+    await page.addInitScript(() => {
+      document.addEventListener("DOMContentLoaded", () => {
+        for (const [edge, inset] of [["t", 10], ["r", 22], ["b", 13], ["l", 25]]) {
+          document.documentElement.style.setProperty(`--safe-${edge}`, `${inset}px`);
+        }
+      });
+    });
+  }
   const read = await observeCalls(page);
   let current: Snapshot | undefined;
   const commits: { kind: string; seat: Seat; bot: boolean; revision: number }[] = [];
@@ -437,7 +454,7 @@ test("a real published Mahjong game speaks a committed call", async ({ page, bas
   expect(href.pathname).toMatch(new RegExp(`^${new URL("assets/", baseURL).pathname}tile-suits-[\\w-]+\\.svg$`));
   expect((await publicMark.locator("xpath=ancestor::*[@role='img']").boundingBox())!.width).toBeGreaterThanOrEqual(44);
   await expect(viewer.locator(".meld-concealed use")).toHaveCount(0);
-  await page.screenshot({ path: info.outputPath("live-exposed-320.png") });
+  await page.screenshot({ path: info.outputPath(`live-exposed-${viewport.width}x${viewport.height}.png`) });
   await button(page, "Back to table").tap();
   await expect(switcher).toBeFocused();
   expect(await geometry()).toEqual(before);

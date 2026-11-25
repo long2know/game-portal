@@ -943,6 +943,7 @@ for (const [width, height] of [[320, 730], [740, 320]]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     const first = frame(111);
     first.game!.dealerSeat = 1;
+    first.game!.seats[1].concealedCount = 10;
     first.game!.seats[1].melds = [{ kind: "gang", method: "concealed", fromSeat: null, tiles: [null, null, null, null] }];
     const wire = await open(page, first);
     await page.addStyleTag({ content: width === 740
@@ -960,6 +961,7 @@ for (const [width, height] of [[320, 730], [740, 320]]) {
     const before = await bounds();
 
     const called = advance(first);
+    called.game!.seats[1].concealedCount = 7;
     called.game!.seats[1].melds.push({ kind: "chi", method: null, fromSeat: 0, tiles: ["b2", "b3", "b4"] });
     wire.publish(called);
     await expect(trigger.getByText("New")).toBeVisible();
@@ -1002,12 +1004,16 @@ for (const [width, height] of [[320, 730], [740, 320]]) {
     })).toBe(true);
 
     const pending = advance(called);
+    pending.game!.phase = "claim";
+    pending.game!.turnSeat = null;
+    pending.self.legalOptions = [];
+    pending.game!.seats[2].concealedCount = 8;
     pending.game!.seats[2].melds = [
       { kind: "peng", method: null, fromSeat: 3, tiles: ["c5", "c5", "c5"] },
       { kind: "gang", method: "open", fromSeat: 1, tiles: ["d4", "d4", "d4", "d4"] },
     ];
-    pending.game!.window!.reason = "kong";
-    pending.game!.window!.trigger = { seat: 2, faces: ["c5"] };
+    pending.game!.window = { ...pending.game!.window!, windowId: "rob-bu", anchorGameRevision: pending.gameRevision,
+      reason: "kong", trigger: { seat: 2, faces: ["c5"] } };
     wire.publish(pending);
     await trigger.tap();
     await expect(viewer.getByRole("group", { name: "Peng · from West" }).getByRole("img")).toHaveCount(3);
@@ -1015,9 +1021,11 @@ for (const [width, height] of [[320, 730], [740, 320]]) {
     await expect(viewer.getByRole("group", { name: /^Added Supplement/ })).toHaveCount(0);
     await back.tap();
     const added = advance(pending);
+    added.game!.phase = "turn";
+    added.game!.turnSeat = 2;
     added.game!.seats[2].melds[0] = { kind: "bu", method: "added", fromSeat: 3, tiles: ["c5", "c5", "c5", "c5"] };
-    added.game!.window!.reason = "turn";
-    added.game!.window!.trigger = null;
+    added.game!.window = { ...added.game!.window!, windowId: "after-bu", anchorGameRevision: added.gameRevision,
+      reason: "turn", trigger: null };
     wire.reconnect(added);
     await expect(page.locator('.connection[data-status="online"]')).toBeVisible();
     await expect(trigger.getByText("New")).toBeVisible();
@@ -1045,7 +1053,7 @@ test("two-bird final results separate hand, match and table points and count fro
   game.wallCount = 0;
   game.settlement = {
     reason: "win", sourceSeat: 2, nextDealerSeat: 0,
-    winners: [{ seat: 0, winBy: "discard", winningTiles: ["d8"], patterns: [] }],
+    winners: [{ seat: 0, winBy: "discard", winningTiles: ["d8"], patterns: [{ code: "plain", label: "Ordinary win (平胡)", points: 1 }] }],
     birds: ["d5", "c3"], transfers: [{ fromSeat: 2, toSeat: 0, points: 6, reason: "win" }],
     seatResults: [
       { seat: 0, delta: 6, total: 10 }, { seat: 1, delta: 0, total: -12 },
