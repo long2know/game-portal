@@ -157,7 +157,7 @@ static RateLimitPartition<string> PerAddress(HttpContext context, int limit) =>
 static object VersionInfo()
 {
     var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-        ?.InformationalVersion.Split('+', 2) ?? ["0.1.0"];
+        ?.InformationalVersion.Split('+', 2) ?? ["0.2.0"];
     var sha = version.Length == 2 && Regex.IsMatch(version[1], "^[a-f0-9]{40}$", RegexOptions.CultureInvariant)
         ? version[1] : "unknown";
     return new { appVersion = version[0], protocolVersion = Wire.Version, commitSha = sha };

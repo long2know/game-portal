@@ -12,7 +12,7 @@ Run one portal process per data directory. The `long2know/game-portal` Linux/amd
 | `GAME_PORTAL_PRODUCTION_IMAGE` | Published tag or digest; default `ghcr.io/long2know/game-portal:latest`. |
 | `GAME_PORTAL_PULL_POLICY` | `always` by default. Set to `never` only for a verified image already loaded locally. |
 | `GAME_PORTAL_IMAGE` | Local named-volume Compose build; default `game-portal:local`, no registry pull of the application image. |
-| `BUILD_VERSION`, `SOURCE_COMMIT` | Build-time identity (defaults `0.1.0` and `unknown`). Use a full SHA from a clean checkout; `/portal/api/version` and the OCI labels report it. |
+| `BUILD_VERSION`, `SOURCE_COMMIT` | Build-time identity (defaults `0.2.0` and `unknown`). Use a full SHA from a clean checkout; `/portal/api/version` and the OCI labels report it. |
 | `GamePortal__DataDirectory` | Directory holding the SQLite database and key ring. The image defaults to `/data`. |
 | `GamePortal__BehindHttpsProxy` | Defaults to `false`. Set `true` only behind a TLS edge that preserves `Host` and the path and has exclusive access to the HTTP upstream. |
 | `Mahjong__AllowHttpLoopbackOrigin` | Local quickstart only; allows HTTP from a matching loopback browser origin through Docker. Omit in production. |
@@ -208,12 +208,14 @@ Check version and readiness, then reconnect from a browser with its original coo
 CI uses pinned action/tool and base-image versions, locked dependencies, and two read-only gates:
 
 - **Application:** Run all locked .NET test suites, including Poker, Solo, and Words. Chromium and WebKit test the same native publish; the original root and `/mahjong` specs keep `Portal__Enabled=false`. The full portal browser suite runs at `/portal` with the built-in Chess fallback, using fresh data and rate limits for each spec and browser. CI checks `/game-portal/` only over trusted loopback TLS without a browser.
-- **Image:** Smoke the **exact Linux/amd64 image ID**, non-root runtime, pinned Stockfish and bundled notices. Keep the 32 KiB Mahjong and 24 KiB portal cold shell budgets. Play Chess with a non-default bot preset and Reversi with an invited guest, then verify resign and leave. Play Hold’em and Jade Letters with bots and distinct guests, verify private hands and racks, and resume a draw-one Solitaire move and a mark in a uniquely solvable Sudoku after recreation. Both jobs must pass before any promotion.
+- **Image:** Smoke the **exact Linux/amd64 image ID**, non-root runtime, pinned Stockfish and bundled notices. Keep the 32 KiB Mahjong and 24 KiB portal cold shell budgets. Play Chess with a non-default bot preset and Reversi with an invited guest, then verify resign and leave. Play Hold’em and Jade Letters with bots and distinct guests, verify private hands and racks, and resume a draw-one Solitaire move and a mark in a uniquely solvable Sudoku.
+
+Both gates run the shared portal smoke against their built artifacts and recover the games from an offline backup restored to fresh storage. It checks the canonical Xiangqi, Gomoku, Big Two and Mahjong Solitaire routes, plays Xiangqi and Gomoku with legal bot replies, and verifies a four-seat Big Two bot deal, legal actions, and private hands. The saved positions and caller-scoped Continue entries must survive restore. Mahjong Solitaire is browser-local and is not listed by the server saves API. Both jobs must pass before any promotion.
 
 For local use, publish from a clean checkout with the pinned SDK and Node after building the client with `npm --prefix web ci && npm --prefix web run build`:
 
 ```bash
-version=0.1.0
+version=0.2.0
 revision="$(git rev-parse HEAD)"
 publish="artifacts/publish-$revision"
 dotnet restore src/Mahjong.Server/Mahjong.Server.csproj -p:RestoreLockedMode=true

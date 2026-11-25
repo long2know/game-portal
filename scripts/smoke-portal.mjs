@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import { isDeepStrictEqual } from 'node:util';
 import { gzipSync } from 'node:zlib';
 import { playExpansion, resumeExpansion } from './smoke-expansion.mjs';
 
@@ -13,7 +14,10 @@ assert(/^(?:[0-9a-f]{40}|unknown)$/.test(commitSha), 'Expected a full Git SHA or
 const app = new URL(url);
 const { origin, pathname } = app;
 const mount = pathname.slice(0, -1);
-const extraClientRoutes = ['holdem', 'solitaire', 'sudoku', 'word-tiles', 'farkle', 'backgammon', 'lantern-run'];
+const extraClientRoutes = [
+  'holdem', 'solitaire', 'sudoku', 'word-tiles', 'farkle', 'backgammon', 'lantern-run', 'mahjong-solitaire', 'big-two',
+];
+const newBoards = { xiangqi: 'standard', gomoku: 'freestyle' };
 assert(['http:', 'https:'].includes(app.protocol) && ['/portal', '/game-portal'].includes(mount)
   && url === `${origin}${mount}/`,
   'APP_URL must be the HTTP(S) /portal/ or /game-portal/ mount, with no query or fragment');
@@ -72,7 +76,7 @@ async function checkApplication() {
     assert.equal(response.status, 404, `Portal unexpectedly served ${path}`);
     await response.body?.cancel();
   }
-  for (const path of [mount, 'chess', ...extraClientRoutes]) {
+  for (const path of [mount, 'chess', ...Object.keys(newBoards), ...extraClientRoutes]) {
     const response = await fetchApp(`${path}?from=smoke%2Fredirect`, { redirect: 'manual' });
     assert.equal(response.status, 308, `${path} did not redirect to its canonical route`);
     assert.equal(response.headers.get('location'), `${new URL(path, app).pathname}/?from=smoke%2Fredirect`);
@@ -85,7 +89,7 @@ async function checkApplication() {
   for (const game of extraClientRoutes) await checkShell(`${game}/`, title);
   const { games } = (await json('api/board/games')).value;
   assert(Array.isArray(games), 'Missing the mounted catalog');
-  for (const id of ['chess', 'checkers', 'chinese-checkers', 'go', 'reversi']) {
+  for (const id of ['chess', 'checkers', 'chinese-checkers', 'go', 'reversi', ...Object.keys(newBoards)]) {
     assert(games.some(game => game.id === id), `Missing ${id} from the mounted catalog`);
   }
   assert.equal(new Set(games.map(game => game.id)).size, games.length, 'Duplicate catalog slugs');
@@ -94,6 +98,14 @@ async function checkApplication() {
     assert(game.playerCounts.includes(2) && game.variants.length > 0, `Catalog cannot start a two-player ${game.id} game`);
     await checkShell(`${game.id}/`, title);
   }
+  for (const [id, variant] of Object.entries(newBoards)) {
+    const game = games.find(game => game.id === id);
+    assert.deepEqual(game.playerCounts, [2], `${id} is a two-seat board`);
+    assert(game.variants.some(entry => entry.id === variant), `Missing the ${id} ${variant} variant`);
+  }
+  const { value: anonymous, response: savesResponse } = await json('api/saves');
+  assert(isDeepStrictEqual(anonymous, { saves: [] }), 'Anonymous GET /api/saves must return no saves');
+  assert(!savesResponse.headers.has('set-cookie'), 'GET /api/saves must not issue a guest cookie');
 
   const types = { js: /^(application|text)\/javascript\b/i, css: /^text\/css\b/i, svg: /^image\/svg\+xml\b/i };
   const assets = new Map([...html.matchAll(/\b(?:src|href)=(["'])([^"'?#]+\.(js|css|svg))\1/g)]
@@ -162,12 +174,14 @@ function tablePath(table) {
 }
 const readTable = async (table, cookie) => (await json(tablePath(table), { cookie })).value;
 const resumeTable = async (game, cookie) => (await json(`api/board/resume?game=${game}`, { cookie })).value;
+const createBoard = (game, variant, bots, cookie) =>
+  jsonValue(tables, { cookie, body: { game, variant, players: 2, bots } });
+const submitMove = (table, cookie, moveId) =>
+  jsonValue(`${tablePath(table)}/moves`, { cookie, body: { revision: table.revision, moveId } });
 const play = async (table, cookie) => {
   const moveId = table.position.moves[0]?.id;
   assert(typeof moveId === 'string' && moveId.length > 0, `${table.game} offered no playable move`);
-  const { value: { turnMotion, ...committed } } = await json(`${tablePath(table)}/moves`, {
-    cookie, body: { revision: table.revision, moveId },
-  });
+  const { turnMotion, ...committed } = await submitMove(table, cookie, moveId);
   assert.equal(committed.id, table.id, 'Move response changed tables');
   assert.equal(committed.revision, table.revision + 1, 'Move did not commit one revision');
   assert.notDeepEqual(committed.position.cells, table.position.cells, 'Move did not change the board');
@@ -183,7 +197,7 @@ const play = async (table, cookie) => {
   }
   assert.deepEqual(committed.position.cells.map(cell => cells.get(cell.id)), committed.position.cells,
     'Motion must replay to the committed board');
-  return committed;
+  return { committed, steps: turnMotion.steps };
 };
 
 async function endTable(table, cookie, command, status) {
@@ -193,11 +207,72 @@ async function endTable(table, cookie, command, status) {
   assert.equal(ended.id, table.id, `${command} returned another table`);
   assert.equal(ended.revision, table.revision + 1, `${command} did not commit`);
   assert.equal(ended.status, status);
-  assert.equal(ended.invite, null, `${command} did not revoke the invite`);
+  assert(ended.invite === null, `${command} did not revoke the invite`);
   assert.equal(ended.position.turn, null, `${command} left a playable turn`);
   assert.deepEqual(ended.position.moves, [], `${command} left legal moves`);
   assert.deepEqual(ended.position.cells, table.position.cells, `${command} changed the board`);
   return ended;
+}
+
+async function playNewBoards({ host, visitor, outsider }) {
+  const boards = {};
+  for (const [game, variant] of Object.entries(newBoards)) {
+    const started = await createBoard(game, variant, true, host);
+    const { rows, columns, cells, turn } = started.position;
+    const xiangqi = game === 'xiangqi';
+    assert.deepEqual([started.game, started.variant, started.status, started.seat, turn],
+      [game, variant, 'playing', 0, 0], `${game} did not start the requested game`);
+    assert.deepEqual([rows, columns], xiangqi ? [10, 9] : [15, 15], `${game} board size`);
+    assert.equal(cells.length, rows * columns, `${game} did not project a full board`);
+    assert.equal(new Set(cells.map(cell => cell.id)).size, cells.length, `${game} repeated a board cell`);
+    assert(started.seats.some(seat => seat.seat === 1 && seat.bot && seat.occupied), `${game} bot seat was missing`);
+    const { committed, steps } = await play(started, host);
+    assert.equal(steps.length, 2, `${game} did not commit a human move and a bot reply`);
+    assert.equal(committed.position.turn, 0, `${game} did not return the turn to the human`);
+    if (xiangqi) {
+      assert.deepEqual([0, 1].map(seat => cells.filter(cell => cell.owner === seat && cell.piece).length), [16, 16],
+        'Xiangqi did not project the opening armies');
+      // Verify both plies through the public move API without assuming a particular bot choice.
+      const waiting = await createBoard(game, variant, false, visitor);
+      const joined = await jsonValue('api/board/join', { cookie: outsider, body: { invite: waiting.invite } });
+      const human = await submitMove(joined, visitor, steps[0].move.id);
+      const replayed = await submitMove(human, outsider, steps[1].move.id);
+      assert(isDeepStrictEqual(replayed.position.cells, committed.position.cells),
+        'Xiangqi bot reply did not match an accepted opponent move');
+      await endTable(replayed, outsider, 'leave', 'closed');
+    } else {
+      assert(cells.every(cell => cell.owner === null && cell.piece === null), 'Gomoku did not start on an empty board');
+      assert.notEqual(steps[0].move.to, steps[1].move.to, 'Gomoku bot reused an occupied intersection');
+      for (const [seat, { move, changes }] of steps.entries()) {
+        assert.deepEqual([move.from, changes.length], [null, 1], 'Gomoku did not make one placement per turn');
+        const [stone] = changes;
+        assert.deepEqual([stone.id, stone.owner, stone.piece], [move.to, seat, 'stone'], 'Gomoku placed the wrong stone');
+      }
+    }
+    boards[game] = committed;
+  }
+  console.log('Played Xiangqi and Gomoku with legal bot replies on their published boards.');
+  return boards;
+}
+
+async function checkNewSaves({ host, visitor, outsider }, boards, bigTwo) {
+  const target = (game, tableId, variant, players) => ({
+    game, tableId, variant, players, botDifficulty: null, canStartFresh: true,
+  });
+  const expected = [
+    target('big-two', bigTwo.id, null, 4),
+    ...Object.keys(boards).sort().map(game => target(game, boards[game].id, boards[game].variant, 2)),
+  ];
+  const games = new Set([...expected.map(save => save.game), 'mahjong-solitaire']);
+  const newSaves = async cookie => {
+    const { saves } = await jsonValue('api/saves', { cookie });
+    assert(Array.isArray(saves), 'GET /api/saves did not return a save list');
+    return saves.filter(save => games.has(save.game));
+  };
+  assert(isDeepStrictEqual(await newSaves(host), expected), 'GET /api/saves did not return just the new bot table targets');
+  for (const cookie of [visitor, outsider]) {
+    assert.equal((await newSaves(cookie)).length, 0, 'GET /api/saves exposed another guest’s new table or a closed table');
+  }
 }
 
 const games = await checkApplication();
@@ -214,6 +289,7 @@ if (phase === 'seed') {
   assert.equal(await upgradeStatus('https://unrelated-origin.invalid', host), 403, 'Cross-origin mounted WebSocket');
   assert.equal(await upgradeStatus(origin, host), 101, 'Same-origin mounted WebSocket');
 
+  const guests = { host, visitor, outsider };
   const { value: solo } = await json(tables, {
     cookie: host, body: { game: 'chess', variant: 'standard', players: 2, bots: true, botDifficulty: 'hard' },
   });
@@ -223,7 +299,7 @@ if (phase === 'seed') {
   assert.equal(solo.seat, 0);
   assert.equal(solo.position.turn, solo.seat);
   assert.equal(solo.seats.find(seat => seat.seat === 1)?.bot, true, 'Chess bot seat was missing');
-  const botReply = await play(solo, host);
+  const { committed: botReply } = await play(solo, host);
   assert.equal(botReply.botDifficulty, solo.botDifficulty, 'Chess move changed the bot preset');
   assert.equal(botReply.position.turn, solo.seat, 'Chess bot did not return the turn to the human');
   const blackCells = table => table.position.cells.filter(cell => cell.piece && cell.owner === 1);
@@ -246,7 +322,7 @@ if (phase === 'seed') {
   const hostTurn = await readTable(waiting, host);
   assert.equal(hostTurn.seat, 0);
   assert.equal(hostTurn.position.turn, 0);
-  const hostMove = await play(hostTurn, host);
+  const { committed: hostMove } = await play(hostTurn, host);
   const visitorTurn = await readTable(waiting, visitor);
   assert.equal(visitorTurn.seat, 1);
   assert.equal(visitorTurn.position.turn, 1);
@@ -257,21 +333,32 @@ if (phase === 'seed') {
     status: 409,
     error: 'stale_room',
   });
-  const visitorMove = await play(visitorTurn, visitor);
-  const expansion = await playExpansion(jsonValue, { host, visitor, outsider });
+  const { committed: visitorMove } = await play(visitorTurn, visitor);
+  const boards = await playNewBoards(guests);
+  const expansion = await playExpansion(jsonValue, guests);
+  await checkNewSaves(guests, boards, expansion.bigTwo);
   await writeFile(stateFile, JSON.stringify({
-    host, visitor, outsider, botReply, visitorMove, reversiInvite: waiting.invite, expansion,
+    host, visitor, outsider, botReply, visitorMove, reversiInvite: waiting.invite, boards, expansion,
   }), { mode: 0o600, flag: 'wx' });
   console.log('Verified portal routes, cookies and WebSocket admission; played a Chess bot and two guests exchanged Reversi moves.');
 } else {
-  const { host, visitor, outsider, botReply, visitorMove, reversiInvite, expansion } =
+  const { host, visitor, outsider, botReply, visitorMove, reversiInvite, boards, expansion } =
     JSON.parse(await readFile(stateFile, 'utf8'));
+  const guests = { host, visitor, outsider };
+  await checkNewSaves(guests, boards, expansion.bigTwo);
+  for (const game of Object.keys(newBoards)) {
+    const saved = boards[game];
+    const { tableId } = await resumeTable(game, host);
+    assert(tableId === saved.id, `${game} did not offer the restored bot table`);
+    assert(isDeepStrictEqual(await readTable(saved, host), saved), `${game} did not recover the committed bot position`);
+    await json(tablePath(saved), { cookie: outsider, status: 404, error: 'room_not_found' });
+  }
   assert.deepEqual(await readTable(botReply, host), botReply, 'Chess bot table or guest did not survive');
   assert.deepEqual(await readTable(visitorMove, visitor), visitorMove, 'Reversi invite table or guest did not survive');
   assert.deepEqual(await resumeTable('reversi', host),
     { tableId: visitorMove.id }, 'Host could not find the recovered invite table');
-  console.log('Recovered both portal tables with their original guest cookies, seats and positions.');
-  await resumeExpansion(jsonValue, { host, visitor, outsider }, expansion);
+  console.log('Recovered Chess, Reversi, Xiangqi and Gomoku with their original guest cookies, seats and positions.');
+  await resumeExpansion(jsonValue, guests, expansion);
 
   const left = await endTable(visitorMove, visitor, 'leave', 'closed');
   assert.equal(left.endReason, 'left', 'Reversi leave did not record its reason');

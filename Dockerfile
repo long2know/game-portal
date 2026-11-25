@@ -21,7 +21,7 @@ COPY src/ src/
 COPY LICENSE ./
 COPY scripts/licenses/ scripts/licenses/
 COPY --from=client /build/web/dist/ web/dist/
-ARG BUILD_VERSION=0.1.0
+ARG BUILD_VERSION=0.2.0
 ARG SOURCE_COMMIT=unknown
 RUN dotnet publish src/Mahjong.Server/Mahjong.Server.csproj -c Release --no-restore -o /out \
       -p:UseAppHost=false -p:ContinuousIntegrationBuild=true \
@@ -57,7 +57,7 @@ RUN set -eux; \
       /engine/usr/share/doc/stockfish/source/
 
 FROM aspnet AS runtime
-ARG BUILD_VERSION=0.1.0
+ARG BUILD_VERSION=0.2.0
 ARG SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.title="Jade Court" \
       org.opencontainers.image.source="https://github.com/long2know/game-portal" \
