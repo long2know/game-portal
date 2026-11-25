@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Mahjong.Rules;
 using Microsoft.AspNetCore.WebUtilities;
 
@@ -20,9 +21,10 @@ internal sealed record ChatPost(Guid GuestId, string MessageId, int Seat, string
 
 internal sealed class RoomCheckpoint
 {
-    public const string CurrentRules = "changsha-v1";
+    private int[]? _tableTotals;
+
     public int CheckpointVersion { get; init; } = 1;
-    public string RulesVersion { get; init; } = CurrentRules;
+    public string RulesVersion { get; init; } = ChangshaEngine.Profile;
     public required string Id { get; init; }
     public required string Visibility { get; init; }
     public string? InviteCode { get; init; }
@@ -40,6 +42,14 @@ internal sealed class RoomCheckpoint
     public int[] Totals { get; set; } = new int[4];
     public List<ChatPost> Chat { get; init; } = [];
     public GameState? Game { get; set; }
+    public int[] TableTotals
+    {
+        // A legacy complete room may already have an open seat's historical match score.
+        get => _tableTotals ??= Totals.Select((total, seat) => Seats[seat].IsOpen ? 0 : total).ToArray();
+        init => _tableTotals = value;
+    }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? NextDealerSeat { get; set; }
 
     public DateTimeOffset GameTime(DateTimeOffset utc)
     {
@@ -52,6 +62,12 @@ internal sealed class RoomCheckpoint
 
     public void TouchRevision() => RoomRevision = Increment(RoomRevision);
     public void AdvanceGameRevision() => GameRevision = Increment(GameRevision);
+
+    public void ReplaceChair(int seat, Chair chair)
+    {
+        TableTotals[seat] = 0;
+        Seats[seat] = chair;
+    }
 
     public void ResetReadiness()
     {
@@ -69,10 +85,11 @@ internal sealed class RoomCheckpoint
     {
         var room = JsonSerializer.Deserialize<RoomCheckpoint>(checkpoint, Wire.Json)
             ?? throw new InvalidOperationException("Missing room checkpoint.");
-        if (room.CheckpointVersion != 1 || room.RulesVersion != CurrentRules
-            || room.Id != roomId || room.Seats.Length != 4 || room.Totals.Length != 4
+        if (room.CheckpointVersion != 1 || !ChangshaEngine.SupportsProfile(room.RulesVersion)
+            || room.Id != roomId || room.Seats.Length != 4 || room.Totals.Length != 4 || room.TableTotals.Length != 4
+            || room.NextDealerSeat is < 0 or > 3
             || room.Game is { } game && (game.CheckpointVersion != ChangshaEngine.CheckpointVersion
-                || game.ShuffleVersion != ChangshaEngine.ShuffleVersion)
+                || game.ShuffleVersion != ChangshaEngine.ShuffleVersion || game.Start.Profile != room.RulesVersion)
             || room.Status is not ("waiting" or "playing" or "betweenHands" or "complete")
             || room.HostSeat is < 0 or > 3 || !room.Seats[room.HostSeat].GuestId.HasValue)
             throw new InvalidOperationException("Unsupported or inconsistent room checkpoint.");
@@ -93,7 +110,7 @@ internal sealed class RoomGame(ServerOptions options, ILogger<RoomGame> log)
     {
         var previous = room.Game is null ? null : ChangshaEngine.ViewPublic(room.Game);
         var number = previous is null ? 1 : previous.HandNumber + 1;
-        var dealer = previous?.Settlement?.NextDealerSeat ?? 0;
+        var dealer = previous?.Settlement?.NextDealerSeat ?? room.NextDealerSeat ?? 0;
         Span<byte> seedBytes = stackalloc byte[16];
         RandomNumberGenerator.Fill(seedBytes);
         var seed = new RoundSeed(BinaryPrimitives.ReadUInt64LittleEndian(seedBytes),
@@ -101,6 +118,7 @@ internal sealed class RoomGame(ServerOptions options, ILogger<RoomGame> log)
         var gameTime = room.GameTime(utc);
         var game = ChangshaEngine.StartHand(
             new HandStart(number, dealer, seed, room.RulesVersion, options.TurnLimit, options.ClaimLimit), gameTime);
+        room.NextDealerSeat = null;
         SetGame(room, game, gameTime, previous);
     }
 
@@ -157,6 +175,7 @@ internal sealed class RoomGame(ServerOptions options, ILogger<RoomGame> log)
 
     private static void ResetMatch(RoomCheckpoint room)
     {
+        room.NextDealerSeat = room.Game?.Settlement?.NextDealerSeat ?? room.Game?.Start.DealerSeat ?? room.NextDealerSeat;
         room.Game = null;
         room.Status = "waiting";
         room.WindowAnchor = null;
@@ -254,8 +273,14 @@ internal sealed class RoomGame(ServerOptions options, ILogger<RoomGame> log)
         var nextStatus = table.Settlement is null ? "playing"
             : table.HandNumber >= room.MatchHands ? "complete" : "betweenHands";
         if (table.Settlement is { } settlement && (previous?.Settlement is null || previous.HandNumber != table.HandNumber))
+        {
+            var tableTotals = room.TableTotals;
             foreach (var result in settlement.SeatResults)
+            {
                 room.Totals[result.Seat] = checked(room.Totals[result.Seat] + result.Delta);
+                tableTotals[result.Seat] = checked(tableTotals[result.Seat] + result.Delta);
+            }
+        }
         if (room.Status != nextStatus)
         {
             room.Status = nextStatus;

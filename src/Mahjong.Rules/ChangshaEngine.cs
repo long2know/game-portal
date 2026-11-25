@@ -5,13 +5,16 @@ namespace Mahjong.Rules;
 public static class ChangshaEngine
 {
     public const string Profile = "changsha-v1";
+    public const string TwoBirdProfile = "changsha-two-bird-v1";
     public const int CheckpointVersion = 1;
     public const int ShuffleVersion = Determinism.ShuffleVersion;
+
+    public static bool SupportsProfile(string? profile) => profile is Profile or TwoBirdProfile;
 
     public static GameState StartHand(HandStart input, DateTimeOffset gameNow)
     {
         ArgumentNullException.ThrowIfNull(input);
-        if (input.Profile != Profile)
+        if (!SupportsProfile(input.Profile))
             throw new ArgumentException($"Unsupported rules profile '{input.Profile}'.", nameof(input));
         if (input.HandNumber < 1 || !ValidSeat(input.DealerSeat) ||
             input.TurnLimit <= TimeSpan.Zero || input.ClaimLimit <= TimeSpan.Zero)
@@ -434,7 +437,7 @@ public static class ChangshaEngine
     {
         ArgumentNullException.ThrowIfNull(state);
         if (state.CheckpointVersion != CheckpointVersion || state.ShuffleVersion != ShuffleVersion ||
-            state.Start.Profile != Profile)
+            !SupportsProfile(state.Start.Profile))
             throw new NotSupportedException("Unsupported Changsha rules checkpoint or profile.");
     }
 

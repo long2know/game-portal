@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Mahjong.Rules;
 using Microsoft.Data.Sqlite;
 
 namespace Mahjong.Server.Tests;
@@ -136,11 +138,16 @@ public sealed class RecoveryTests
         using var first = await user.Connect();
         var create = new { visibility = "public", matchHands = 1 };
         var id = Guid.NewGuid();
-        (await first.Command("createRoom", create, id)).Ok();
+        var created = await first.Command("createRoom", create, id);
+        created.Ok();
+        Assert.Equal("ED5EC1078A1E08DB968A7B68BF0B80547239FA803AA87FAA16D6EBDBED3F181E",
+            await ReadScalar(server, "SELECT Fingerprint FROM Receipts"));
         var initial = await first.Snapshot();
         var result = await first.Command("leaveRoom", new { roomId = initial.Text("roomId"), expectedRoomRevision = initial.RoomRevision() });
         result.Ok();
-        (await first.Command("createRoom", new { matchHands = 1, fillBots = false, visibility = "public" }, id)).Ok();
+        var retry = await first.Command("createRoom",
+            new { matchHands = 1, fillBots = false, visibility = "public", rulesVersion = ChangshaEngine.Profile }, id);
+        Assert.Equal(created.GetRawText(), retry.GetRawText());
         Assert.Null((await user.Guest()).Text("resumeRoomId"));
         Assert.Equal(2L, await ReadScalar(server, "SELECT COUNT(*) FROM Receipts"));
         (await first.Command("createRoom", create)).Ok();
@@ -180,7 +187,8 @@ public sealed class RecoveryTests
         for (var hand = 1; hand <= 4; hand++)
         {
             Assert.Equal(hand, snapshot.Table().GetProperty("handNumber").GetInt32());
-            Assert.Equal(dealer, snapshot.Table().GetProperty("dealerSeat").GetInt32());
+            Assert.Equal(dealer, Dealer(snapshot));
+            Assert.Equal(totals, TableTotals(snapshot));
             Assert.Equal(JsonValueKind.Null, snapshot.Table().GetProperty("settlement").ValueKind);
             Assert.Equal(JsonValueKind.Null, snapshot.Table().GetProperty("kongRoll").ValueKind);
             var settled = await PlayHand(host, snapshot);
@@ -221,6 +229,8 @@ public sealed class RecoveryTests
                 Assert.Equal(seatResults.Select(result => result.GetProperty("delta").GetInt32()).ToArray(), net);
             }
             dealer = settlement.GetProperty("nextDealerSeat").GetInt32();
+            Assert.Equal(dealer, NextDealer(settled));
+            Assert.Equal(totals, TableTotals(settled));
             snapshot = settled;
             if (hand < 4)
             {
@@ -234,19 +244,222 @@ public sealed class RecoveryTests
         Assert.Equal(snapshot.RoomRevision() + 1, waiting.RoomRevision());
         Assert.Equal(snapshot.GameRevision() + 1, waiting.GameRevision());
         Assert.Equal(JsonValueKind.Null, waiting.Table().ValueKind);
+        Assert.Equal(dealer, NextDealer(waiting));
+        Assert.Equal(totals, TableTotals(waiting));
         Assert.False(waiting.Chair(0).GetProperty("ready").GetBoolean());
         Assert.Equal(snapshot.Private().Text("inviteCode"), waiting.Private().Text("inviteCode"));
         for (var seat = 1; seat < 4; seat++) Assert.Equal("bot", waiting.Chair(seat).Text("kind"));
-        (await host.Command("setReady", new { roomId, expectedRoomRevision = waiting.RoomRevision(), ready = true })).Ok();
-        waiting = await host.Snapshot();
-        (await host.Command("start", new { roomId, expectedRoomRevision = waiting.RoomRevision() })).Ok();
-        var rematch = await host.Snapshot(s => s.Status() == "playing");
+        await server.StopAsync();
+        await server.StartAsync();
+        using var returned = await user.Connect();
+        (await returned.Sync(roomId)).Ok();
+        var recovered = await returned.Snapshot();
+        Assert.Equal(waiting.GetProperty("room").GetRawText(), recovered.GetProperty("room").GetRawText());
+        (await returned.Command("setReady", new { roomId, expectedRoomRevision = recovered.RoomRevision(), ready = true })).Ok();
+        waiting = await returned.Snapshot();
+        (await returned.Command("start", new { roomId, expectedRoomRevision = waiting.RoomRevision() })).Ok();
+        var rematch = await returned.Snapshot(s => s.Status() == "playing");
         Assert.Equal(1, rematch.Table().GetProperty("handNumber").GetInt32());
+        Assert.Equal(dealer, Dealer(rematch));
         Assert.Equal(JsonValueKind.Null, rematch.Table().GetProperty("settlement").ValueKind);
         Assert.NotEqual(firstWindow, rematch.Window().Text("windowId"));
-        Assert.All(rematch.Table().GetProperty("seats").EnumerateArray(), seat => Assert.Equal(0, seat.GetProperty("total").GetInt32()));
-        Assert.Equal("stale_window", (await host.Command("choose",
+        Assert.Equal(new[] { 0, 0, 0, 0 }, MatchTotals(rematch));
+        Assert.Equal(totals, TableTotals(rematch));
+        Assert.Equal("stale_window", (await returned.Command("choose",
             new ChoicePayload(roomId, firstWindow, oldAnchor, "cannot-reuse"))).Error());
+        var rematchSettlement = await PlayHand(returned, rematch);
+        var deltas = rematchSettlement.At("game", "settlement").GetProperty("seatResults").EnumerateArray()
+            .Select(seat => seat.GetProperty("delta").GetInt32()).ToArray();
+        Assert.Equal(deltas, MatchTotals(rematchSettlement));
+        Assert.Equal(totals.Zip(deltas, (prior, delta) => prior + delta), TableTotals(rematchSettlement));
+    }
+
+    [Fact]
+    public async Task ProductionPortalChoosesAllFourInitialDealersAndPersistsTheChoiceBeforeDealing()
+    {
+        await using var server = new Kestrel().InProduction().WithSetting("BASE_URL", "/portal")
+            .WithSetting("Portal__Enabled", "true");
+        server.WithSetting("GamePortal__DataDirectory", server.DataDirectory);
+        await server.StartAsync();
+        var user = new User(server, "/portal");
+        await user.Guest();
+        using var host = await user.Connect();
+        var seen = new HashSet<int>();
+        var waiting = default(JsonElement);
+        for (var attempt = 0; attempt < 80; attempt++)
+        {
+            (await host.Command("createRoom", new { visibility = "invite", matchHands = 1, fillBots = true })).Ok();
+            waiting = await host.Snapshot();
+            var seat = NextDealer(waiting);
+            Assert.InRange(seat, 0, 3);
+            seen.Add(seat);
+            if (seen.Count == 4 && seat != 0) break;
+            (await host.Command("leaveRoom", new { roomId = waiting.Text("roomId"),
+                expectedRoomRevision = waiting.RoomRevision(), abandon = true })).Ok();
+        }
+        Assert.Equal(new[] { 0, 1, 2, 3 }, seen.Order());
+        var expectedDealer = NextDealer(waiting);
+        Assert.InRange(expectedDealer, 1, 3);
+        var roomId = waiting.Text("roomId");
+        await server.StopAsync();
+        await server.StartAsync();
+        using var resumed = await user.Connect();
+        (await resumed.Sync(roomId)).Ok();
+        var recovered = await resumed.Snapshot();
+        Assert.Equal(expectedDealer, NextDealer(recovered));
+        (await resumed.Command("setReady", new { roomId, expectedRoomRevision = recovered.RoomRevision(), ready = true })).Ok();
+        var ready = await resumed.Snapshot();
+        (await resumed.Command("start", new { roomId, expectedRoomRevision = ready.RoomRevision() })).Ok();
+        var started = await resumed.Snapshot();
+        Assert.Equal(expectedDealer, Dealer(started));
+        Assert.Equal(JsonValueKind.Null, started.At("room", "nextDealerSeat").ValueKind);
+        Assert.Equal(13, started.Private().GetProperty("hand").GetArrayLength());
+        Assert.Equal(14, started.At("game", "seats")[expectedDealer].GetProperty("concealedCount").GetInt32());
+        AssertRedacted(started);
+    }
+
+    [Theory]
+    [InlineData(ChangshaEngine.Profile, 1, "c1")]
+    [InlineData(ChangshaEngine.TwoBirdProfile, 4, "c1 c6")]
+    public async Task WinningClaimSettlesOnceAcrossRecoveryAndOnlyOccupiedSeatsKeepTheirLedger(
+        string profile, int hands, string birds)
+    {
+        await using var server = new Kestrel(("TurnSeconds", 120), ("ClaimSeconds", 8), ("BotDelayMilliseconds", 30));
+        await server.StartAsync();
+        var hostUser = new User(server);
+        var memberUser = new User(server);
+        await hostUser.Guest("Host");
+        await memberUser.Guest("Member");
+        using var host = await hostUser.Connect();
+        using var member = await memberUser.Connect();
+        var started = await Start(host, member, hands, profile);
+        var roomId = started.Text("roomId");
+
+        // Restore the reproducible b7 → Hu fixture used by the bot-pacing suite, but drive it via the real sockets.
+        await server.StopAsync();
+        await RewriteCheckpoint(server, roomId, room =>
+        {
+            var hand = ChangshaEngine.StartHand(new(1, 0, new(218119, 29), profile,
+                TimeSpan.FromSeconds(120), TimeSpan.FromSeconds(8)), DateTimeOffset.UtcNow);
+            room["game"] = JsonSerializer.SerializeToNode(hand, Wire.Json);
+            room["windowAnchor"] = room["gameRevision"]!.GetValue<long>();
+            room["nextBotGameTime"] = null;
+            if (profile == ChangshaEngine.Profile)
+                Assert.True(room.Remove("tableTotals"));
+        });
+        await server.StartAsync();
+        using var firstHost = await hostUser.Connect();
+        using var firstMember = await memberUser.Connect();
+        (await firstHost.Sync(roomId)).Ok();
+        var turn = await firstHost.Snapshot();
+        (await firstMember.Sync(roomId)).Ok();
+        var discard = Assert.Single(turn.Private().GetProperty("legalOptions").EnumerateArray(),
+            option => option.Text("kind") == "discard" && option.GetProperty("faces")[0].GetString() == "b7");
+        var opened = await firstHost.Command("choose", Choice(turn, discard));
+        opened.Ok();
+        var claim = await firstMember.Snapshot(s => s.GameRevision() == opened.GameRevision() + 2);
+        Assert.Equal("discard", claim.Window().Text("reason"));
+        Assert.Equal(JsonValueKind.Null, claim.At("game", "settlement").ValueKind);
+        var pass = Assert.Single(claim.Private().GetProperty("legalOptions").EnumerateArray(), option => option.Text("kind") == "pass");
+        var choose = Choice(claim, pass);
+        var choiceId = Guid.NewGuid();
+        var lease = firstMember.Lease;
+        await firstMember.Send(new { v = 1, type = "command", requestId = choiceId, lease, op = "choose", payload = choose });
+        var settled = await firstHost.Snapshot(s => s.Status() == (hands == 1 ? "complete" : "betweenHands"));
+        var settlement = settled.At("game", "settlement");
+        Assert.Equal(2, NextDealer(settled));
+        Assert.Equal(2, Assert.Single(settlement.GetProperty("winners").EnumerateArray()).GetProperty("seat").GetInt32());
+        Assert.Equal(birds.Split(' '), settlement.GetProperty("birds").EnumerateArray().Select(bird => bird.GetString()));
+        var scores = new[] { -14, 0, 14, 0 };
+        Assert.Equal(scores, MatchTotals(settled));
+        Assert.Equal(scores, TableTotals(settled));
+        AssertRedacted(settled);
+
+        if (hands == 1)
+        {
+            (await firstHost.Command("leaveRoom", new { roomId, expectedRoomRevision = settled.RoomRevision() })).Ok();
+            Assert.Null((await hostUser.Guest()).Text("resumeRoomId"));
+        }
+        // Do not read the terminal choice's ack. The observed snapshot proves it was already committed.
+        await server.StopAsync();
+        if (hands == 1)
+        {
+            await RewriteCheckpoint(server, roomId, room =>
+            {
+                Assert.Equal(0, room["tableTotals"]![0]!.GetValue<int>());
+                Assert.True(room.Remove("tableTotals"));
+            });
+        }
+        await server.StartAsync();
+        using var resumedMember = await memberUser.Connect();
+        (await resumedMember.Sync(roomId)).Ok();
+        var recovered = await resumedMember.Snapshot();
+        var expectedTable = hands == 1 ? new[] { 0, 0, 14, 0 } : scores;
+        Assert.Equal(profile, recovered.At("room", "rulesVersion").GetString());
+        Assert.Equal(settlement.GetRawText(), recovered.At("game", "settlement").GetRawText());
+        Assert.Equal(scores, MatchTotals(recovered));
+        Assert.Equal(expectedTable, TableTotals(recovered));
+        Assert.Equal(2, NextDealer(recovered));
+        AssertRedacted(recovered);
+        var replay = await resumedMember.Command("choose", choose, choiceId, lease);
+        replay.Ok();
+        Assert.Equal(settled.GameRevision(), replay.GameRevision());
+        Assert.Equal(settled.RoomRevision(), replay.RoomRevision());
+        Assert.Equal(expectedTable, TableTotals(await resumedMember.Snapshot()));
+
+        if (hands == 1)
+        {
+            Assert.Equal("open", recovered.Chair(0).Text("kind"));
+            Assert.Equal(1, recovered.At("room", "hostSeat").GetInt32());
+            (await resumedMember.Command("rematch", new { roomId, expectedRoomRevision = recovered.RoomRevision() })).Ok();
+            var waiting = await resumedMember.Snapshot();
+            Assert.Equal(2, NextDealer(waiting));
+            Assert.Equal(expectedTable, TableTotals(waiting));
+            var newUser = new User(server);
+            await newUser.Guest("New seat");
+            using var newcomer = await newUser.Connect();
+            (await newcomer.Command("joinRoom", new { inviteCode = waiting.Private().Text("inviteCode") })).Ok();
+            var joined = await newcomer.Snapshot();
+            Assert.Equal(0, joined.Private().GetProperty("seat").GetInt32());
+            Assert.Equal(expectedTable, TableTotals(joined));
+            Assert.Null(joined.Private().Text("inviteCode"));
+            (await resumedMember.Command("setBot", new { roomId, expectedRoomRevision = joined.RoomRevision(),
+                seat = 2, enabled = false })).Ok();
+            var removed = await resumedMember.Snapshot(s => s.Chair(2).Text("kind") == "open");
+            Assert.Equal(new[] { 0, 0, 0, 0 }, TableTotals(removed));
+            (await resumedMember.Command("setBot", new { roomId, expectedRoomRevision = removed.RoomRevision(),
+                seat = 2, enabled = true })).Ok();
+            var replaced = await resumedMember.Snapshot();
+            Assert.Equal("bot", replaced.Chair(2).Text("kind"));
+            Assert.Equal(new[] { 0, 0, 0, 0 }, TableTotals(replaced));
+            Assert.Equal(2, NextDealer(replaced));
+            return;
+        }
+
+        using var resumedHost = await hostUser.Connect();
+        (await resumedHost.Sync(roomId)).Ok();
+        var attached = await resumedHost.Snapshot();
+        var leave = new { roomId, expectedRoomRevision = attached.RoomRevision() };
+        var leaveId = Guid.NewGuid();
+        var left = await resumedHost.Command("leaveRoom", leave, leaveId);
+        left.Ok();
+        var reserved = await resumedMember.Snapshot(s => !s.Connected(0));
+        Assert.Equal("human", reserved.Chair(0).Text("kind"));
+        Assert.Equal(scores, TableTotals(reserved));
+        (await resumedHost.Sync(roomId)).Ok();
+        var returned = await resumedHost.Snapshot();
+        Assert.True(returned.Connected(0));
+        Assert.Equal(scores, TableTotals(returned));
+        Assert.Equal(left.GetRawText(), (await resumedHost.Command("leaveRoom", leave, leaveId)).GetRawText());
+        await AssertNoSnapshotAfterAck(resumedHost);
+        (await resumedMember.Command("nextHand", new { roomId, expectedRoomRevision = reserved.RoomRevision() })).Ok();
+        var next = await resumedHost.Snapshot(s => s.Status() == "playing");
+        Assert.Equal(2, Dealer(next));
+        Assert.Equal(2, next.At("game", "handNumber").GetInt32());
+        Assert.Equal(scores, MatchTotals(next));
+        Assert.Equal(scores, TableTotals(next));
+        (await resumedHost.Command("setPaused", new { roomId, expectedRoomRevision = next.RoomRevision(), paused = true })).Ok();
+        Assert.Equal(scores, TableTotals(await resumedHost.Snapshot(s => s.At("room", "paused").GetBoolean())));
     }
 
     [Fact]
@@ -259,10 +472,10 @@ public sealed class RecoveryTests
         var user = new User(server, "/portal");
         await user.Guest("Host");
         using var host = await user.Connect();
-        var turn = await DealerTurn(host, await Start(host, hands: 4));
+        var turn = await Start(host, hands: 4, profile: ChangshaEngine.TwoBirdProfile);
         var roomId = turn.Text("roomId");
-        var oldChoice = Choice(turn, turn.Private().GetProperty("legalOptions").EnumerateArray()
-            .First(option => option.Text("kind") == "discard"));
+        var oldChoice = new ChoicePayload(roomId, turn.Window().Text("windowId"),
+            turn.Window().GetProperty("anchorGameRevision").GetInt64(), "retired");
         (await host.Command("chat", new { roomId, text = "<b>Keep this as text</b>" })).Ok();
         var chatted = await host.Snapshot();
         Assert.Equal("<b>Keep this as text</b>", chatted.At("room", "chat")[0].Text("text"));
@@ -311,7 +524,8 @@ public sealed class RecoveryTests
         var freshLimit = fresh.Window().Text("reason") == "opening" ? 2 : 60;
         Assert.Equal(fresh.GetProperty("serverTimeUtc").GetDateTimeOffset().AddSeconds(freshLimit),
             fresh.Window().GetProperty("deadlineUtc").GetDateTimeOffset());
-        var dealerTurn = await DealerTurn(host, fresh);
+        (await host.Command("setPaused", new { roomId, expectedRoomRevision = fresh.RoomRevision(), paused = true })).Ok();
+        var pausedFresh = await host.Snapshot(s => s.At("room", "paused").GetBoolean());
 
         await server.StopAsync();
         await server.StartAsync();
@@ -322,16 +536,16 @@ public sealed class RecoveryTests
         await AssertNoSnapshotAfterAck(resumed);
         (await resumed.Sync(roomId)).Ok();
         var recovered = await resumed.Snapshot();
-        Assert.Equal(dealerTurn.RoomRevision(), recovered.RoomRevision());
-        Assert.Equal(dealerTurn.GameRevision(), recovered.GameRevision());
-        Assert.Equal(dealerTurn.Table().GetRawText(), recovered.Table().GetRawText());
-        Assert.Equal(dealerTurn.Private().GetRawText(), recovered.Private().GetRawText());
+        Assert.Equal(pausedFresh.RoomRevision(), recovered.RoomRevision());
+        Assert.Equal(pausedFresh.GameRevision(), recovered.GameRevision());
+        Assert.Equal(pausedFresh.Table().GetRawText(), recovered.Table().GetRawText());
+        Assert.Equal(pausedFresh.Private().GetRawText(), recovered.Private().GetRawText());
         Assert.Equal("stale_window", (await resumed.Command("choose", oldChoice)).Error());
-        var discard = recovered.Private().GetProperty("legalOptions").EnumerateArray()
-            .First(option => option.Text("kind") == "discard");
-        var played = await resumed.Command("choose", Choice(recovered, discard));
-        played.Ok();
-        Assert.Equal(recovered.GameRevision() + 1, played.GameRevision());
+        var unpaused = await resumed.Command("setPaused", new { roomId, expectedRoomRevision = recovered.RoomRevision(), paused = false });
+        unpaused.Ok();
+        Assert.Equal(recovered.GameRevision(), unpaused.GameRevision());
+        Assert.Equal(recovered.Window().Text("windowId"),
+            (await resumed.Snapshot(s => !s.At("room", "paused").GetBoolean())).Window().Text("windowId"));
     }
 
     [Theory]
@@ -404,6 +618,7 @@ public sealed class RecoveryTests
         (await resumed.Command("createRoom", new { visibility = "public", matchHands = 1 })).Ok();
         var replacement = await resumed.Snapshot();
         Assert.NotEqual(roomId, replacement.Text("roomId"));
+        Assert.Equal(new[] { 0, 0, 0, 0 }, TableTotals(replacement));
         Assert.Equal(replacement.Text("roomId"), (await user.Guest()).Text("resumeRoomId"));
     }
 
@@ -413,14 +628,16 @@ public sealed class RecoveryTests
         Assert.Equal(prior.Text("roomId"), fresh.Text("roomId"));
         Assert.Equal(prior.RoomRevision() + 1, fresh.RoomRevision());
         Assert.Equal(prior.GameRevision() + 1, fresh.GameRevision());
-        foreach (var preserved in new[] { "hostSeat", "visibility", "matchHands", "rulesVersion", "seats", "chat" })
+        foreach (var preserved in new[] { "hostSeat", "visibility", "matchHands", "rulesVersion", "seats", "chat", "tableTotals" })
             Assert.Equal(prior.At("room", preserved).GetRawText(), fresh.At("room", preserved).GetRawText());
         Assert.Equal(prior.Private().Text("inviteCode"), fresh.Private().Text("inviteCode"));
         Assert.Equal(prior.Private().GetProperty("seat").GetInt32(), fresh.Private().GetProperty("seat").GetInt32());
         Assert.False(fresh.At("room", "paused").GetBoolean());
         Assert.Equal(JsonValueKind.Null, fresh.At("room", "autoResumeAtUtc").ValueKind);
         Assert.Equal(1, fresh.Table().GetProperty("handNumber").GetInt32());
-        Assert.Equal(0, fresh.Table().GetProperty("dealerSeat").GetInt32());
+        var dealer = prior.At("game", "settlement").ValueKind == JsonValueKind.Null ? Dealer(prior) : NextDealer(prior);
+        Assert.Equal(dealer, Dealer(fresh));
+        Assert.Equal(JsonValueKind.Null, fresh.At("room", "nextDealerSeat").ValueKind);
         Assert.Equal(55, fresh.Table().GetProperty("wallCount").GetInt32());
         Assert.Equal(JsonValueKind.Null, fresh.Table().GetProperty("settlement").ValueKind);
         Assert.Equal(fresh.GameRevision(), fresh.Window().GetProperty("anchorGameRevision").GetInt64());
@@ -431,7 +648,7 @@ public sealed class RecoveryTests
             Assert.Equal(0, seat.GetProperty("total").GetInt32());
         });
         var hand = fresh.Private().GetProperty("hand");
-        Assert.Equal(14, hand.GetArrayLength());
+        Assert.Equal(fresh.Private().GetProperty("seat").GetInt32() == dealer ? 14 : 13, hand.GetArrayLength());
         Assert.Empty(hand.EnumerateArray().Select(tile => tile.Text("tileId"))
             .Intersect(prior.Private().GetProperty("hand").EnumerateArray().Select(tile => tile.Text("tileId"))));
         AssertRedacted(fresh);
@@ -443,9 +660,11 @@ public sealed class RecoveryTests
         Assert.Equal("lease", (await client.Take()).Text("type"));
     }
 
-    private static async Task<JsonElement> Start(Client host, Client? other = null, int hands = 1)
+    private static async Task<JsonElement> Start(Client host, Client? other = null, int hands = 1, string? profile = null)
     {
-        (await host.Command("createRoom", new { visibility = "invite", matchHands = hands, fillBots = other is null })).Ok();
+        object create = profile is null ? new { visibility = "invite", matchHands = hands, fillBots = other is null } :
+            new { visibility = "invite", matchHands = hands, fillBots = other is null, rulesVersion = profile };
+        (await host.Command("createRoom", create)).Ok();
         var snapshot = await host.Snapshot();
         var roomId = snapshot.Text("roomId");
         if (other is not null)
@@ -509,6 +728,13 @@ public sealed class RecoveryTests
         new(snapshot.Text("roomId"), snapshot.Window().Text("windowId"),
             snapshot.Window().GetProperty("anchorGameRevision").GetInt64(), option.Text("optionId"));
 
+    private static int Dealer(JsonElement snapshot) => snapshot.At("game", "dealerSeat").GetInt32();
+    private static int NextDealer(JsonElement snapshot) => snapshot.At("room", "nextDealerSeat").GetInt32();
+    private static int[] TableTotals(JsonElement snapshot) =>
+        snapshot.At("room", "tableTotals").EnumerateArray().Select(score => score.GetInt32()).ToArray();
+    private static int[] MatchTotals(JsonElement snapshot) =>
+        snapshot.At("game", "seats").EnumerateArray().Select(seat => seat.GetProperty("total").GetInt32()).ToArray();
+
     private static async Task WaitUntil(DateTimeOffset utc)
     {
         var left = utc - DateTimeOffset.UtcNow;
@@ -526,6 +752,24 @@ public sealed class RecoveryTests
         await using var command = database.CreateCommand();
         command.CommandText = sql;
         return await command.ExecuteScalarAsync();
+    }
+
+    private static async Task RewriteCheckpoint(Kestrel server, string roomId, Action<JsonObject> edit)
+    {
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(server.DataDirectory, "mahjong.db"), Mode = SqliteOpenMode.ReadWrite, Pooling = false
+        };
+        await using var database = new SqliteConnection(connectionString.ToString());
+        await database.OpenAsync();
+        await using var command = database.CreateCommand();
+        command.Parameters.AddWithValue("$id", roomId);
+        command.CommandText = "SELECT Checkpoint FROM Rooms WHERE Id=$id";
+        var checkpoint = JsonNode.Parse(Assert.IsType<string>(await command.ExecuteScalarAsync()))!.AsObject();
+        edit(checkpoint);
+        command.CommandText = "UPDATE Rooms SET Checkpoint=$checkpoint WHERE Id=$id";
+        command.Parameters.AddWithValue("$checkpoint", checkpoint.ToJsonString());
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
     private static void AssertRedacted(JsonElement snapshot)

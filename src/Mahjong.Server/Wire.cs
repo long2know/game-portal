@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Mahjong.Rules;
 
 namespace Mahjong.Server;
 
@@ -34,10 +35,13 @@ internal sealed record LeaseMessage(string Lease, DateTimeOffset ExpiresAtUtc, D
 internal sealed record Preferences(bool Sound, bool Music, double Volume, bool ReducedMotion);
 internal sealed record GuestView(string DisplayName, Preferences Preferences, string? ResumeRoomId);
 internal sealed record ProfileChange(string? DisplayName, Preferences? Preferences);
+internal sealed record PublicRoom(string RoomId, int OccupiedSeats, int MatchHands,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RulesVersion);
 
 internal sealed record Intent(string Op, string? RoomId = null, string? InviteCode = null,
     string? Visibility = null, int MatchHands = 0, bool Flag = false, int Seat = 0,
-    long Revision = 0, string? WindowId = null, string? OptionId = null, string? Text = null);
+    long Revision = 0, string? WindowId = null, string? OptionId = null, string? Text = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RulesVersion = null);
 
 internal static class Wire
 {
@@ -180,12 +184,16 @@ internal static class Wire
             case "createRoom":
                 var visibility = payload.Get("visibility").AsString();
                 var fill = payload.Get("fillBots");
+                var rules = payload.Get("rulesVersion");
+                var profile = rules.AsString();
                 var fillBots = false;
-                return Fields(payload, "visibility", "matchHands", "fillBots")
+                return Fields(payload, "visibility", "matchHands", "fillBots", "rulesVersion")
                     && visibility is "public" or "invite"
                     && payload.Get("matchHands").Int(out var hands) && hands is 1 or 4
                     && (fill.ValueKind == JsonValueKind.Undefined || fill.TryFlag(out fillBots))
-                    ? new(op, Visibility: visibility, MatchHands: hands, Flag: fillBots) : null;
+                    && (rules.ValueKind == JsonValueKind.Undefined || ChangshaEngine.SupportsProfile(profile))
+                    ? new(op, Visibility: visibility, MatchHands: hands, Flag: fillBots,
+                        RulesVersion: profile == ChangshaEngine.Profile ? null : profile) : null;
             case "joinRoom":
                 var inviteCode = payload.Get("inviteCode").AsString();
                 if (Fields(payload, "roomId") && IsLocator(roomId)) return new(op, RoomId: roomId);

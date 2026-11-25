@@ -5,10 +5,12 @@ namespace Mahjong.Rules.Tests;
 
 public sealed class LastTileTests
 {
-    [Fact]
-    public void FourSeabedPassesDrawAndGiveDealerToFirstOfferedSeat()
+    [Theory]
+    [InlineData(ChangshaEngine.Profile)]
+    [InlineData(ChangshaEngine.TwoBirdProfile)]
+    public void FourSeabedPassesDrawAndGiveDealerToFirstOfferedSeat(string profile)
     {
-        var state = Offer(AtTurn(["", "", "", "b9"], "c5", seat: 3, dealer: 2), 3);
+        var state = Offer(AtTurn(["", "", "", "b9"], "c5", seat: 3, dealer: 2, profile: profile), 3);
         for (var seat = 0; seat < 4; seat++)
         {
             var view = ChangshaEngine.ViewPublic(state);
@@ -31,10 +33,12 @@ public sealed class LastTileTests
         AssertBalanced(state.Settlement, 0, 0, 0, 0);
     }
 
-    [Fact]
-    public void SeabedSelfDrawUsesTheSamePhysicalTileAsPublicBird()
+    [Theory]
+    [InlineData(ChangshaEngine.Profile)]
+    [InlineData(ChangshaEngine.TwoBirdProfile)]
+    public void SeabedSelfDrawUsesTheSamePhysicalTileAsPublicBird(string profile)
     {
-        var state = Offer(AtTurn(["b9", "", "b1 b2 b3 b4 b5 b6 c1 c2 c3 d7 d8 d9 c5", ""], "c5"), 0);
+        var state = Offer(AtTurn(["b9", "", "b1 b2 b3 b4 b5 b6 c1 c2 c3 d7 d8 d9 c5", ""], "c5", profile: profile), 0);
         state = Select(Select(state, 1, "pass"), 2, "draw");
         var view = ChangshaEngine.ViewPublic(state);
         Assert.Equal(0, view.WallCount);
@@ -54,8 +58,10 @@ public sealed class LastTileTests
         AssertBalanced(settlement, -8, -3, 14, -3);
     }
 
-    [Fact]
-    public void SeabedMissForcesThatTileAndAllowsMultipleHuButNoMelds()
+    [Theory]
+    [InlineData(ChangshaEngine.Profile)]
+    [InlineData(ChangshaEngine.TwoBirdProfile)]
+    public void SeabedMissForcesThatTileAndAllowsMultipleHuButNoMelds(string profile)
     {
         var state = Offer(AtTurn(
         [
@@ -63,7 +69,7 @@ public sealed class LastTileTests
             "b5 b5 b1 b2 b7 b8 c1 c4 c7 d3 d5 d6 d9",
             "b3 b4 c1 c2 c3 d1 d2 d3 d7 d8 d9 c2 c2",
             "b3 b4 c4 c5 c6 d4 d5 d6 d7 d8 d9 c5 c5"
-        ], "b5", dealer: 2), 0);
+        ], "b5", dealer: 2, profile: profile), 0);
         state = Select(state, 1, "draw");
         Assert.Equal("b5", Assert.Single(Assert.Single(ChangshaEngine.ViewSeat(state, 1).LegalOptions).Faces));
         var pending = Select(state, 1, "discard");
@@ -90,11 +96,13 @@ public sealed class LastTileTests
         AssertBalanced(nobodyWon.Settlement, 0, 0, 0, 0);
     }
 
-    [Fact]
-    public void LastTileTakenByBuIsNotSeabedAndCannotEnableAnotherKong()
+    [Theory]
+    [InlineData(ChangshaEngine.Profile)]
+    [InlineData(ChangshaEngine.TwoBirdProfile)]
+    public void LastTileTakenByBuIsNotSeabedAndCannotEnableAnotherKong(string profile)
     {
         const string hand = "b9 b9 b9 b9 b1 b2 b3 c1 c2 c3 d1 d2 d3 c5";
-        var start = AtTurn([hand, "", "", ""], "c5", dealer: 2);
+        var start = AtTurn([hand, "", "", ""], "c5", dealer: 2, profile: profile);
         var after = Select(start, 0, "bu", "b9");
         Assert.Empty(after.Wall);
         Assert.Equal("turn", ChangshaEngine.ViewPublic(after).Window!.Reason);
@@ -106,19 +114,21 @@ public sealed class LastTileTests
         Assert.Empty(settlement.Birds);
         AssertBalanced(settlement, 4, -1, -2, -1);
 
-        var noWin = Select(AtTurn([hand, "", "", ""], "d5", dealer: 2), 0, "bu", "b9");
+        var noWin = Select(AtTurn([hand, "", "", ""], "d5", dealer: 2, profile: profile), 0, "bu", "b9");
         var draw = TimeoutHand(noWin).Settlement!;
         Assert.Equal("draw", draw.Reason);
         Assert.Equal(0, draw.NextDealerSeat);
     }
 
-    [Fact]
-    public void RolledKongAtWallEndStillScoresBloomAndNoSeabed()
+    [Theory]
+    [InlineData(ChangshaEngine.Profile)]
+    [InlineData(ChangshaEngine.TwoBirdProfile)]
+    public void RolledKongAtWallEndStillScoresBloomAndNoSeabed(string profile)
     {
         var start = AtTurn(
         [
             "b9 b9 b9 b9 b1 b2 b3 c1 c2 c3 d1 d2 d3 c5", "", "", ""
-        ], "c5", dealer: 2);
+        ], "c5", dealer: 2, profile: profile);
         var after = Select(start, 0, "gang", "b9");
         Assert.Empty(after.Wall);
         Assert.Equal(DrawKind.RolledSupplement, after.Window!.DrawKind);

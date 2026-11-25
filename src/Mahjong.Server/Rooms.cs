@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Text.Json;
+using Mahjong.Rules;
 using Mahjong.Server.Social;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -179,10 +181,16 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
     {
         var now = time.GetUtcNow().UtcTicks;
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        var rooms = await db.Rooms.AsNoTracking()
+        var waiting = await db.Rooms.AsNoTracking()
             .Where(r => r.IsPublic && r.Waiting && r.OccupiedSeats < 4 && r.ExpiresAtTicks > now)
             .OrderBy(r => r.Id).Take(RoomLimit)
-            .Select(r => new { roomId = r.Id, r.OccupiedSeats, r.MatchHands }).ToArrayAsync(cancellationToken);
+            .Select(r => new { r.Id, r.OccupiedSeats, r.MatchHands, r.Checkpoint }).ToArrayAsync(cancellationToken);
+        var rooms = waiting.Select(row =>
+        {
+            var profile = RoomCheckpoint.Read(row.Id, row.Checkpoint).RulesVersion;
+            return new PublicRoom(row.Id, row.OccupiedSeats, row.MatchHands,
+                profile == ChangshaEngine.Profile ? null : profile);
+        }).ToArray();
         return new { rooms };
     }
 
@@ -322,7 +330,7 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
                 if (leave && (intent.Flag || room.Status is "waiting" or "complete"))
                 {
                     db.Memberships.Remove(member);
-                    room.Seats[member.Seat] = Chair.Open;
+                    room.ReplaceChair(member.Seat, Chair.Open);
                     room.ResetReadiness();
                     room.TouchRevision();
                     var nextHost = Array.FindIndex(room.Seats, chair => chair.GuestId.HasValue);
@@ -455,7 +463,7 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
 
     private static void SeatHuman(MahjongDb db, RoomCheckpoint room, GuestRow guest, int seat)
     {
-        room.Seats[seat] = Chair.Human(guest.Id, guest.DisplayName);
+        room.ReplaceChair(seat, Chair.Human(guest.Id, guest.DisplayName));
         room.ResetReadiness();
         room.TouchRevision();
         db.Memberships.Add(new MembershipRow { GuestId = guest.Id, RoomId = room.Id, Seat = seat });
@@ -496,6 +504,8 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
         var created = new RoomCheckpoint
         {
             Id = RoomGame.RandomCode(16), Visibility = intent.Visibility!, MatchHands = intent.MatchHands,
+            RulesVersion = intent.RulesVersion ?? ChangshaEngine.Profile,
+            NextDealerSeat = options.PortalEnabled ? RandomNumberGenerator.GetInt32(4) : null,
             InviteCode = intent.Visibility == "invite" ? RoomGame.RandomCode(12) : null,
             Seats = [Chair.Human(guestId, guest.DisplayName),
                 intent.Flag ? Chair.Bot(1) : Chair.Open, intent.Flag ? Chair.Bot(2) : Chair.Open,
@@ -532,7 +542,7 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
             case "setBot" when room.Status == "waiting" && room.Seats[intent.Seat].GuestId is null:
                 if (room.Seats[intent.Seat].IsBot != intent.Flag)
                 {
-                    room.Seats[intent.Seat] = intent.Flag ? Chair.Bot(intent.Seat) : Chair.Open;
+                    room.ReplaceChair(intent.Seat, intent.Flag ? Chair.Bot(intent.Seat) : Chair.Open);
                     room.ResetReadiness();
                     room.TouchRevision();
                 }

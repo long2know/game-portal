@@ -91,26 +91,33 @@ public sealed class ClaimTests
         Assert.Equal(new PayerTransfer(0, 3, 1, "win"), Assert.Single(ended.Settlement.Transfers));
     }
 
-    [Fact]
-    public void AllWinningSeatsSettleInTableOrderWithOnePhysicalTile()
+    [Theory]
+    [InlineData(ChangshaEngine.Profile, "c4 b9 c7", "c4", 2, 1)]
+    [InlineData(ChangshaEngine.TwoBirdProfile, "c4 b9 c7", "c4 b9", 2, 1)]
+    [InlineData(ChangshaEngine.TwoBirdProfile, "c4 c7 b9", "c4 c7", 3, 2)]
+    public void AllWinningSeatsSettleInTableOrderWithOnePhysicalTile(string profile, string stock, string birds,
+        int paidToOne, int paidToThree)
     {
         const string heldOne = "b3 b4 b5 b6 b7 c1 c2 c2 c2 c3";
         const string heldThree = "b3 b4 c4 c5 c5 c5 c6 d4 d5 d6";
-        var state = Select(AtTurn(["b5", heldOne, PengTwo, heldThree], "c4 b9 c7", dealer: 2,
-            melds: [new(1, "chi", "d1 d2 d3", 0), new(3, "chi", "d7 d8 d9", 2)]), 0, "discard", "b5");
+        var state = Select(AtTurn(["b5", heldOne, PengTwo, heldThree], stock, dealer: 2,
+            melds: [new(1, "chi", "d1 d2 d3", 0), new(3, "chi", "d7 d8 d9", 2)], profile: profile), 0, "discard", "b5");
         var first = Select(Select(state, 3, "hu"), 1, "hu");
         var second = Select(Select(state, 1, "hu"), 3, "hu");
         Assert.Null(ChangshaEngine.ViewPublic(first).Settlement);
-        Assert.Equal(Checkpoint(Expire(first)), Checkpoint(Expire(second)));
-        var ended = Expire(first);
+        var ended = Expire(RoundTrip(first));
+        Assert.Equal(Checkpoint(ended), Checkpoint(Expire(second)));
         var settlement = ended.Settlement!;
         Assert.Equal(new[] { 1, 3 }, settlement.Winners.Select(winner => winner.Seat));
         Assert.All(settlement.Winners, winner => Assert.Equal("b5", Assert.Single(winner.WinningTiles)));
-        Assert.Equal("c4", Assert.Single(settlement.Birds));
-        Assert.Equal(new PayerTransfer[] { new(0, 1, 2, "win"), new(0, 3, 1, "win") }, settlement.Transfers);
+        var expectedBirds = birds.Split(' ');
+        Assert.Equal(expectedBirds, settlement.Birds);
+        Assert.Equal(state.Wall.Take(expectedBirds.Length).Select(entry => entry.Tile), ended.Birds);
+        Assert.Single(ended.Wall, entry => entry.Tile == state.Wall[^1].Tile);
+        Assert.Equal(new PayerTransfer[] { new(0, 1, paidToOne, "win"), new(0, 3, paidToThree, "win") }, settlement.Transfers);
         Assert.Equal(state.Window!.Trigger, ended.ClaimedWinTile);
         Assert.Equal(0, settlement.NextDealerSeat);
-        AssertBalanced(settlement, -3, 2, 0, 1);
+        AssertBalanced(settlement, -paidToOne - paidToThree, paidToOne, 0, paidToThree);
 
         var winners = ChangshaEngine.ViewPublic(ended).Settlement!.Winners;
         Assert.Equal(new[] { 1, 3 }, winners.Select(winner => winner.Seat));

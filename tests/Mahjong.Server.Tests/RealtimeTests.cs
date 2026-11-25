@@ -196,6 +196,78 @@ public sealed class RealtimeTests
     }
 
     [Fact]
+    public async Task RulesProfilesAreStrictlyOptInAndOnlyPublicVariantRowsAdvertiseThem()
+    {
+        await using var server = new Kestrel();
+        await server.StartAsync();
+        var classicUser = new User(server);
+        var variantUser = new User(server);
+        var privateUser = new User(server);
+        var observer = new User(server);
+        await classicUser.Guest();
+        await variantUser.Guest();
+        await privateUser.Guest();
+        await observer.Guest();
+        using var classic = await classicUser.Connect();
+        using var variant = await variantUser.Connect();
+        using var invite = await privateUser.Connect();
+        using var joiner = await observer.Connect();
+
+        foreach (var payload in new[]
+        {
+            """{"visibility":"public","matchHands":1,"rulesVersion":null}""",
+            """{"visibility":"public","matchHands":1,"rulesVersion":1}""",
+            """{"visibility":"public","matchHands":1,"rulesVersion":"Changsha-v1"}""",
+            """{"visibility":"public","matchHands":1,"rulesVersion":"changsha-two-bird-v2"}""",
+            """{"visibility":"public","matchHands":1,"rulesVersion":"changsha-v1","rulesVersion":"changsha-two-bird-v1"}"""
+        })
+        {
+            using var document = JsonDocument.Parse(payload);
+            var rejected = await variant.Command("createRoom", document.RootElement);
+            Assert.Equal("invalid_request", rejected.Error());
+            Assert.Null(rejected.Text("roomId"));
+        }
+        Assert.Null((await variantUser.Guest()).Text("resumeRoomId"));
+        Assert.Empty(await Listed(observer));
+
+        const string twoBirds = "changsha-two-bird-v1";
+        (await classic.Command("createRoom", new { visibility = "public", matchHands = 1, rulesVersion = "changsha-v1" })).Ok();
+        var classicRoom = await classic.Snapshot();
+        Assert.Equal("changsha-v1", classicRoom.At("room", "rulesVersion").GetString());
+        var create = new { visibility = "public", matchHands = 4, rulesVersion = twoBirds };
+        var createId = Guid.NewGuid();
+        var created = await variant.Command("createRoom", create, createId);
+        created.Ok();
+        var variantRoom = await variant.Snapshot();
+        Assert.Equal(twoBirds, variantRoom.At("room", "rulesVersion").GetString());
+        Assert.Equal("request_conflict", (await variant.Command("createRoom", create with { rulesVersion = "changsha-v1" },
+            createId)).Error());
+        Assert.Equal(created.GetRawText(), (await variant.Command("createRoom", create, createId)).GetRawText());
+
+        (await invite.Command("createRoom", create with { visibility = "invite" })).Ok();
+        var privateRoom = await invite.Snapshot();
+        var listed = await Listed(observer);
+        Assert.Equal(2, listed.Length);
+        var classicRow = Assert.Single(listed, row => row.Text("roomId") == classicRoom.Text("roomId"));
+        var variantRow = Assert.Single(listed, row => row.Text("roomId") == variantRoom.Text("roomId"));
+        Assert.Equal(new[] { "matchHands", "occupiedSeats", "roomId" }, classicRow.EnumerateObject().Select(p => p.Name).Order());
+        Assert.Equal(new[] { "matchHands", "occupiedSeats", "roomId", "rulesVersion" },
+            variantRow.EnumerateObject().Select(p => p.Name).Order());
+        Assert.Equal(twoBirds, variantRow.Text("rulesVersion"));
+        var notFound = await joiner.Command("joinRoom", new { roomId = privateRoom.Text("roomId") });
+        Assert.Equal("room_not_found", notFound.Error());
+        Assert.Null(notFound.Text("roomId"));
+
+        (await joiner.Command("joinRoom", new { inviteCode = privateRoom.Private().Text("inviteCode") })).Ok();
+        var joined = await joiner.Snapshot();
+        Assert.Equal("waiting", joined.Status());
+        Assert.Equal(twoBirds, joined.At("room", "rulesVersion").GetString());
+        Assert.Equal(new[] { 0, 0, 0, 0 }, joined.At("room", "tableTotals").EnumerateArray().Select(score => score.GetInt32()));
+        Assert.False(joined.Chair(1).GetProperty("ready").GetBoolean());
+        Assert.Null(joined.Private().Text("inviteCode"));
+    }
+
+    [Fact]
     public async Task ConcurrentAdmissionAndStartReserveAPlayingSeatOnLeave()
     {
         await using var server = new Kestrel(("TurnSeconds", 30), ("ClaimSeconds", 8));

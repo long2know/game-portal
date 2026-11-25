@@ -36,6 +36,40 @@ public sealed class WinningTests
         AssertBalanced(won.Settlement, 12, -4, -4, -4);
     }
 
+    [Theory]
+    [InlineData("", "", "", 2, 2, 2)]
+    [InlineData("b9", "b9", "", 4, 4, 4)]
+    [InlineData("b9 b8 d9", "b9 b8", "d9", 4, 4, 6)]
+    public void TwoBirdsRevealsOnlyAvailableWallTilesAndCountsMixedEndpoints(string stock, string birds,
+        string left, int first, int second, int third)
+    {
+        var state = AtTurn([$"{FourRuns} c5 c5", "", "", ""], stock, drawn: "c5",
+            profile: ChangshaEngine.TwoBirdProfile);
+        Assert.Null(ChangshaEngine.ViewPublic(state).Settlement);
+        var won = Select(RoundTrip(state), 0, "hu");
+        var settlement = ChangshaEngine.ViewPublic(won).Settlement!;
+        Assert.Equal(birds.Split(' ', StringSplitOptions.RemoveEmptyEntries), settlement.Birds);
+        Assert.Equal(left.Split(' ', StringSplitOptions.RemoveEmptyEntries), won.Wall.Select(entry => Tiles.Face(entry.Tile)));
+        Assert.Equal(new PayerTransfer[] { new(1, 0, first, "win"), new(2, 0, second, "win"), new(3, 0, third, "win") },
+            settlement.Transfers);
+        AssertBalanced(won.Settlement!, first + second + third, -first, -second, -third);
+        Assert.Equal(Checkpoint(settlement), Checkpoint(ChangshaEngine.ViewPublic(RoundTrip(won)).Settlement));
+    }
+
+    [Fact]
+    public void TwoPhysicalBirdsHittingOnePayerTripleOnlyThatStackedPayment()
+    {
+        var state = AtTurn(["b1 b1 b1 b1 c3 c3 c3 c3 b5 b5 d7 d7 c9 c9", "", "", ""], "c2 d2",
+            dealer: 2, profile: ChangshaEngine.TwoBirdProfile);
+        var won = Select(state, 0, "hu");
+        var settlement = won.Settlement!;
+        Assert.Equal(new[] { "c2", "d2" }, settlement.Birds);
+        Assert.Equal(new PayerTransfer[] { new(1, 0, 9, "win"), new(2, 0, 12, "win"), new(3, 0, 27, "win") },
+            settlement.Transfers);
+        Assert.Equal(0, settlement.NextDealerSeat);
+        AssertBalanced(settlement, 48, -9, -12, -27);
+    }
+
     [Fact]
     public void SettledSelfDrawRequiresThePhysicalDrawToStillBeHeld()
     {
