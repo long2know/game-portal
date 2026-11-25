@@ -183,7 +183,7 @@ export async function savedMahjong(page: Page, base: string) {
   const fresh = button(mahjong, "Start fresh: Changsha Mahjong");
   const confirm = page.getByRole("dialog", { name: "Start fresh?" });
   await fresh.tap();
-  await expect(confirm).toHaveAccessibleDescription(/clears its scores/);
+  await expect(confirm).toHaveAccessibleDescription(/keeps.*table total, but resets the match score/);
   await button(confirm, "Cancel").tap();
   expect(intents).toEqual([]);
   await fresh.tap();

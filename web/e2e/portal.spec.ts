@@ -910,13 +910,34 @@ test.describe("mounted Jade Court portal", () => {
 
     await page.setViewportSize({ width: 320, height: 730 });
     await page.goto(url("mahjong/"));
-    await tap(page, "Play with bots");
+    await tap(page, "Play with friends");
+    const create = dialog("Create a table");
+    await expect(create.getByLabel("Birds")).toHaveValue("changsha-v1");
+    await create.getByLabel("Birds").selectOption("changsha-two-bird-v1");
+    await create.getByLabel("Fill the other three seats with bots").check();
+    await create.getByRole("button", { name: "Create table" }).tap();
+    const waiting = page.getByRole("main");
+    await expect(waiting.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
+    expect(commands.find(command => command.op === "createRoom")?.payload).toEqual({
+      visibility: "invite", matchHands: 1, fillBots: true, rulesVersion: "changsha-two-bird-v1",
+    });
+    expect(latest().room.rulesVersion).toBe("changsha-two-bird-v1");
+    const selectedDealer = latest().room.nextDealerSeat;
+    expect(selectedDealer).toEqual(expect.any(Number));
+    await expect(waiting.getByText(`Next dealer: ${latest().room.seats[selectedDealer!].displayName}`, { exact: true })).toBeVisible();
+    await tap(page, "Changsha rules");
+    await expect(dialog("Changsha rules").getByText("This table: Two birds (house rules). Local variations exist.")).toBeVisible();
+    await expect(dialog("Changsha rules").getByText(/Cha makes a sequence/)).toBeVisible();
+    await tap(page, "Close dialog");
     await tap(page, "Mark ready");
     await tap(page, "Start match");
     await tap(page, "Pause");
     await expect(page.getByText("Table paused", { exact: true })).toBeVisible();
     const paused = latest();
     expect(paused.room.seats.map(seat => seat.kind)).toEqual(["human", "bot", "bot", "bot"]);
+    expect(paused.game!.dealerSeat).toBe(selectedDealer);
+    expect(paused.room.tableTotals).toEqual([0, 0, 0, 0]);
+    await expect(table.locator(`.seat-label[data-seat="${selectedDealer}"] .seat-details`)).toHaveText(/^Dealer/);
 
     await tap(page, "Settings");
     await expect(dialog("Settings").getByText(/Your seat stays reserved/)).toBeVisible();
@@ -950,7 +971,7 @@ test.describe("mounted Jade Court portal", () => {
     await newGame.tap();
     const restart = dialog("New game?");
     const start = restart.getByRole("button", { name: "Start new game", exact: true });
-    await expect(restart.getByText(/clears its scores/)).toBeVisible();
+    await expect(restart.getByText(/resets the match score but keeps the table total/)).toBeVisible();
     await expect(restart.getByRole("button", { name: "Cancel" })).toBeFocused();
     await restart.getByRole("button", { name: "Cancel" }).tap();
     await expect(newGame).toBeFocused();
@@ -982,10 +1003,11 @@ test.describe("mounted Jade Court portal", () => {
     expect(restartCommand.payload).toEqual({ roomId: before.roomId, expectedRoomRevision: before.roomRevision });
     expect(firstDeal).toMatchObject({ roomId: before.roomId, roomRevision: before.roomRevision + 1,
       gameRevision: before.gameRevision + 1, room: { status: "playing", paused: false, autoResumeAtUtc: null,
-        matchHands: before.room.matchHands, seats: before.room.seats },
-      game: { handNumber: 1, dealerSeat: 0, settlement: null } });
+        matchHands: before.room.matchHands, rulesVersion: before.room.rulesVersion, seats: before.room.seats },
+      game: { handNumber: 1, dealerSeat: before.game!.dealerSeat, settlement: null } });
     expect(firstDeal.game!.window!.windowId).not.toBe(before.game!.window!.windowId);
     expect(firstDeal.game!.seats.map(seat => seat.total)).toEqual([0, 0, 0, 0]);
+    expect(firstDeal.room.tableTotals).toEqual(before.room.tableTotals);
     expect(frames.indexOf(restartAck!)).toBeLessThan(frames.indexOf(firstDeal));
     deliverDeal!();
     await expect(restart).toHaveCount(0);

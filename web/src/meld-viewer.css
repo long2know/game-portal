@@ -1,0 +1,25 @@
+.exposed-trigger {
+  position: absolute; inset: 0 auto auto 0; z-index: 2;
+  min-inline-size: 44px; min-block-size: 44px; max-inline-size: 94px;
+  padding: 3px 7px; display: grid; gap: 3px; line-height: 1.05; font-size: .82rem;
+}
+.exposed-new { color: #ffe1a2; font-size: .64rem; letter-spacing: .09em; text-transform: uppercase; }
+.exposed-panel {
+  position: absolute; inset: calc(100% + 6px) 0 auto;
+  display: grid; gap: 9px; padding: 9px 12px 12px;
+  background: #192b24; border: 1px solid #718a72; border-radius: 12px;
+  scroll-margin-block-start: max(8px, var(--safe-t));
+  margin-block-end: max(8px, var(--safe-b));
+}
+.exposed-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
+.exposed-head h2 { font-size: 1.25rem; }
+.exposed-rows { display: grid; gap: 8px; }
+.exposed-seat { display: grid; gap: 4px; }
+.exposed-seat h3 { font-size: .94rem; overflow-wrap: anywhere; }
+.exposed-groups { display: flex; flex-wrap: wrap; align-items: end; gap: 5px; }
+.exposed-groups .meld-group {
+  padding: 4px; border: 1px solid #577265; border-radius: 6px; background: #14251e;
+}
+.exposed-groups .meld-latest { border-color: #e5b771; background: #393324; }
+.exposed-groups .meld-caption { font-size: .83rem; line-height: 1.2; }
+.exposed-groups .meld-tile { width: 46px; height: 58px; }

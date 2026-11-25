@@ -1,21 +1,24 @@
 import type { Modal } from "./dialog";
-import { button, el, reconcile, winds } from "./dom";
-import type { Action, ChatMessage, Face, Payloads, Seat, Snapshot } from "./protocol";
+import { button, el, reconcile, wind } from "./dom";
+import { birdProfiles, canManageMatch, tableScore } from "./mahjong-profile";
+import { setMelds } from "./melds";
+import type { Action, ChatMessage, Face, Payloads, RulesVersion, Seat, Snapshot } from "./protocol";
 import { field, submit, toggle } from "./screens";
-import { canManageMatch, setMelds } from "./table";
 import { tileLabel } from "./tile";
 
 export function showCreate(modal: Modal, enter: (payload: Payloads["createRoom"]) => void): HTMLButtonElement {
   const visibility = el("select", "", new Option("Invite only", "invite"), new Option("Public", "public"));
   const hands = el("select", "", el("option", "", "One hand"), el("option", "", "Four hands"));
+  const birds = el("select", "", ...Object.entries(birdProfiles).map(([value, label]) => new Option(label, value)));
   const bots = toggle("Fill the other three seats with bots", false);
   const create = submit("Create table");
-  const form = el("form", "form", field("Who can join?", visibility), field("Match length", hands), bots.field,
+  const form = el("form", "form", field("Who can join?", visibility), field("Match length", hands), field("Birds", birds), bots.field,
     el("p", "note", "You can also add or remove bots from the waiting room."), el("div", "row-actions", create));
   form.addEventListener("submit", event => {
     event.preventDefault();
     enter({ visibility: visibility.selectedIndex === 0 ? "invite" : "public",
-      matchHands: hands.selectedIndex === 0 ? 1 : 4, fillBots: bots.input.checked });
+      matchHands: hands.selectedIndex === 0 ? 1 : 4, fillBots: bots.input.checked,
+      ...(birds.value === "changsha-two-bird-v1" ? { rulesVersion: "changsha-two-bird-v1" } : {}) });
   });
   modal.show("create", "Create a table", form);
   return create;
@@ -43,17 +46,19 @@ export function showShareLink(modal: Modal, path: string, state: Snapshot | null
     el("p", "detail", "Send this link to your friends. They can open it and choose Join."), field("Invite link", input), copy));
 }
 
-export function rulesContent(): HTMLElement {
+export function rulesContent(profile?: RulesVersion): HTMLElement {
   return el("div", "form rules-content",
-    el("p", "", "This table uses the provisional changsha-v1 profile. Local variations exist."),
+    el("p", "", profile ? `This table: ${birdProfiles[profile]}. Local variations exist.` : "Local Changsha rules vary. Choose the bird rules when you create a table."),
     el("h3", "", "The table"),
     el("p", "", "Four seats share 108 tiles: bamboo, characters and dots, with four of each numbered tile. East marks the dealer. Your drawn tile is marked separately."),
     el("h3", "", "Your turn"),
     el("p", "", "Choose from the actions shown. To discard, select one tile in your hand, then confirm with the separate discard button. The table clock continues while a dialog is open."),
     el("h3", "", "Claims and wins"),
-    el("p", "", "Chow makes a sequence, Peng makes three matching tiles, and a Kong uses four. Changsha also has opening reveals, special wins, and bird scoring. The table offers only the choices your seat can make; use Pass to decline an optional claim."),
+    el("p", "", "Cha makes a sequence, Peng makes three matching tiles, and a Kong uses four. The table offers only the choices your seat can make; use Pass to decline an optional claim. Open Exposed tiles to read opponents’ committed open melds."),
+    el("h3", "", "Birds"),
+    el("p", "", "One bird (classic) normally reveals one bird after a win. Two birds (house rules) can reveal up to two. Each bird counts by rank from this hand’s dealer and adds to the payment multiplier when it counts for the payer or winner. A draw has no birds."),
     el("h3", "", "After a hand"),
-    el("p", "", "See hand scores and any winning patterns, then continue if there are more hands. At the end, the host can rematch with the same seats."));
+    el("p", "", "Results show the points from this hand, the match total and the running table total. A new match resets match scores but keeps table scores. At the end, the host can rematch with the same seats."));
 }
 
 const clockFormat = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
@@ -121,22 +126,30 @@ function resultRack(name: string, tiles: Face[], style = ""): HTMLElement {
 function resultsContent(state: Snapshot, actions: HTMLElement[], managed: boolean): HTMLElement {
   const game = state.game!;
   const settlement = game.settlement!;
-  const seatName = (seat: Seat) => state.room.seats.find(item => item.seat === seat)?.displayName ?? winds[seat];
+  const seatName = (seat: Seat) => state.room.seats.find(item => item.seat === seat)?.displayName ?? wind(seat, game.dealerSeat);
   const summary = settlement.reason === "draw" ? "The hand ended in a draw." : `${settlement.winners.map(item => seatName(item.seat)).join(" and ")} won this hand.`;
-  const root = el("div", "form", el("p", "eyebrow", `Hand ${game.handNumber} of ${state.room.matchHands}`),
-    el("p", "detail", summary));
+  const nextDealer = settlement.nextDealerSeat;
+  const overview = el("div", "result-overview", el("p", "eyebrow", `Hand ${game.handNumber} of ${state.room.matchHands}`),
+    el("p", "detail", summary), el("p", "note", birdProfiles[state.room.rulesVersion]),
+    el("p", "note", `Current dealer: ${seatName(game.dealerSeat)}`),
+    el("p", "note", `Next dealer: ${nextDealer == null ? "Not available" : seatName(nextDealer)}`));
+  if (game.wallCount < 2) overview.append(el("p", "note", game.wallCount === 0 ? "No tiles left in the wall." : "One tile left in the wall."));
+  const root = el("div", "form result-review");
   const actionRow = el("div", "row-actions", ...actions);
-  if (managed) root.append(actionRow);
-  const head = el("thead", "", el("tr", "", el("th", "", "Seat"), el("th", "", "Hand"), el("th", "", "Total")));
+  const head = el("thead", "", el("tr", "", ...["Seat", "This hand", "Match total", "Table total"].map(label => {
+    const column = el("th", "", label);
+    column.scope = "col";
+    return column;
+  })));
   const deltas = el("tbody");
   settlement.seatResults.forEach(row => {
     const name = el("th", "", `${seatName(row.seat)}${row.seat === state.self.seat ? " (you)" : ""}`);
     name.scope = "row";
     const points = el("td", row.delta > 0 ? "positive" : row.delta < 0 ? "negative" : "", sign(row.delta));
-    deltas.append(el("tr", "", name, points, el("td", "", sign(row.total))));
+    deltas.append(el("tr", "", name, points, el("td", "", sign(row.total)), el("td", "", sign(tableScore(state, row.seat)))));
   });
-  const scoreboard = el("table", "scoreboard", el("caption", "sr-only", "Per-seat score changes and match totals"), head, deltas);
-  root.append(scoreboard);
+  const scoreboard = el("table", "scoreboard", el("caption", "sr-only", "Scores by seat"), head, deltas);
+  root.append(el("div", "form result-summary", overview, scoreboard));
   if (settlement.reason === "win") {
     const hands = el("div", "form winning-hands");
     for (const winner of settlement.winners) {
@@ -154,12 +167,16 @@ function resultsContent(state: Snapshot, actions: HTMLElement[], managed: boolea
     }
     root.append(hands);
   }
+  if (managed) root.append(actionRow);
   if (settlement.birds.length) root.append(el("section", "result-section", el("h3", "", "Birds"),
-    el("div", "result-tiles", ...settlement.birds.map(face => tileLabel(face)))));
+    el("div", "result-tiles", ...settlement.birds.map(face => {
+      const hit = ((game.dealerSeat + Number(face[1]) - 1) % 4) as Seat;
+      return resultRack(`Counts for ${seatName(hit)} (${wind(hit, game.dealerSeat)})`, [face], "bird-hit");
+    }))));
   if (settlement.transfers?.length) root.append(el("section", "result-section", el("h3", "", "Score transfers"),
     el("ul", "inline-list", ...settlement.transfers.map(transfer =>
       el("li", "", `${seatName(transfer.fromSeat)} → ${seatName(transfer.toSeat)}: ${transfer.points} (${transfer.reason})`)))));
-  if (state.room.status === "betweenHands") root.append(el("p", "note", `Next dealer: ${seatName(settlement.nextDealerSeat)}.`));
+  if (state.room.status === "complete") root.append(el("p", "note", "A new match resets match scores but keeps the table total."));
   if (!managed && actions.length) root.append(actionRow);
   return root;
 }
@@ -175,7 +192,7 @@ interface TableDialog {
 const matchActions = {
   restartMatch: {
     label: "New game",
-    warning: "Start over with the same bots and settings. This replaces the current match and clears its scores.",
+    warning: "Start over with the same bots and settings. This resets the match score but keeps the table total.",
   },
   quit: {
     label: "Quit table",

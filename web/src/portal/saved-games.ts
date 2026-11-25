@@ -133,7 +133,7 @@ export async function showSaves(mount: string, before: HTMLElement, values: unkn
     let fresh: HTMLButtonElement | undefined;
     if (save.canStartFresh) {
       const summary = save.game === "mahjong" ?
-        "This replaces the current match and clears its scores, with the same bots and settings. If the seat is open in another tab, you’ll take it over." :
+        "This keeps the same bots, settings and table total, but resets the match score. If the seat is open in another tab, you’ll take it over." :
         save.tableId === null ? `Starting again replaces your saved ${title} game.` :
           "Create another bot table with the same settings. Your previous table won’t be closed or changed.";
       fresh = button("Start fresh", "button secondary", () => {

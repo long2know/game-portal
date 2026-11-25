@@ -3,7 +3,7 @@ import type { Page, WebSocketRoute } from "@playwright/test";
 import type { ClientMessage, Guest, Meld, Seat, Snapshot } from "../src/protocol";
 
 const online = '.connection[data-status="online"]';
-const clipPattern = /\/(chow|(?:chi|peng|hu)-(?:lower|higher))-[\w-]+\.mp3$/;
+const clipPattern = /\/(cha-english|(?:chi|peng|hu)-(?:lower|higher))-[\w-]+\.mp3$/;
 const seats: Seat[] = [0, 1, 2, 3];
 const words = ["chi", "peng", "hu"] as const;
 const voiceClips = (voice: string) => words.map(word => `${word}-${voice}`);
@@ -225,6 +225,7 @@ test("committed calls play the selected Mandarin PCM exactly once, independently
   expect(requests).toEqual([]);
   await button(page, "Settings").tap();
   await expect(voice(page)).toHaveValue("off");
+  await expect(voice(page).locator('option[value="mixed"]')).toHaveText("English Cha · Mandarin Peng/Hu");
   await voice(page).selectOption("lower");
   await button(page, "Close dialog").tap();
   expect(requests.filter(path => clipPattern.test(path))).toEqual([]);
@@ -235,20 +236,20 @@ test("committed calls play the selected Mandarin PCM exactly once, independently
   await expect.poll(async () => new Set((await read()).decoded)).toEqual(new Set(voiceClips("lower")));
 
   await wire.commit(state => {
-    state.self.legalOptions = [{ kind: "chi", optionId: "choose-chow", tileIds: ["b1", "b3"], faces: ["b1", "b2", "b3"] }];
+    state.self.legalOptions = [{ kind: "chi", optionId: "choose-cha", tileIds: ["b1", "b3"], faces: ["b1", "b2", "b3"] }];
   });
-  const option = page.getByRole("button", { name: /^Chow:/ });
+  const option = page.getByRole("button", { name: /^Cha:/ });
   await expect(option).toBeEnabled();
   expect(await played(read)).toEqual([]);
   await option.tap();
-  await expect.poll(() => wire.choices).toEqual(["choose-chow"]);
+  await expect.poll(() => wire.choices).toEqual(["choose-cha"]);
   await wire.commit(state => { state.self.legalOptions = []; });
   expect(await played(read)).toEqual([]);
 
   await wire.commit(state => meld(state, 1, "chi"));
   await expect.poll(() => played(read)).toEqual(["chi-lower"]);
   await expect.poll(async () => (await read()).rms).toBeGreaterThan(.009);
-  await expect(page.locator('[data-seat="1"] .seat-feedback')).toHaveText("Chow");
+  await expect(page.locator('[data-seat="1"] .seat-feedback')).toHaveText("Cha");
   await expect(page.locator("html")).toHaveAttribute("data-reduced-motion", "true");
   await expect(page.locator(".table-effects > *")).toHaveCount(0);
   wire.duplicate();
@@ -328,12 +329,18 @@ test("committed calls play the selected Mandarin PCM exactly once, independently
   expect(await played(read)).toEqual(voiceClips("higher"));
   await expect.poll(async () => (await read()).rms).toBeLessThan(.001);
   await setVoice(page, "mixed", true, "End");
-  await expect.poll(async () => (await read()).decoded).toContain("chow");
+  await expect.poll(async () => (await read()).decoded).toContain("cha-english");
   await wire.commit(state => meld(state, 3, "chi"));
-  await expect.poll(() => played(read)).toEqual([...voiceClips("higher"), "chow"]);
+  await expect.poll(() => played(read)).toEqual([...voiceClips("higher"), "cha-english"]);
+  const spoken = (await read()).playback.at(-1)!;
+  expect(spoken).toMatchObject({ running: true, simultaneous: 1 });
+  expect(spoken.fingerprint).not.toBe(lower[0].fingerprint);
+  expect(spoken.fingerprint).not.toBe(higher[0].fingerprint);
 });
 
 test("a real published Mahjong game speaks a committed call", async ({ page, baseURL, browserName }, info) => {
+  test.setTimeout(80000);
+  await page.setViewportSize({ width: 320, height: 730 });
   const read = await observeCalls(page);
   let current: Snapshot | undefined;
   const commits: { kind: string; seat: Seat; bot: boolean; revision: number }[] = [];
@@ -364,6 +371,7 @@ test("a real published Mahjong game speaks a committed call", async ({ page, bas
   await setVoice(page, selected);
   await button(page, "Play with bots").tap();
   await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
+  await expect(page.getByText("One bird (classic)", { exact: true })).toBeVisible();
   const ready = button(page, "Mark ready");
   if (await ready.isVisible()) await ready.tap();
   await button(page, "Start match").tap();
@@ -371,11 +379,13 @@ test("a real published Mahjong game speaks a committed call", async ({ page, bas
   const handled = new Set<string>();
   const deadline = Date.now() + 40000;
   let result: Playback | undefined;
+  const exposed = () => current?.game?.seats.find(row => row.seat !== current?.self.seat &&
+    row.melds.some(meld => meld.method !== "concealed" && meld.tiles.some(face => face !== null)));
   const priority = ["hu", "reveal", "peng", "chi", "draw", "discard", "pass"];
-  while (!result && Date.now() < deadline) {
-    result = (await read()).playback[0];
+  while (Date.now() < deadline) {
+    result ??= (await read()).playback[0];
     const decision = current?.game?.window;
-    if (result || current?.room.status === "complete") break;
+    if ((result && exposed()) || current?.room.status === "complete") break;
     if (decision && !handled.has(decision.windowId)) {
       const option = current!.self.legalOptions.filter(option => priority.includes(option.kind))
         .sort((a, b) => priority.indexOf(a.kind) - priority.indexOf(b.kind))[0];
@@ -392,7 +402,7 @@ test("a real published Mahjong game speaks a committed call", async ({ page, bas
         }
       }
     }
-    if (!result) await page.waitForTimeout(100);
+    await page.waitForTimeout(100);
   }
   result ??= (await read()).playback[0];
   expect(result, `Real claim/win commits: ${JSON.stringify(commits)}`).toBeDefined();
@@ -401,4 +411,34 @@ test("a real published Mahjong game speaks a committed call", async ({ page, bas
   const kind = result!.name.split("-")[0];
   expect(commits).toEqual(expect.arrayContaining([expect.objectContaining({ kind })]));
   await info.attach("real-mahjong-call", { body: JSON.stringify({ result, commits }, null, 2), contentType: "application/json" });
+
+  if (current?.room.status === "playing") {
+    await button(page, "Pause").tap();
+    await expect.poll(() => current?.room.paused || current?.room.status === "complete").toBe(true);
+  }
+  if (current?.room.status === "complete") {
+    await expect(page.getByRole("dialog", { name: "Match results" })).toBeVisible();
+    await button(page, "Close dialog").tap();
+  }
+  const row = exposed();
+  expect(row, "an actual committed opponent meld").toBeDefined();
+  const meld = row!.melds.find(candidate => candidate.method !== "concealed" && candidate.tiles.some(face => face !== null))!;
+  const face = meld.tiles.find(Boolean);
+  const switcher = page.getByRole("button", { name: /^Exposed tiles/ });
+  const viewer = page.getByRole("region", { name: "Exposed tiles" });
+  const geometry = () => Promise.all([".board-plane", ".hand-grid", ".table-actions"].map(selector => page.locator(selector).boundingBox()));
+  const before = await geometry();
+  await expect(switcher).toBeInViewport({ ratio: 1 });
+  await switcher.tap();
+  const publicMark = viewer.locator(`.exposed-seat[data-key="${row!.seat}"] use[href$="#lt-${face}"]`).first();
+  await expect(publicMark).toBeVisible();
+  await expect.poll(() => publicMark.evaluate(node => (node as SVGGraphicsElement).getBBox().width)).toBeGreaterThan(0);
+  const href = new URL((await publicMark.getAttribute("href"))!, page.url());
+  expect(href.pathname).toMatch(new RegExp(`^${new URL("assets/", baseURL).pathname}tile-suits-[\\w-]+\\.svg$`));
+  expect((await publicMark.locator("xpath=ancestor::*[@role='img']").boundingBox())!.width).toBeGreaterThanOrEqual(44);
+  await expect(viewer.locator(".meld-concealed use")).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath("live-exposed-320.png") });
+  await button(page, "Back to table").tap();
+  await expect(switcher).toBeFocused();
+  expect(await geometry()).toEqual(before);
 });

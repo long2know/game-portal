@@ -6,7 +6,7 @@ eSpeak NG: https://github.com/espeak-ng/espeak-ng/tree/1.52.0
 Tool license (GPL-3.0-or-later): https://github.com/espeak-ng/espeak-ng/blob/1.52.0/COPYING
 
 The Mandarin voices use the stock cmn language data and the m3 and f2
-formant variants. The English Chow clip uses en-us+m3. These clips are
+formant variants. The English Cha ("chah", /tʃɑː/) clip uses en-us+m3. These clips are
 not a Changsha dialect performance. No synthesis engine, voice files,
 dictionary, or upstream recordings are distributed.
 

@@ -70,8 +70,8 @@ function settled(prior: Snapshot, winners: Seat[] = [1, 2]): Snapshot {
 
 function revealed(prior: Snapshot): Snapshot {
   const state = settled(prior);
-  const [chow, closed] = state.game!.settlement!.winners;
-  chow.winningHand = {
+  const [cha, closed] = state.game!.settlement!.winners;
+  cha.winningHand = {
     concealedTiles: ["b8", "b8", "c4", "c4", "d1", "d1", "d1"],
     melds: [
       { kind: "gang", method: "concealed", fromSeat: null, tiles: ["c9", "c9", "c9", "c9"] },
@@ -509,7 +509,7 @@ test("distinct stamp bursts and two seat-local wins fit the short landscape lead
   });
   expect((await page.locator(".board-stage").boundingBox())!.x).toBeGreaterThanOrEqual(25);
   const cases: { seat: Seat; label: string; meld: Meld }[] = [
-    { seat: 1, label: "Chow", meld: { kind: "chi", fromSeat: 0, tiles: ["b4", "b5", "b6"] } },
+    { seat: 1, label: "Cha", meld: { kind: "chi", fromSeat: 0, tiles: ["b4", "b5", "b6"] } },
     { seat: 2, label: "Peng", meld: { kind: "peng", fromSeat: 3, tiles: ["d3", "d3", "d3"] } },
     { seat: 2, label: "Kong", meld: { kind: "gang", method: "added", fromSeat: 3, tiles: ["d3", "d3", "d3", "d3"] } },
     { seat: 3, label: "Supplement", meld: { kind: "bu", method: "concealed", fromSeat: null, tiles: [null, null, null, null] } },
@@ -526,7 +526,7 @@ test("distinct stamp bursts and two seat-local wins fit the short landscape lead
     await expect(stamp.locator(".effect-spark")).toHaveCount(7);
     await expect(page.locator(`[data-seat="${seat}"] .seat-feedback`)).toHaveText(label);
     if (meld.kind === "chi") {
-      await expect(page.locator('.seat-label[data-seat="1"]').getByRole("group", { name: "Chow · from East" }))
+      await expect(page.locator('.seat-label[data-seat="1"]').getByRole("group", { name: "Cha · from East" }))
         .toBeVisible();
     }
     const seal = stamp.locator(".effect-seal");
@@ -567,7 +567,7 @@ test("distinct stamp bursts and two seat-local wins fit the short landscape lead
 });
 
 for (const viewer of seats) {
-  test(`seat ${viewer} sees its Chow source to the left and submits the original chi option`, async ({ page }) => {
+  test(`seat ${viewer} sees its Cha source to the left and submits the original chi option`, async ({ page }) => {
     const predecessor = ((viewer + 3) % 4) as Seat;
     const successor = ((viewer + 1) % 4) as Seat;
     const baseline = frame(20, 1, false);
@@ -589,7 +589,7 @@ for (const viewer of seats) {
     await expect(sourceActor).toHaveAttribute("data-place", "left");
     await expect(actor(page, successor)).toHaveAttribute("data-place", "right");
     expect((await midpoint(sourceActor)).x).toBeLessThan((await midpoint(actor(page, viewer))).x - 20);
-    await page.getByRole("button", { name: "Chow: 6 bamboo, 7 bamboo, 8 bamboo" }).tap();
+    await page.getByRole("button", { name: "Cha: 6 bamboo, 7 bamboo, 8 bamboo" }).tap();
     await expect.poll(() => wire.commands[0]).toMatchObject({ op: "choose", payload: {
       windowId: first.game!.window!.windowId, anchorGameRevision: first.gameRevision, optionId: "claim-sequence",
     } });
@@ -599,10 +599,10 @@ for (const viewer of seats) {
     next.self.hand = next.self.hand.filter(tile => !first.self.legalOptions[0].tileIds.includes(tile.tileId));
     next.self.legalOptions = [];
     wire.publish(next, wire.commands[0]);
-    const chow = page.getByRole("group", { name: `Chow · from ${["East", "South", "West", "North"][predecessor]}` });
-    await expect(chow.getByRole("img", { name: "8 bamboo" })).toBeVisible();
-    await expect(page.locator(".effect-stamp--chi .effect-caption")).toHaveText("Chow");
-    await expect(own.locator(".seat-feedback")).toHaveText("Chow");
+    const cha = page.getByRole("group", { name: `Cha · from ${["East", "South", "West", "North"][predecessor]}` });
+    await expect(cha.getByRole("img", { name: "8 bamboo" })).toBeVisible();
+    await expect(page.locator(".effect-stamp--chi .effect-caption")).toHaveText("Cha");
+    await expect(own.locator(".seat-feedback")).toHaveText("Cha");
   });
 }
 
@@ -718,14 +718,16 @@ for (const [width, height] of [[1440, 900], [740, 320]] as const) {
     }
     await expect(results).toBeVisible();
     await expect(results.getByText("Willow and Ink won this hand.")).toBeVisible();
-    await expect(results.getByRole("row", { name: "River (you) -16 -16" })).toHaveCount(1);
+    await expect(results.getByRole("row", { name: "River (you) -16 -16 -16" })).toHaveCount(1);
     await expect(results.getByRole("rowheader", { name: updatedName, exact: true })).toBeVisible();
     const firstWinner = results.locator(".winner").filter({ hasText: "Willow" });
     const secondWinner = results.locator(".winner").filter({ hasText: "Ink" });
     await expect(firstWinner.getByRole("group", { name: "Concealed tiles" }).getByRole("img")).toHaveCount(7);
     await expect(firstWinner.getByRole("group", { name: "Concealed Kong" }).getByRole("img", { name: "9 characters" }))
       .toHaveCount(4);
-    await expect(firstWinner.getByRole("group", { name: "Chow · from East" }).getByRole("img")).toHaveCount(3);
+    await expect(page.locator(".exposed-panel .meld-concealed .tile-back")).toHaveCount(4);
+    await expect(page.locator(".exposed-panel .meld-concealed use")).toHaveCount(0);
+    await expect(firstWinner.getByRole("group", { name: "Cha · from East" }).getByRole("img")).toHaveCount(3);
     await expect(firstWinner.getByRole("img", { name: "8 bamboo" })).toHaveCount(3);
     await expect(secondWinner.getByRole("group", { name: "Concealed tiles" }).getByRole("img")).toHaveCount(13);
     for (const winner of [firstWinner, secondWinner]) {
@@ -900,11 +902,12 @@ test("first sync, gaps, reconnect, duplicate snapshots and rematch obey revision
   await expect(packets).toHaveCount(4);
 });
 
-test("bot-only hand results can restart without showing the previous scores or effects", async ({ page }) => {
+test("bot-only hand results restart the match but keep table scores without replaying effects", async ({ page }) => {
   const first = frame(91, 2);
   const wire = await open(page, first, false, true);
   await expect(page.locator(".seat-actor")).toHaveCount(4);
   const scored = settled(first, [2]);
+  scored.room.tableTotals = [-5, 0, 5, 0];
   wire.publish(scored);
   await expect(page.locator(`${finale} [data-finale-seat]`)).toHaveAttribute("data-finale-seat", "2");
   const results = page.getByRole("dialog", { name: "Hand results", exact: true });
@@ -915,20 +918,155 @@ test("bot-only hand results can restart without showing the previous scores or e
   const confirm = page.getByRole("dialog", { name: "New game?" });
   await confirm.getByRole("button", { name: "Cancel" }).tap();
   await expect(newGame).toBeFocused();
-  await expect(results.getByRole("row", { name: "River (you) -8 -8" })).toBeVisible();
+  await expect(results.getByRole("row", { name: "River (you) -8 -8 -5" })).toBeVisible();
   expect(wire.commands).toHaveLength(0);
 
   await newGame.tap();
   await confirm.getByRole("button", { name: "Start new game" }).tap();
   await expect.poll(() => wire.commands[0]?.op).toBe("restartMatch");
   expect(wire.commands[0].payload).toEqual({ roomId: scored.roomId, expectedRoomRevision: scored.roomRevision });
-  wire.publish({ ...frame(scored.gameRevision + 1), roomRevision: scored.roomRevision + 1 }, wire.commands[0]);
+  const fresh = frame(scored.gameRevision + 1);
+  fresh.roomRevision = scored.roomRevision + 1;
+  fresh.room.tableTotals = scored.room.tableTotals;
+  wire.publish(fresh, wire.commands[0]);
   await expect(page.locator(".table-caption")).toHaveText("Hand 1 / 4");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Table options" })).toBeFocused();
-  await expect(page.locator(".seat-score")).toHaveText(["0", "0", "0", "0"]);
+  await expect(page.locator(".seat-score")).toHaveText(["-5", "0", "5", "0"]);
   await expect(page.locator(`${layer} > *`)).toHaveCount(0);
   await expect(page.locator(finale)).toHaveCount(0);
+});
+
+for (const [width, height] of [[320, 730], [740, 320]]) {
+  test(`committed opponent melds stay legible without moving the ${width}px table controls`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const first = frame(111);
+    first.game!.dealerSeat = 1;
+    first.game!.seats[1].melds = [{ kind: "gang", method: "concealed", fromSeat: null, tiles: [null, null, null, null] }];
+    const wire = await open(page, first);
+    await page.addStyleTag({ content: width === 740
+      ? ":root { --safe-t: 10px; --safe-r: 22px; --safe-b: 13px; --safe-l: 25px }"
+      : ":root { --safe-t: 8px; --safe-r: 7px; --safe-b: 9px; --safe-l: 6px }" });
+    await expect(page.locator(".seat-actor")).toHaveCount(4);
+    const trigger = page.getByRole("button", { name: /^Exposed tiles/ });
+    const viewer = page.getByRole("region", { name: "Exposed tiles" });
+    await expect(trigger).toHaveCount(0);
+    const bounds = () => page.locator(".board-plane, .hand-grid, .table-actions, .discard-confirm").evaluateAll(nodes =>
+      nodes.map(node => {
+        const { x, y, width, height } = node.getBoundingClientRect();
+        return [x + scrollX, y + scrollY, width, height].map(value => Number(value.toFixed(2)));
+      }));
+    const before = await bounds();
+
+    const called = advance(first);
+    called.game!.seats[1].melds.push({ kind: "chi", method: null, fromSeat: 0, tiles: ["b2", "b3", "b4"] });
+    wire.publish(called);
+    await expect(trigger.getByText("New")).toBeVisible();
+    await expect(trigger).toBeInViewport({ ratio: 1 });
+    const control = (await trigger.boundingBox())!;
+    expect(Math.min(control.width, control.height)).toBeGreaterThanOrEqual(44);
+    expect(await bounds()).toEqual(before);
+    const edge = page.locator('.seat-label[data-seat="1"] .edge-melds').getByRole("img", { name: "2 bamboo" });
+    expect((await edge.boundingBox())!.width).toBeGreaterThan(11);
+    await expect(page.locator(`${layer} > *`)).toHaveCount(0);
+    if (width === 320) {
+      await trigger.focus();
+      await page.keyboard.press("Enter");
+    } else await trigger.tap();
+    await expect(viewer.getByRole("heading", { name: "Exposed tiles" })).toBeFocused();
+    expect(await bounds()).toEqual(before);
+    await expect(viewer.getByText("Latest seen: Willow (East) · Cha · from North")).toBeVisible();
+    const cha = viewer.getByRole("group", { name: "Cha · from North" });
+    const face = cha.getByRole("img", { name: "2 bamboo" });
+    await expect(face).toBeInViewport();
+    const drawnFace = (await face.boundingBox())!;
+    expect(drawnFace.width).toBeGreaterThanOrEqual(44);
+    expect(drawnFace.height).toBeGreaterThanOrEqual(54);
+    await expect(face.locator("use")).toHaveAttribute("href", /\/tile-suits\.svg#lt-b2$/);
+    const backs = viewer.getByRole("group", { name: "Concealed Kong" });
+    await expect(backs.getByRole("img", { name: "Concealed tile" })).toHaveCount(4);
+    await expect(backs.locator("use")).toHaveCount(0);
+    await expect(page.locator('.edge-melds .meld-concealed use')).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath("exposed-tiles.png") });
+    const back = viewer.getByRole("button", { name: "Back to table" });
+    expect(Math.min((await back.boundingBox())!.width, (await back.boundingBox())!.height)).toBeGreaterThanOrEqual(44);
+    if (width === 320) await page.keyboard.press("Escape");
+    else await back.tap();
+    await expect(trigger).toBeFocused();
+    await expect(viewer).toBeHidden();
+    await expect(trigger.getByText("New")).toBeHidden();
+    expect(await page.locator(".discard-confirm").evaluate(node => {
+      const rect = node.getBoundingClientRect();
+      return node.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+    })).toBe(true);
+
+    const pending = advance(called);
+    pending.game!.seats[2].melds = [
+      { kind: "peng", method: null, fromSeat: 3, tiles: ["c5", "c5", "c5"] },
+      { kind: "gang", method: "open", fromSeat: 1, tiles: ["d4", "d4", "d4", "d4"] },
+    ];
+    pending.game!.window!.reason = "kong";
+    pending.game!.window!.trigger = { seat: 2, faces: ["c5"] };
+    wire.publish(pending);
+    await trigger.tap();
+    await expect(viewer.getByRole("group", { name: "Peng · from West" }).getByRole("img")).toHaveCount(3);
+    await expect(viewer.getByRole("group", { name: "Kong · from East", exact: true }).getByRole("img")).toHaveCount(4);
+    await expect(viewer.getByRole("group", { name: /^Added Supplement/ })).toHaveCount(0);
+    await back.tap();
+    const added = advance(pending);
+    added.game!.seats[2].melds[0] = { kind: "bu", method: "added", fromSeat: 3, tiles: ["c5", "c5", "c5", "c5"] };
+    added.game!.window!.reason = "turn";
+    added.game!.window!.trigger = null;
+    wire.reconnect(added);
+    await expect(page.locator('.connection[data-status="online"]')).toBeVisible();
+    await expect(trigger.getByText("New")).toBeVisible();
+    await trigger.tap();
+    await expect(viewer.getByText("Latest seen: Ink (South) · Added Supplement · from West")).toBeVisible();
+    await expect(viewer.getByRole("group", { name: "Added Supplement · from West" }).getByRole("img", { name: "5 characters" })).toHaveCount(4);
+    await expect(cha.getByRole("img")).toHaveCount(3);
+    await expect(backs.locator("use")).toHaveCount(0);
+    expect(wire.commands).toHaveLength(0);
+    await info.attach("exposed-layout", { body: JSON.stringify({ width, height, before, control, drawnFace }), contentType: "application/json" });
+  });
+}
+
+test("two-bird final results separate hand, match and table points and count from the hand dealer", async ({ page }, info) => {
+  await page.setViewportSize({ width: 320, height: 730 });
+  const state = frame(130, 4);
+  state.room.rulesVersion = "changsha-two-bird-v1";
+  state.room.status = "complete";
+  state.room.tableTotals = [-11, 28, -31, 14];
+  state.self.legalOptions = [];
+  const game = state.game!;
+  game.dealerSeat = 2;
+  game.phase = "settled";
+  game.turnSeat = game.window = null;
+  game.wallCount = 0;
+  game.settlement = {
+    reason: "win", sourceSeat: 2, nextDealerSeat: 0,
+    winners: [{ seat: 0, winBy: "discard", winningTiles: ["d8"], patterns: [] }],
+    birds: ["d5", "c3"], transfers: [{ fromSeat: 2, toSeat: 0, points: 6, reason: "win" }],
+    seatResults: [
+      { seat: 0, delta: 6, total: 10 }, { seat: 1, delta: 0, total: -12 },
+      { seat: 2, delta: -6, total: -8 }, { seat: 3, delta: 0, total: 10 },
+    ],
+  };
+  game.seats.forEach(seat => { seat.total = game.settlement!.seatResults[seat.seat].total; });
+  await open(page, state, true);
+  const results = page.getByRole("dialog", { name: "Match results" });
+  await expect(results.getByRole("columnheader")).toHaveText(["Seat", "This hand", "Match total", "Table total"]);
+  await expect(results.getByRole("table", { name: "Scores by seat" })).toBeInViewport({ ratio: 1 });
+  await expect(results.getByRole("row", { name: /River \(you\)/ }).getByRole("cell")).toHaveText(["+6", "+10", "-11"]);
+  await expect(results.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
+  await expect(results.getByText("Current dealer: Ink")).toBeVisible();
+  await expect(results.getByText("Next dealer: River")).toBeVisible();
+  await expect(results.getByText("No tiles left in the wall.")).toBeVisible();
+  await expect(results.getByRole("group", { name: "Counts for Ink (East)" }).getByRole("img", { name: "5 dots" })).toBeVisible();
+  await expect(results.getByRole("group", { name: "Counts for River (West)" }).getByRole("img", { name: "3 characters" })).toBeVisible();
+  await expect(results.getByText("Ink → River: 6 (win)")).toBeVisible();
+  await expect(results.getByText("A new match resets match scores but keeps the table total.")).toBeVisible();
+  await page.screenshot({ path: info.outputPath("table-ledger.png") });
 });
 
 for (const preference of ["OS", "saved"] as const) {
