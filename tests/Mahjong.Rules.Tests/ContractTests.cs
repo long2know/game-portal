@@ -53,6 +53,18 @@ public sealed class ContractTests
     }
 
     [Fact]
+    public void TwoBirdProfileChangesNeitherSeededDealNorPendingCheckpointShape()
+    {
+        var settings = Start(3, seed: new(17, 29));
+        var classic = ChangshaEngine.StartHand(settings, Now);
+        var twoBird = ChangshaEngine.StartHand(settings with { Profile = ChangshaEngine.TwoBirdProfile }, Now);
+        Assert.Equal(Checkpoint(classic with { Start = twoBird.Start }), Checkpoint(twoBird));
+        var recovered = RoundTrip(twoBird);
+        Assert.Equal(ChangshaEngine.TwoBirdProfile, recovered.Start.Profile);
+        Assert.Equal(Checkpoint(Expire(twoBird)), Checkpoint(Expire(recovered)));
+    }
+
+    [Fact]
     public void DeadlinesEnforceChoiceBoundaryAndTimeoutRecovery()
     {
         var opening = ChangshaEngine.StartHand(Start(), Now);
@@ -86,6 +98,7 @@ public sealed class ContractTests
         Assert.Throws<ArgumentOutOfRangeException>(() => ChangshaEngine.StartHand(Start(dealer: 4), Now));
         var state = ChangshaEngine.StartHand(Start(), Now);
         Assert.Throws<NotSupportedException>(() => ChangshaEngine.ViewPublic(state with { CheckpointVersion = 2 }));
+        Assert.Throws<NotSupportedException>(() => ChangshaEngine.ViewSeat(state with { Start = Start(profile: "other") }, 0));
         Assert.Throws<NotSupportedException>(() => ChangshaEngine.Apply(state with { ShuffleVersion = 2 },
             new Expire(state.Window!.Id), Now));
     }

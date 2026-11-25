@@ -92,7 +92,7 @@ test.describe("published Lantern Run", () => {
     const card = page.getByRole("link", { name: "Play Lantern Run" });
     await expect(card).toHaveAttribute("href", `${mount}lantern-run/`);
     await expect(card.locator("svg")).toBeVisible();
-    await expect(page.getByText("13 games · No account required")).toBeVisible();
+    await expect(page.getByText("17 games · No account required")).toBeVisible();
     const assets = () => [...paths].filter(path => /\/assets\/lantern-run-/.test(path));
     expect(assets()).toEqual([]);
     await card.click();
@@ -112,7 +112,7 @@ test.describe("published Lantern Run", () => {
     await expect(stat(page, "best")).toHaveText("56");
     await page.reload();
     await expect(stat(page, "best")).toHaveText("0");
-    expect([...paths].filter(path => path.includes("/api/"))).toEqual([]);
+    expect([...paths].filter(path => path.includes("/api/"))).toEqual([`${mount}api/saves`]);
     expect(errors).toEqual([]);
   });
 

@@ -204,4 +204,87 @@
     <path fill="#d39a61" stroke="#493e32" d="m46 45 4-2 4 2v6l-4 2-4-2z"/>
     <path fill="#f0c585" d="m50 45 1.5 3-1.5 3-1.5-3z"/>
   </symbol>
+  <symbol id="xiangqi" viewBox="0 0 72 60">
+    <path fill="#54382b" d="M0 0h72v60H0z"/>
+    <path fill="#b9825c" d="M4 3h64v54H4z"/>
+    <path fill="#d3a674" d="M7 5h58v48H7z"/>
+    <path fill="#e7c08b" d="M7 25h58v10H7z"/>
+    <path d="M8 10h56M8 18h56M8 25h56M8 35h56M8 43h56M8 51h56M10 6v46M62 6v46M16.5 6v19m6.5-19v19m6.5-19v19m6.5-19v19m6.5-19v19m6.5-19v19m6.5-19v19M16.5 35v17m6.5-17v17m6.5-17v17m6.5-17v17m6.5-17v17m6.5-17v17m6.5-17v17M29.5 10 42.5 25m0-15-13 15m0 11 13 15m0-15-13 15" fill="none" stroke="#6b4936" stroke-width=".66"/>
+    <path d="m9 8 13-1 13 1m17 14 12-1M9 28l15 1m25 2 14-.6M10 46l13 1" stroke="#f4d49b" stroke-width=".75" opacity=".77"/>
+    <path d="M18 45h28v6H18zM31 19h27v6H31z" fill="#724934" opacity=".65"/>
+    <circle cx="43" cy="19" r="13" fill="#363831" stroke="#292923" stroke-width="1.5"/>
+    <circle cx="43" cy="18.5" r="10.35" fill="none" stroke="#8b8b74"/>
+    <path d="M36.2 18.8l13.6-.2M43.1 12.85l-.25 12.2m-4.9.15 9.8-.2" stroke="#f0dfb8" stroke-width="1.7" fill="none" stroke-linecap="round"/>
+    <circle cx="30" cy="43" r="13" fill="#9c493d" stroke="#572e28" stroke-width="1.6"/>
+    <circle cx="30" cy="42.5" r="10.35" fill="none" stroke="#df9873"/>
+    <path d="M28 36.3 23 43.1m2.6-3.3-.2 9.2m3.6-8.05 7.6-.1m-3.7-4.7v11.6m-3.7.2 7.1-.2" stroke="#fff0c8" stroke-width="1.45" fill="none" stroke-linecap="round"/>
+    <path d="m8 55 31 .3 23-.8" stroke="#7e533e" fill="none"/>
+  </symbol>
+  <symbol id="gomoku" viewBox="0 0 72 60">
+    <path fill="#483229" d="M0 0h72v60H0z"/>
+    <path fill="#b8815b" d="M4 3h64v54H4z"/>
+    <path fill="#c5a77f" d="M7 6h58v47H7z"/>
+    <path d="M11 7q3 23 0 45m16-45q-2 12 0 21t0 24m25-45q4 20 1 45m8-45-1 43" fill="none" stroke="#e3c698" stroke-width="2" opacity=".7"/>
+    <path d="M7 10h58M7 20h58M7 30h58M7 40h58M7 50h58M11 6v47M21 6v47M31 6v47M41 6v47M51 6v47M61 6v47" fill="none" stroke="#645243" stroke-width=".68"/>
+    <defs>
+      <g id="gm-slate">
+        <path d="M-5 1q0-6 5-6 5-.3 5.5 5.7Q5 6 0 6t-5-5" fill="#292a24"/>
+        <path d="M-4.6-.4Q-4-5.3.25-4.8 4.7-5 5-.6 4.2 2.9-.5 3.3q-4.2.1-4.1-3.7" fill="#414740"/>
+        <path d="m-2.9-1.6 3.9-1.5m-.8 4.6 2.4-.85" stroke="#888c7a" stroke-width=".76"/>
+      </g>
+      <g id="gm-shell">
+        <path d="M-5 1q0-6 5-6 5-.3 5.5 5.7Q5 6 0 6t-5-5" fill="#765a45"/>
+        <path d="M-4.5-.3Q-4-5.3.2-4.8 4.8-5 5-.6 4.2 3.2-.5 4q-4.3.2-4-4.3" fill="#f2e3bf"/>
+        <path d="m-3.4-.5 5.7-2.25m-3.5 5.2 4.35-2.1" stroke="#c4aa7f"/>
+      </g>
+    </defs>
+    <path d="m7 49 43-43 5 7-44 42zm20 0 30-31 6 4-31 32z" fill="#6c5241" opacity=".55"/>
+    <use href="#gm-slate" x="11" y="50"/><use href="#gm-slate" x="21" y="40"/><use href="#gm-slate" x="31" y="30"/>
+    <use href="#gm-slate" x="41" y="20"/><use href="#gm-slate" x="51" y="10"/>
+    <use href="#gm-shell" x="31" y="50"/><use href="#gm-shell" x="41" y="40"/><use href="#gm-shell" x="61" y="20"/>
+  </symbol>
+  <symbol id="mahjong-solitaire" viewBox="0 0 72 60">
+    <path fill="#573b32" d="M0 0h72v60H0z"/>
+    <path fill="#aa765a" d="M4 3h64v54H4z"/>
+    <path fill="#324c48" d="M7 6h58v47H7z"/>
+    <path d="M8 11h54M11 15l16-.7m16 2h13M10 45l28-.4m-25 4 46-1m-35-30 23 .5" fill="none" stroke="#5d7668" stroke-width="1.1"/>
+    <path d="M11 33h12v15H11zm12 0h13v15H23zm13 0h13v15H36zm13 0h12v15H49zM15 19h14v16H15zm14 0h14v16H29zm14 0h14v16H43z" fill="#c1a17a" stroke="#233d38" stroke-width="1.2"/>
+    <path d="M11 34h12v11H11zm12 0h13v11H23zm13 0h13v11H36zm13 0h12v11H49zM15 19h14v13H15zm14 0h14v13H29zm14 0h14v13H43z" fill="#edddba" stroke="#a88a65" stroke-width=".8"/>
+    <path d="m15 37 4-.1m-3 4 2-.2m33-4 6-.1m-5 4 4-.2m-37-19 .2 7m4-7v7m25-7h4m-3 4h3" stroke="#7c604b" stroke-width="1.1"/>
+    <path d="M23 18h30v20H23z" fill="#213633" opacity=".78"/>
+    <rect x="21" y="12" width="30" height="23" rx="2.2" fill="#b59b74" stroke="#4d4230"/>
+    <rect x="21" y="11" width="30" height="20" rx="2.2" fill="#f5e8ca" stroke="#ac8a65"/>
+    <path d="M36 11v20m-14-16h.8m25 13h1.7" stroke="#bd9b73" stroke-width=".85"/>
+    <use href="#lt-b2" x="22" y="12" width="14" height="19"/>
+    <use href="#lt-d4" x="36" y="12" width="14" height="19"/>
+    <path d="m9 52 13-.35m31 .15 10-.35" stroke="#b48b60"/>
+  </symbol>
+  <symbol id="big-two" viewBox="0 0 72 60">
+    <path d="M0 0h72v60H0z" fill="#54372c"/>
+    <path d="M4 3h64v54H4z" fill="#ae7957"/>
+    <path d="M7 6h58v47H7z" fill="#3c5953"/>
+    <path d="m9 10 54-.4M9 16l18 .5m5-.5 27 1m-47 8 28 1m-31 16 18-1m17 4 17-.5m-52 5 53-1" stroke="#748979" fill="none"/>
+    <g transform="rotate(-15 25 31)">
+      <rect x="14" y="14" width="23" height="34" rx="2" fill="#d2b487" stroke="#1f3231"/>
+      <rect x="14" y="13" width="22" height="33" rx="2" fill="#f3e2be" stroke="#886b57"/>
+      <path d="M19 18c5-3 5 2 2 3 6 2 1 6-2 4m7 4 4 5-4 5-4-5z" fill="#aa5141"/>
+    </g>
+    <g transform="rotate(13 45 30)">
+      <rect x="34" y="11" width="24" height="37" rx="2" fill="#bba27c" stroke="#283d38"/>
+      <rect x="34" y="10" width="23" height="35" rx="2" fill="#f5e8cb" stroke="#8c7358"/>
+      <path d="M39 17c0-4 7-4 6 0-.3 2-5 5-6 6h6" fill="none" stroke="#263b33" stroke-width="1.5"/>
+      <path d="M46 27c1 2 6 5 6 8 0 3-4 4-5 1l2 5h-6l2-5c-1 3-5 2-5-1 0-3 5-6 6-8Z" fill="#304539"/>
+      <path d="m36 13 1 14m16 10v5h-5" fill="none" stroke="#d7bb93"/>
+    </g>
+  </symbol>
+  <symbol id="daily-court" viewBox="0 0 72 60">
+    <path d="M5 15 64 4l5 47-60 7Z" fill="#684434"/>
+    <path d="M7 15 64 6l2 42-55 7Z" fill="#a56f50" stroke="#c58d63"/>
+    <path d="M12 19l46-8M15 46l44-8m-18-9 18-4M12 41l13-3m12-24 12-2M22 51l30-5" stroke="#dcab78" stroke-opacity=".57"/>
+    <path d="M39 18l12-2 4 21-12 2Zm9 9 12-2 3 19-12 2Z" fill="#567064" stroke="#223a32"/>
+    <path d="m44 22 3-1m-2 5 3-1m5 6 4-1m-3 5 4-1m-3 5 4-1" stroke="#adbc98"/>
+    <circle cx="26" cy="33" r="13" fill="#9c5145" stroke="#4e3028"/>
+    <circle cx="26" cy="32" r="9" fill="none" stroke="#e8ab82"/>
+    <path d="M23 28h6m-3-3v13m-5-3h10" fill="none" stroke="#f6d9ac" stroke-linecap="round"/>
+  </symbol>
 </svg>

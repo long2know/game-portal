@@ -41,7 +41,7 @@ export function showSettings({ guest, state, available, audio, modal, opener, le
   const readout = el("span", "", `Volume · ${volume.value}%`);
   const track = audio.deviceChoices ? select([["still", "Still Water"], ["bamboo", "Bamboo by the Xiang"]], audio.choices.track) : undefined;
   const voice = audio.deviceChoices ? select([
-    ["off", "Off"], ["mixed", "English Chow · Mandarin Peng/Hu"],
+    ["off", "Off"], ["mixed", "English Cha · Mandarin Peng/Hu"],
     ["lower", "Mandarin · lower"], ["higher", "Mandarin · higher"],
   ], audio.choices.voice) : undefined;
   const chosenTrack = () => track?.value === "bamboo" ? "bamboo" : "still";

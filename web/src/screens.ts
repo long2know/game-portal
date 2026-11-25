@@ -1,4 +1,5 @@
 import { button, el, icon, reconcile, text, winds } from "./dom";
+import { birdProfiles } from "./mahjong-profile";
 import type { Guest, PublicRoom, RoomSeat, Seat, Snapshot } from "./protocol";
 
 export function iconButton(name: Parameters<typeof icon>[0], label: string, run: () => void): HTMLButtonElement {
@@ -162,10 +163,11 @@ export class HomeScreen {
       const control = button("Join table", "btn secondary", () => this.publicJoin(item.roomId));
       return el("li", "room-row", summary, control);
     }, (node, item) => {
-      text(node.firstElementChild!, `${item.occupiedSeats} / 4 seats · ${item.matchHands === 1 ? "One hand" : "Four hands"}`);
+      const profile = item.rulesVersion && birdProfiles[item.rulesVersion];
+      text(node.firstElementChild!, `${item.occupiedSeats} / 4 seats · ${item.matchHands === 1 ? "One hand" : "Four hands"}${profile ? ` · ${profile}` : ""}`);
       const control = node.querySelector("button")!;
       control.disabled = !this.ready;
-      control.setAttribute("aria-label", `Join public table with ${item.occupiedSeats} of 4 seats, ${item.matchHands === 1 ? "one hand" : "four hands"}`);
+      control.setAttribute("aria-label", `Join public table with ${item.occupiedSeats} of 4 seats, ${item.matchHands === 1 ? "one hand" : "four hands"}${profile ? `, ${profile}` : ""}`);
     });
   }
 }
@@ -175,6 +177,8 @@ export class WaitingRoom {
   private readonly seats = el("div", "lobby-seats");
   private readonly visibility = el("span", "chip");
   private readonly match = el("span", "chip");
+  private readonly profile = el("span", "chip");
+  private readonly nextDealer = el("span", "chip");
   private readonly role = el("span", "chip gold");
   private readonly hint = el("p", "detail");
   private readonly ready: HTMLButtonElement;
@@ -205,7 +209,7 @@ export class WaitingRoom {
       el("h1", "", "Take a seat."), el("p", "detail", "Four seats are needed to start the match.")), this.leave);
     this.seats.setAttribute("aria-label", "Table seats");
     this.hint.setAttribute("role", "status");
-    this.root.append(hero, this.share, el("div", "room-meta", this.visibility, this.match, this.role), this.seats,
+    this.root.append(hero, this.share, el("div", "room-meta", this.visibility, this.match, this.profile, this.nextDealer, this.role), this.seats,
       el("div", "waiting-actions", this.hint, this.ready, this.start));
   }
 
@@ -219,6 +223,11 @@ export class WaitingRoom {
     const allReady = full && room.seats.every(seat => seat.ready || seat.kind === "bot");
     text(this.visibility, room.visibility === "invite" ? "Invite only" : "Public");
     text(this.match, room.matchHands === 1 ? "One hand" : "Four hands");
+    text(this.profile, birdProfiles[room.rulesVersion]);
+    const dealer = room.nextDealerSeat;
+    this.nextDealer.hidden = dealer == null;
+    text(this.nextDealer, dealer == null ? "" :
+      `Next dealer: ${room.seats.find(seat => seat.seat === dealer)?.displayName ?? `${winds[dealer]} seat`}`);
     text(this.role, host ? "You’re the host" : "Guest seat");
     this.leave.disabled = !enabled;
     this.shareLink.hidden = this.shareHint.hidden = !host || room.visibility !== "invite" || !self.inviteCode;

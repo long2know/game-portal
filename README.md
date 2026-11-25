@@ -2,7 +2,11 @@
 
 A self-hosted board-game portal for phones and desktops, including four-seat Changsha Mahjong, Chess, and [Jade Letters](docs/word-tiles-rules.md), a two-seat crossword game. Play a bot or share a private invite. This is free play with points only: no accounts, payments, wagering, or cash value.
 
+The catalog also includes [Xiangqi and Gomoku](docs/board-game-rules.md), [Big Two](docs/big-two-rules.md), and [Mahjong Solitaire](docs/solo-rules.md#mahjong-solitaire-mahjong-solitaire). Use **Continue playing** in the lobby to reopen your saved games. Mahjong Solitaire progress stays in this browser.
+
 The catalog is at `/portal/`; Changsha Mahjong is at `/portal/mahjong/`. Jade Letters keeps its existing `/portal/word-tiles/` URL for bookmarks and invites. For a solo arcade game, open `/portal/lantern-run/` and use arrows, WASD, or swipes and the on-screen controls. Lantern Run saves your best finished run in this browser only, not on a leaderboard. Jade Court is a separate service and data store. Leave any existing Mahjong container, volume, and `/mahjong/` proxy route unchanged.
+
+[Daily Court](docs/portal-api.md#daily-court) pairs a one-move Xiangqi tactic with a solvable Mahjong Solitaire stack. Both reset at 00:00 UTC and keep progress in this browser only.
 
 ## Run the published image
 

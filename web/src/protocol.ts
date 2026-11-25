@@ -6,6 +6,7 @@ export type Rank = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 export type Face = `${Suit}${Rank}`;
 export type Visibility = "public" | "invite";
 export type MatchHands = 1 | 4;
+export type RulesVersion = "changsha-v1" | "changsha-two-bird-v1";
 export type RoomStatus = "waiting" | "playing" | "betweenHands" | "complete";
 export type OptionKind = "discard" | "draw" | "chi" | "peng" | "gang" | "bu" | "hu" | "pass" | "reveal";
 
@@ -26,6 +27,7 @@ export interface PublicRoom {
   roomId: string;
   occupiedSeats: number;
   matchHands: MatchHands;
+  rulesVersion?: RulesVersion;
 }
 
 export interface RoomSeat {
@@ -51,7 +53,9 @@ export interface Room {
   matchHands: MatchHands;
   paused: boolean;
   autoResumeAtUtc: string | null;
-  rulesVersion: "changsha-v1";
+  rulesVersion: RulesVersion;
+  tableTotals?: number[];
+  nextDealerSeat?: Seat | null;
   seats: RoomSeat[];
   chat: ChatMessage[];
 }
@@ -102,7 +106,7 @@ export interface DecisionWindow {
 
 export interface Settlement {
   reason: "win" | "draw";
-  nextDealerSeat: Seat;
+  nextDealerSeat?: Seat | null;
   sourceSeat: Seat | null;
   winners: {
     seat: Seat;
@@ -149,7 +153,7 @@ interface RoomRevision {
 }
 
 export interface Payloads {
-  createRoom: { visibility: Visibility; matchHands: MatchHands; fillBots?: boolean };
+  createRoom: { visibility: Visibility; matchHands: MatchHands; fillBots?: boolean; rulesVersion?: RulesVersion };
   joinRoom: { roomId: string; inviteCode?: never } | { inviteCode: string; roomId?: never };
   setReady: RoomRevision & { ready: boolean };
   setBot: RoomRevision & { seat: Seat; enabled: boolean };

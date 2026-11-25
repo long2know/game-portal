@@ -82,6 +82,16 @@ wait_healthy() {
   return 1
 }
 
+restore_volume() {
+  local source=$1 target=$2
+  docker run --rm --entrypoint tar --mount "type=volume,source=$source,target=/data,readonly" "$image" \
+    -C /data -cpf - . > "$archive"
+  docker volume create "$target" >/dev/null
+  volumes+=("$target")
+  docker run --rm -i --entrypoint tar --mount "type=volume,source=$target,target=/data" "$image" \
+    -C /data -xpf - < "$archive"
+}
+
 docker volume create "$volume" >/dev/null
 volumes+=("$volume")
 baseline=(--env BASE_URL=/ --env Portal__Enabled=false)
@@ -105,13 +115,7 @@ start_container "$volume" "${baseline[@]}"
 node scripts/smoke-runtime.mjs resume "$origin" "$version" "$revision" "$state"
 stop_container
 
-docker run --rm --entrypoint tar --mount "type=volume,source=$volume,target=/data,readonly" "$image" \
-  -C /data -cpf - . > "$archive"
-docker volume create "$restored" >/dev/null
-volumes+=("$restored")
-docker run --rm -i --entrypoint tar --mount "type=volume,source=$restored,target=/data" "$image" \
-  -C /data -xpf - < "$archive"
-
+restore_volume "$volume" "$restored"
 start_container "$restored" "${baseline[@]}"
 node scripts/smoke-runtime.mjs resume "$origin" "$version" "$revision" "$state"
 stop_container
@@ -163,7 +167,9 @@ if grep -F 'Stockfish unavailable:' <<< "$portal_log"; then
 fi
 stop_container
 
-start_container "$portal"
+portal_restored="$name-portal-restored"
+restore_volume "$portal" "$portal_restored"
+start_container "$portal_restored"
 wait_healthy
 node scripts/smoke-portal.mjs resume "$origin/portal/" "$version" "$revision" "$work/guest-portal.json"
 stop_container

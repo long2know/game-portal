@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 430 344" preserveAspectRatio="none">
+  <defs>
+    <pattern id="jute" width="79" height="55" patternUnits="userSpaceOnUse" patternTransform="rotate(-3)">
+      <path d="M0 5h79M0 16h79M0 26h79M0 37h79M0 49h79" stroke="#90a690" opacity=".22" stroke-width=".7"/>
+      <path d="M5 0v55m10-55v55M26 0v55m10-55v55m10-55v55m10-55v55m11-55v55m10-55v55" stroke="#142d34" opacity=".54" stroke-width=".85"/>
+      <path d="m3 5 7-.2m37 11 15-1m6 11 8-.65m-65 11 9 .2m3-.2 9-.3m23 12 9 .3m-38-44v6m40 36v8m5-21v6m-36-14v8" stroke="#acc1a2" opacity=".55" stroke-width=".62" stroke-linecap="round"/>
+    </pattern>
+    <g id="corner">
+      <path d="M5 45V5h47M10 40V10h31" fill="none" stroke="#6b8271" stroke-width="1.1"/>
+      <path d="M12 19h8l6 8-7 9h-7" fill="#36524e" stroke="#85886d" stroke-width="1"/>
+      <path d="m15 24 6 3.25-6 4m15-19 10-.4" fill="none" stroke="#b09b70" stroke-width=".95"/>
+    </g>
+  </defs>
+  <path d="M0 0h430v344H0z" fill="#34524f"/>
+  <path d="M0 0h430v43l-107-15-169 3L0 55zm0 226 118 18 166-17 146-3v40l-156-8-159 17L0 261zm0 86 103 1 159 14 168-11v28H0z" fill="#41615a"/>
+  <path d="M0 0h430v7L139 5 8 9l2 139-3 187 228-1 195 2v8H0z" fill="#2c4243"/>
+  <path d="M0 0h430v344H0z" fill="url(#jute)"/>
+  <path d="m14 50 2 103-2 41m402-55-1 81 2 29m-397 76 81-1 27 1m188-.7 89 .2M45 15l95-1 31 1m123-.5 66 1" stroke="#84977b" opacity=".55" fill="none"/>
+  <use href="#corner" x="6" y="6"/>
+  <use href="#corner" transform="translate(424 6) scale(-1 1)"/>
+  <use href="#corner" transform="translate(6 338) scale(1 -1)"/>
+  <use href="#corner" transform="translate(424 338) scale(-1 -1)"/>
+</svg>

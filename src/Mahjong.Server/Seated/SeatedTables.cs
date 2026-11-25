@@ -145,9 +145,7 @@ internal sealed class SeatedTables(IDbContextFactory<MahjongDb> factory, TimePro
     {
         await using var db = await factory.CreateDbContextAsync(stop);
         var now = time.GetUtcNow().UtcTicks;
-        return await db.SeatedMemberships.AsNoTracking().Where(m => m.GuestId == guest && m.Table.Game == rules.Game
-                && m.Table.ExpiresAtTicks > now && (m.Table.Status == "waiting" || m.Table.Status == "playing"))
-            .OrderByDescending(m => m.JoinedAtTicks).ThenByDescending(m => m.TableId)
+        return await SeatedPersistence.ResumableMemberships(db, guest, now).Where(m => m.Table.Game == rules.Game)
             .Select(m => m.TableId).FirstOrDefaultAsync(stop);
     }
 

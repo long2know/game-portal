@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { isDeepStrictEqual } from 'node:util';
 
 function inspectProjection(value, forbidden, label, visit = () => {}) {
   if (!value || typeof value !== 'object') return;
@@ -87,8 +88,8 @@ function tablePath(game, table) {
 }
 
 const readSeat = (call, game, table, cookie) => call(tablePath(game, table), { cookie });
-const createTable = (call, game, cookie, bots) =>
-  call(`api/${game}/tables`, { cookie, body: { players: 2, bots } });
+const createTable = (call, game, cookie, bots, players = 2) =>
+  call(`api/${game}/tables`, { cookie, body: { players, bots } });
 
 async function act(call, game, table, cookie, action) {
   const next = await call(`${tablePath(game, table)}/actions`, {
@@ -464,6 +465,84 @@ async function seedBackgammon(call, guests) {
   return { botReply, pair: await readDicePair(call, game, rolled, cookies, ['legalActions']) };
 }
 
+const bigTwoGame = 'big-two';
+
+function checkBigTwoProjection(table) {
+  const fields = (value, keys) => assert.deepEqual(Object.keys(value).sort(), keys.split(' '),
+    'Big Two exposed an unexpected projection field');
+  fields(table, 'id invite position revision seat seats status');
+  assert.equal(table.status, 'playing', 'Big Two bot hand did not stay in play');
+  assert(table.invite === null, 'Big Two exposed an invite for a live table');
+  assert.equal(table.seat, 0, 'Big Two changed the human seat');
+  for (const seat of table.seats) fields(seat, 'bot name occupied seat');
+  assert.deepEqual(table.seats.map(({ occupied, bot, seat }) => [occupied, bot, seat]),
+    [[true, false, 0], [true, true, 1], [true, true, 2], [true, true, 3]], 'Big Two did not seat one guest and three bots');
+
+  const { ownCards, lastPlay, legalMasks, canPass, seats, turnSeat, winnerSeat } = table.position;
+  fields(table.position, 'canPass lastPlay legalMasks ownCards seats turnSeat winnerSeat');
+  assert.equal(turnSeat, table.seat, 'Big Two did not return the turn to the human');
+  assert.equal(winnerSeat, null, 'Big Two reported a winner before any seat went out');
+  assert.deepEqual(seats.map(seat => seat.seat), [0, 1, 2, 3], 'Big Two omitted a public seat');
+  for (const seat of seats) fields(seat, 'cardsRemaining seat');
+  const counts = seats.map(seat => seat.cardsRemaining);
+  assert(counts.every(count => Number.isInteger(count) && count >= 1 && count <= 13), 'Invalid Big Two card counts');
+  assert.equal(ownCards.length, counts[table.seat], 'Big Two projected more than the caller’s hand');
+  assert(legalMasks.every(mask => Number.isInteger(mask) && mask > 0 && mask < (1 << ownCards.length)),
+    'Big Two legal play included a card outside the caller’s hand');
+  assert.equal(canPass, lastPlay !== null, 'Big Two offered the wrong pass option');
+
+  if (lastPlay) {
+    fields(lastPlay, 'cards kind seat');
+    const sizes = { single: 1, pair: 2, triple: 3, straight: 5, flush: 5, 'full-house': 5,
+      'four-of-a-kind': 5, 'straight-flush': 5 };
+    assert.equal(lastPlay.cards.length, sizes[lastPlay.kind], 'Big Two recorded an invalid play shape');
+    assert(counts[lastPlay.seat] + lastPlay.cards.length <= 13, 'Big Two revealed cards that were not spent');
+  }
+  const visible = [...ownCards, ...(lastPlay?.cards ?? [])];
+  for (const card of visible) {
+    fields(card, 'id rank suit');
+    assert(Number.isInteger(card.id) && card.id >= 0 && card.id < 52 &&
+      Number.isInteger(card.rank) && card.rank >= 2 && card.rank <= 14 &&
+      Number.isInteger(card.suit) && card.suit >= 0 && card.suit <= 3, 'Big Two exposed an invalid card');
+  }
+  assert.equal(new Set(visible.map(card => card.id)).size, visible.length,
+    'Big Two repeated a card across the caller’s hand and the public trick');
+  return counts;
+}
+
+async function seedBigTwo(call, { host, outsider }) {
+  const started = await createTable(call, bigTwoGame, host, true, 4);
+  const before = checkBigTwoProjection(started);
+  const { ownCards, lastPlay, legalMasks, canPass } = started.position;
+  assert.deepEqual([started.revision, ownCards.length], [0, 13], 'Big Two did not deal a full guest hand');
+  let mask = legalMasks[0] ?? 0;
+  if (lastPlay === null) {
+    // Lead the weakest single, so at least one bot has a legal reply on a human opening.
+    const opening = ownCards.findIndex(card => card.rank === 3 && card.suit === 1);
+    assert(opening >= 0 && legalMasks.includes(1 << opening), 'Big Two omitted the three-of-diamonds opening');
+    mask = 1 << opening;
+  }
+  const cards = ownCards.filter((_, index) => mask & (1 << index)).map(card => card.id);
+  assert(cards.length > 0 || canPass, 'Big Two offered no playable action');
+  const action = cards.length > 0 ? { kind: 'play', cards } : { kind: 'pass' };
+  const played = await act(call, bigTwoGame, started, host, action);
+  const after = checkBigTwoProjection(played);
+  assert(isDeepStrictEqual(played.position.ownCards, ownCards.filter(card => !cards.includes(card.id))),
+    'Big Two did not keep exactly the unplayed cards in the guest’s hand');
+  for (let seat = 1; seat < 4; seat++) {
+    assert([0, 1, 2, 3, 5].includes(before[seat] - after[seat]), 'Big Two bot did not consume a legal number of cards');
+  }
+  const botPosition = lastPlay === null ? played.position : started.position;
+  const botPlay = botPosition.lastPlay;
+  assert(botPlay?.seat > 0, 'Big Two did not record a public bot play');
+  assert.equal(botPosition.seats[botPlay.seat].cardsRemaining, 13 - botPlay.cards.length,
+    'Big Two bot did not spend the cards it played');
+  assert(botPlay.cards.every(card => !cards.includes(card.id)), 'Big Two bot reused a card played by the human');
+  if (lastPlay === null) assert.equal(botPlay.kind, 'single', 'Big Two bot did not follow the opening single');
+  await call(tablePath(bigTwoGame, played), { cookie: outsider, status: 404, error: 'room_not_found' });
+  return played;
+}
+
 function checkSolitaireProjection(table) {
   const { tableau } = table.position;
   assert.equal(tableau.length, 7, 'Solitaire did not project seven columns');
@@ -535,9 +614,11 @@ export async function playExpansion(call, guests) {
   const solo = await seedSolo(call, guests);
   const farkle = await seedFarkle(call, guests);
   const backgammon = await seedBackgammon(call, guests);
+  const bigTwo = await seedBigTwo(call, guests);
   console.log('Played private Hold’em and Jade Letters with different guests and bots; drew one Solitaire card and marked a unique Sudoku.');
   console.log('Played Farkle and Backgammon against bots and invited guests; rejected client dice and unauthorized or stale writes.');
-  return { poker, words, solo, farkle, backgammon };
+  console.log('Played a legal Big Two turn with three bots and verified the guest-only hand.');
+  return { poker, words, solo, farkle, backgammon, bigTwo };
 }
 
 export async function resumeExpansion(call, { host, visitor, outsider }, state) {
@@ -563,5 +644,11 @@ export async function resumeExpansion(call, { host, visitor, outsider }, state) 
     assert.deepEqual(await call(`api/solo/${game}`, { cookie: visitor }), { table: null },
       `${game} revealed restored progress to another guest`);
   }
-  console.log('Restored private cards and racks, committed dice and checker positions, and solo progress without exposing other guest data.');
+  const { bigTwo } = state;
+  const { tableId } = await call(`api/${bigTwoGame}/resume`, { cookie: host });
+  assert(tableId === bigTwo.id, 'Big Two did not offer the restored bot table');
+  assert(isDeepStrictEqual(await readSeat(call, bigTwoGame, bigTwo, host), bigTwo),
+    'Big Two did not recover the committed turn and the caller’s original hand');
+  await call(tablePath(bigTwoGame, bigTwo), { cookie: outsider, status: 404, error: 'room_not_found' });
+  console.log('Restored private cards and racks, Big Two’s bot table, dice and checker positions, and solo progress without exposing other guest data.');
 }

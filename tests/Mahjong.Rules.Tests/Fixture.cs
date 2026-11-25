@@ -9,11 +9,13 @@ internal static class Fixture
     internal static readonly DateTimeOffset Now = new(2026, 11, 19, 20, 0, 0, TimeSpan.Zero);
     internal static readonly JsonSerializerOptions CheckpointJson = new(JsonSerializerDefaults.Web);
 
-    internal static HandStart Start(int dealer = 0, int hand = 1, RoundSeed? seed = null) =>
-        new(hand, dealer, seed ?? new RoundSeed(17, 29), ChangshaEngine.Profile,
+    internal static HandStart Start(int dealer = 0, int hand = 1, RoundSeed? seed = null,
+        string profile = ChangshaEngine.Profile) =>
+        new(hand, dealer, seed ?? new RoundSeed(17, 29), profile,
             TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(8));
 
-    internal static GameState Deal(string[] hands, string front = "", string rearDrawOrder = "", int dealer = 0)
+    internal static GameState Deal(string[] hands, string front = "", string rearDrawOrder = "", int dealer = 0,
+        string profile = ChangshaEngine.Profile)
     {
         var pool = new Pool();
         var dealt = hands.Select(pool.Take).ToArray();
@@ -34,11 +36,12 @@ internal static class Fixture
         deck.AddRange(frontTiles);
         deck.AddRange(pool.Remaining);
         deck.AddRange(rearTiles);
-        return ChangshaEngine.Deal(Start(dealer), Now, deck.ToArray());
+        return ChangshaEngine.Deal(Start(dealer, profile: profile), Now, deck.ToArray());
     }
 
     internal static GameState AtTurn(string[] hands, string wall, int seat = 0, int dealer = 0,
-        string? drawn = null, DrawKind kind = DrawKind.Ordinary, TestMeld[]? melds = null, RoundSeed? seed = null)
+        string? drawn = null, DrawKind kind = DrawKind.Ordinary, TestMeld[]? melds = null, RoundSeed? seed = null,
+        string profile = ChangshaEngine.Profile)
     {
         var pool = new Pool();
         var concealed = hands.Select(pool.Take).ToArray();
@@ -49,7 +52,7 @@ internal static class Fixture
             pool.Fill(concealed[i], 13 - declared[i].Count() * 3 + (i == seat ? 1 : 0));
         var physicalDraw = drawn is null ? concealed[seat][^1] :
             concealed[seat].Last(tile => Tiles.Face(tile) == drawn);
-        var settings = Start(dealer, seed: seed);
+        var settings = Start(dealer, seed: seed, profile: profile);
         var state = new GameState(ChangshaEngine.CheckpointVersion, ChangshaEngine.ShuffleVersion, settings,
             [.. stock.Select((tile, index) => new WallTile(tile, 108 - stock.Count + index))],
             [.. concealed.Select((hand, i) => new SeatState(Tiles.Sort(hand), i == seat ? physicalDraw : null,

@@ -71,7 +71,8 @@ export TMPDIR="$work/scratch"
 mkdir -- "$TMPDIR"
 server_pid=
 catalog_spec=e2e/catalog.spec.ts
-portal_specs=("$catalog_spec" e2e/portal.spec.ts e2e/mahjong-audio.spec.ts e2e/board-controls.spec.ts e2e/expansion.spec.ts e2e/dice-games.spec.ts e2e/art-direction.spec.ts e2e/lantern-run.spec.ts e2e/social.spec.ts)
+daily_spec=e2e/daily-court.spec.ts
+portal_specs=("$catalog_spec" "$daily_spec" e2e/portal.spec.ts e2e/mahjong-audio.spec.ts e2e/board-controls.spec.ts e2e/expansion.spec.ts e2e/dice-games.spec.ts e2e/art-direction.spec.ts e2e/lantern-run.spec.ts e2e/social.spec.ts)
 
 stop_server() {
   local pid=$server_pid
@@ -156,25 +157,37 @@ run_standalone_browsers() {
   run_browsers --project=chromium --project=webkit "${specs[@]}"
 }
 
+run_portal_browser_group() {
+  local browser=$1 spec=$2 group=$3
+  shift 3
+  start_server "$work/browser/$browser/$group" "$work/browser-$browser-$group.log"
+  SMOKE_PLAYWRIGHT_OUTPUT_DIR="${SMOKE_PLAYWRIGHT_OUTPUT_DIR:-test-results}/$browser/$group" \
+    PLAYWRIGHT_HTML_OUTPUT_DIR="${PLAYWRIGHT_HTML_OUTPUT_DIR:-playwright-report}/$browser/$group" \
+    run_browsers --project="$browser" "$spec" "$@"
+  stop_server
+}
+
 run_portal_browsers() {
   local spec group browser
+  local board_titles='(the phone catalog opens each board setup|: real phone lattice|: places a real bot move|: follows a real chain)'
   local -a specs=("${portal_specs[@]}")
   if [[ ${mount%/} == /game-portal ]]; then
-    specs=("$catalog_spec" e2e/dice-games.spec.ts e2e/mahjong-audio.spec.ts e2e/lantern-run.spec.ts e2e/social.spec.ts)
+    specs=("$catalog_spec" "$daily_spec" e2e/dice-games.spec.ts e2e/mahjong-audio.spec.ts e2e/lantern-run.spec.ts e2e/social.spec.ts)
   fi
   for spec in "${specs[@]}"; do
     [[ -s "web/$spec" ]] || { echo "Missing portal browser spec: web/$spec" >&2; return 1; }
   done
-  # Every suite gets fresh data and rate limits on its own loopback server.
   for browser in chromium webkit; do
     for spec in "${specs[@]}"; do
       group=${spec##*/}
       group=${group%.spec.ts}
-      start_server "$work/browser/$browser/$group" "$work/browser-$browser-$group.log"
-      SMOKE_PLAYWRIGHT_OUTPUT_DIR="${SMOKE_PLAYWRIGHT_OUTPUT_DIR:-test-results}/$browser/$group" \
-        PLAYWRIGHT_HTML_OUTPUT_DIR="${PLAYWRIGHT_HTML_OUTPUT_DIR:-playwright-report}/$browser/$group" \
-        run_browsers --project="$browser" "$spec"
-      stop_server
+      if [[ $spec == e2e/portal.spec.ts ]]; then
+        # Separate guest-bootstrap quotas while running every test exactly once.
+        run_portal_browser_group "$browser" "$spec" "$group-boards" --grep "$board_titles"
+        run_portal_browser_group "$browser" "$spec" "$group-lifecycle" --grep-invert "$board_titles"
+      else
+        run_portal_browser_group "$browser" "$spec" "$group"
+      fi
     done
   done
 }

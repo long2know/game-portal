@@ -325,6 +325,8 @@ a.brand::before { content: "‹"; color: var(--gold); }
   transition: background-color 140ms, border-color 140ms, box-shadow 140ms;
 }
 .seat-label.current { border-color: #fbd395; background: #393324; box-shadow: 0 0 11px #e6b5703b; }
+.seat-ledger { display: grid; gap: 1px; text-align: end; flex: none; }
+.seat-ledger small { color: #cecec0; font-size: .58rem; line-height: 1; }
 .seat-score { color: #ffe5b4; font: 700 .72rem/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
 .seat-feedback {
   position: absolute; z-index: 2; pointer-events: none; white-space: nowrap;
@@ -359,7 +361,8 @@ a.brand::before { content: "‹"; color: var(--gold); }
 .seat-label--right :is(.edge-melds, .edge-reveals) { right: 0; }
 .edge-melds .meld-caption { display: none; }
 .edge-melds .meld-tiles { gap: 0; }
-.edge-melds .tile-target, .edge-reveals .tile-target { width: clamp(8px, 1.75vw, 16px); height: clamp(10px, 2.15vw, 20px); }
+.edge-melds .tile-target { width: clamp(12px, 2.15vw, 19px); height: clamp(16px, 2.8vw, 25px); }
+.edge-reveals .tile-target { width: clamp(8px, 1.75vw, 16px); height: clamp(10px, 2.15vw, 20px); }
 .edge-melds .tile-face, .edge-reveals .tile-face, .center-trigger .tile-face { inset: 0 1px 1px 0; border-radius: 2px; box-shadow: 0 1px #1b3029; }
 .edge-melds .sourced::after { display: none; }
 
@@ -448,9 +451,13 @@ a.brand::before { content: "‹"; color: var(--gold); }
 .scoreboard :is(th,td):first-child { text-align: start; overflow-wrap: anywhere; }
 .scoreboard .positive { color: #a2edc4; }
 .scoreboard .negative { color: #ffc0a7; }
+.result-overview { display: grid; gap: 3px; }
 .result-section { display: grid; gap: 5px; }
 .result-tiles { display: flex; flex-wrap: wrap; gap: 2px; }
 .result-tiles .tile-target { width: 24px; height: 32px; }
+.result-tiles .bird-hit { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--well); }
+.bird-hit .meld-caption { font-size: .78rem; }
+.bird-hit .tile-target { width: 40px; height: 52px; }
 .winner { display: grid; gap: 4px; padding-block: 4px; }
 .inline-list { margin: 0; padding-inline-start: 17px; font-size: .9rem; color: var(--muted); }
 
@@ -530,7 +537,8 @@ a.brand::before { content: "‹"; color: var(--gold); }
   .seat-label { padding: 4px 7px 4px 5px; max-width: min(155px, 11%); }
   .seat-wind { width: 29px; height: 29px; }
   .edge-melds, .edge-reveals { max-width: min(150px, 11vw); }
-  .edge-melds .tile-target, .edge-reveals .tile-target { width: 21px; height: 27px; }
+  .edge-melds .tile-target { width: clamp(22px, 1.7vw, 26px); height: clamp(28px, 2.25vw, 34px); }
+  .edge-reveals .tile-target { width: 21px; height: 27px; }
   .rack { padding: 5px 8px 7px; }
   .hand-tile { width: clamp(44px, 4.25vw, 78px); height: clamp(57px, 5.3vw, 96px); }
   .is-drawn { margin-inline-start: 10px; }

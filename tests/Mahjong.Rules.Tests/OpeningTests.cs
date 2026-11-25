@@ -5,8 +5,10 @@ namespace Mahjong.Rules.Tests;
 
 public sealed class OpeningTests
 {
-    [Fact]
-    public void OpeningRevealsOnlyAfterResolutionAndPaysWithoutEndingHand()
+    [Theory]
+    [InlineData(ChangshaEngine.Profile)]
+    [InlineData(ChangshaEngine.TwoBirdProfile)]
+    public void OpeningRevealsOnlyAfterResolutionAndPaysWithoutEndingHand(string profile)
     {
         var initial = Deal(
         [
@@ -14,7 +16,7 @@ public sealed class OpeningTests
             "b2 b2 b3 b4 b5 b6 c2 c4 c5 c6 c7 c8 c9",
             "",
             ""
-        ]);
+        ], profile: profile);
         var publicOpening = ChangshaEngine.ViewPublic(initial);
         Assert.Null(publicOpening.Settlement);
         var opening = publicOpening.Window!;
@@ -54,6 +56,24 @@ public sealed class OpeningTests
         Assert.Null(publicDraw.KongRoll);
         Assert.Equal("draw", publicDraw.Settlement!.Reason);
         Assert.Empty(publicDraw.Settlement.Winners);
+    }
+
+    [Fact]
+    public void TwoBirdHitsLeaveAcceptedOpeningPaymentsUnmultipliedWhenTheOpenerWins()
+    {
+        var initial = Deal(["b1 b1 b1 b1 c3 c3 c3 c3 b5 b5 d7 d7 c9 c9", "", "", ""],
+            front: "b9 b5", profile: ChangshaEngine.TwoBirdProfile);
+        var state = Select(initial, 0, "reveal");
+        if (state.Window!.Kind == DecisionKind.Opening)
+            state = Expire(state);
+        var settlement = Select(state, 0, "hu").Settlement!;
+        Assert.Equal(new[] { "b9", "b5" }, settlement.Birds);
+        Assert.Equal(new PayerTransfer[]
+        {
+            new(1, 0, 6, "opening"), new(2, 0, 6, "opening"), new(3, 0, 6, "opening"),
+            new(1, 0, 36, "win"), new(2, 0, 36, "win"), new(3, 0, 36, "win")
+        }, settlement.Transfers);
+        AssertBalanced(settlement, 126, -42, -42, -42);
     }
 
     [Fact]

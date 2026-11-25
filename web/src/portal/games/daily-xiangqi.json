@@ -1,0 +1,128 @@
+[
+  {
+    "id": "rank-and-file",
+    "pieces": [{"cell":"e10","owner":1,"piece":"general"},{"cell":"b9","owner":0,"piece":"chariot"},{"cell":"g8","owner":0,"piece":"horse"},{"cell":"d2","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["b9>b10","b9>a9","b9>c9","b9>d9","b9>e9","b9>f9","b9>g9","b9>h9","b9>i9","b9>b8","b9>b7","b9>b6","b9>b5","b9>b4","b9>b3","b9>b2","b9>b1","g8>f10","g8>h10","g8>e9","g8>i9","g8>e7","g8>i7","g8>f6","g8>h6","d2>d3","d2>d1"],
+    "mate": ["b9>b10","b9>e9"]
+  },
+  {
+    "id": "borrowed-screen",
+    "pieces": [{"cell":"d10","owner":0,"piece":"horse"},{"cell":"e10","owner":1,"piece":"general"},{"cell":"f10","owner":1,"piece":"advisor"},{"cell":"e8","owner":0,"piece":"soldier"},{"cell":"b7","owner":0,"piece":"cannon"},{"cell":"i7","owner":1,"piece":"soldier"},{"cell":"d1","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["d10>b9","d10>c8","e8>e9","e8>d8","e8>f8","b7>b8","b7>b9","b7>b10","b7>a7","b7>c7","b7>d7","b7>e7","b7>f7","b7>g7","b7>h7","b7>b6","b7>b5","b7>b4","b7>b3","b7>b2","b7>b1","d1>d2","d1>e1"],
+    "mate": ["b7>b10"]
+  },
+  {
+    "id": "horse-leg",
+    "pieces": [{"cell":"e10","owner":1,"piece":"general"},{"cell":"f10","owner":1,"piece":"advisor"},{"cell":"g10","owner":1,"piece":"chariot"},{"cell":"b9","owner":0,"piece":"chariot"},{"cell":"h7","owner":0,"piece":"horse"},{"cell":"d1","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["b9>b10","b9>a9","b9>c9","b9>d9","b9>e9","b9>f9","b9>g9","b9>h9","b9>i9","b9>b8","b9>b7","b9>b6","b9>b5","b9>b4","b9>b3","b9>b2","b9>b1","h7>g9","h7>i9","h7>f8","h7>f6","h7>g5","h7>i5","d1>d2"],
+    "mate": ["h7>f8"]
+  },
+  {
+    "id": "palace-soldier",
+    "pieces": [{"cell":"b10","owner":1,"piece":"cannon"},{"cell":"d10","owner":1,"piece":"general"},{"cell":"e9","owner":0,"piece":"soldier"},{"cell":"g9","owner":0,"piece":"horse"},{"cell":"b8","owner":0,"piece":"horse"},{"cell":"f1","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["e9>e10","e9>d9","e9>f9","g9>e10","g9>i10","g9>e8","g9>i8","g9>f7","g9>h7","b8>a10","b8>c10","b8>d9","b8>d7","b8>a6","b8>c6","f1>f2","f1>e1"],
+    "mate": ["e9>d9"]
+  },
+  {
+    "id": "raise-the-screen",
+    "pieces": [{"cell":"e10","owner":1,"piece":"general"},{"cell":"b9","owner":1,"piece":"horse"},{"cell":"d8","owner":0,"piece":"soldier"},{"cell":"g8","owner":0,"piece":"horse"},{"cell":"e6","owner":0,"piece":"cannon"},{"cell":"d1","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["d8>d9","d8>c8","d8>e8","g8>f10","g8>h10","g8>e9","g8>i9","g8>e7","g8>i7","g8>f6","g8>h6","e6>e7","e6>e8","e6>e9","e6>d6","e6>c6","e6>b6","e6>a6","e6>f6","e6>g6","e6>h6","e6>i6","e6>e5","e6>e4","e6>e3","e6>e2","e6>e1","d1>d2","d1>e1"],
+    "mate": ["d8>e8"]
+  },
+  {
+    "id": "open-the-file",
+    "pieces": [{"cell":"e10","owner":1,"piece":"general"},{"cell":"f10","owner":1,"piece":"advisor"},{"cell":"d9","owner":0,"piece":"soldier"},{"cell":"e8","owner":0,"piece":"horse"},{"cell":"e6","owner":0,"piece":"chariot"},{"cell":"d1","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["d9>d10","d9>c9","d9>e9","e8>d10","e8>f10","e8>c9","e8>g9","e8>c7","e8>g7","e8>d6","e8>f6","e6>e7","e6>d6","e6>c6","e6>b6","e6>a6","e6>f6","e6>g6","e6>h6","e6>i6","e6>e5","e6>e4","e6>e3","e6>e2","e6>e1","d1>d2","d1>e1"],
+    "mate": ["e8>g9"]
+  },
+  {
+    "id": "cannon-capture",
+    "pieces": [{"cell":"f10","owner":1,"piece":"general"},{"cell":"f9","owner":0,"piece":"horse"},{"cell":"g9","owner":0,"piece":"soldier"},{"cell":"a8","owner":0,"piece":"cannon"},{"cell":"c8","owner":0,"piece":"horse"},{"cell":"f8","owner":1,"piece":"advisor"},{"cell":"e1","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["f9>d10","f9>d8","g9>g10","g9>h9","a8>a9","a8>a10","a8>b8","a8>f8","a8>a7","a8>a6","a8>a5","a8>a4","a8>a3","a8>a2","a8>a1","c8>b10","c8>d10","c8>a9","c8>e9","c8>a7","c8>e7","c8>b6","c8>d6","e1>e2","e1>d1","e1>f1"],
+    "mate": ["a8>f8"]
+  },
+  {
+    "id": "palace-capture",
+    "pieces": [{"cell":"d9","owner":1,"piece":"general"},{"cell":"a8","owner":0,"piece":"chariot"},{"cell":"d8","owner":1,"piece":"horse"},{"cell":"e8","owner":0,"piece":"soldier"},{"cell":"e7","owner":1,"piece":"soldier"},{"cell":"f2","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["a8>a9","a8>a10","a8>b8","a8>c8","a8>d8","a8>a7","a8>a6","a8>a5","a8>a4","a8>a3","a8>a2","a8>a1","e8>e9","e8>d8","e8>f8","f2>f3","f2>e2","f2>f1"],
+    "mate": ["a8>d8"]
+  },
+  {
+    "id": "counterstroke",
+    "pieces": [{"cell":"c9","owner":0,"piece":"chariot"},{"cell":"e9","owner":1,"piece":"chariot"},{"cell":"f9","owner":1,"piece":"general"},{"cell":"a8","owner":0,"piece":"chariot"},{"cell":"g8","owner":0,"piece":"horse"},{"cell":"e1","owner":0,"piece":"general"}],
+    "inCheck": true,
+    "legal": ["c9>e9","a8>e8","g8>e9","g8>e7","e1>d1"],
+    "mate": ["c9>e9"]
+  },
+  {
+    "id": "rank-and-file-reflected",
+    "pieces": [{"cell":"e10","owner":1,"piece":"general"},{"cell":"h9","owner":0,"piece":"chariot"},{"cell":"c8","owner":0,"piece":"horse"},{"cell":"f2","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["h9>h10","h9>g9","h9>f9","h9>e9","h9>d9","h9>c9","h9>b9","h9>a9","h9>i9","h9>h8","h9>h7","h9>h6","h9>h5","h9>h4","h9>h3","h9>h2","h9>h1","c8>b10","c8>d10","c8>a9","c8>e9","c8>a7","c8>e7","c8>b6","c8>d6","f2>f3","f2>f1"],
+    "mate": ["h9>h10","h9>e9"]
+  },
+  {
+    "id": "borrowed-screen-reflected",
+    "pieces": [{"cell":"d10","owner":1,"piece":"advisor"},{"cell":"e10","owner":1,"piece":"general"},{"cell":"f10","owner":0,"piece":"horse"},{"cell":"e8","owner":0,"piece":"soldier"},{"cell":"a7","owner":1,"piece":"soldier"},{"cell":"h7","owner":0,"piece":"cannon"},{"cell":"f1","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["f10>h9","f10>g8","e8>e9","e8>d8","e8>f8","h7>h8","h7>h9","h7>h10","h7>g7","h7>f7","h7>e7","h7>d7","h7>c7","h7>b7","h7>i7","h7>h6","h7>h5","h7>h4","h7>h3","h7>h2","h7>h1","f1>f2","f1>e1"],
+    "mate": ["h7>h10"]
+  },
+  {
+    "id": "horse-leg-reflected",
+    "pieces": [{"cell":"c10","owner":1,"piece":"chariot"},{"cell":"d10","owner":1,"piece":"advisor"},{"cell":"e10","owner":1,"piece":"general"},{"cell":"h9","owner":0,"piece":"chariot"},{"cell":"b7","owner":0,"piece":"horse"},{"cell":"f1","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["h9>h10","h9>g9","h9>f9","h9>e9","h9>d9","h9>c9","h9>b9","h9>a9","h9>i9","h9>h8","h9>h7","h9>h6","h9>h5","h9>h4","h9>h3","h9>h2","h9>h1","b7>a9","b7>c9","b7>d8","b7>d6","b7>a5","b7>c5","f1>f2"],
+    "mate": ["b7>d8"]
+  },
+  {
+    "id": "palace-soldier-reflected",
+    "pieces": [{"cell":"f10","owner":1,"piece":"general"},{"cell":"h10","owner":1,"piece":"cannon"},{"cell":"c9","owner":0,"piece":"horse"},{"cell":"e9","owner":0,"piece":"soldier"},{"cell":"h8","owner":0,"piece":"horse"},{"cell":"d1","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["c9>a10","c9>e10","c9>a8","c9>e8","c9>b7","c9>d7","e9>e10","e9>d9","e9>f9","h8>g10","h8>i10","h8>f9","h8>f7","h8>g6","h8>i6","d1>d2","d1>e1"],
+    "mate": ["e9>f9"]
+  },
+  {
+    "id": "raise-the-screen-reflected",
+    "pieces": [{"cell":"e10","owner":1,"piece":"general"},{"cell":"h9","owner":1,"piece":"horse"},{"cell":"c8","owner":0,"piece":"horse"},{"cell":"f8","owner":0,"piece":"soldier"},{"cell":"e6","owner":0,"piece":"cannon"},{"cell":"f1","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["c8>b10","c8>d10","c8>a9","c8>e9","c8>a7","c8>e7","c8>b6","c8>d6","f8>f9","f8>e8","f8>g8","e6>e7","e6>e8","e6>e9","e6>d6","e6>c6","e6>b6","e6>a6","e6>f6","e6>g6","e6>h6","e6>i6","e6>e5","e6>e4","e6>e3","e6>e2","e6>e1","f1>f2","f1>e1"],
+    "mate": ["f8>e8"]
+  },
+  {
+    "id": "open-the-file-reflected",
+    "pieces": [{"cell":"d10","owner":1,"piece":"advisor"},{"cell":"e10","owner":1,"piece":"general"},{"cell":"f9","owner":0,"piece":"soldier"},{"cell":"e8","owner":0,"piece":"horse"},{"cell":"e6","owner":0,"piece":"chariot"},{"cell":"f1","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["f9>f10","f9>e9","f9>g9","e8>d10","e8>f10","e8>c9","e8>g9","e8>c7","e8>g7","e8>d6","e8>f6","e6>e7","e6>d6","e6>c6","e6>b6","e6>a6","e6>f6","e6>g6","e6>h6","e6>i6","e6>e5","e6>e4","e6>e3","e6>e2","e6>e1","f1>f2","f1>e1"],
+    "mate": ["e8>c9"]
+  },
+  {
+    "id": "cannon-capture-reflected",
+    "pieces": [{"cell":"d10","owner":1,"piece":"general"},{"cell":"c9","owner":0,"piece":"soldier"},{"cell":"d9","owner":0,"piece":"horse"},{"cell":"d8","owner":1,"piece":"advisor"},{"cell":"g8","owner":0,"piece":"horse"},{"cell":"i8","owner":0,"piece":"cannon"},{"cell":"e1","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["c9>c10","c9>b9","d9>f10","d9>f8","g8>f10","g8>h10","g8>e9","g8>i9","g8>e7","g8>i7","g8>f6","g8>h6","i8>i9","i8>i10","i8>h8","i8>d8","i8>i7","i8>i6","i8>i5","i8>i4","i8>i3","i8>i2","i8>i1","e1>e2","e1>d1","e1>f1"],
+    "mate": ["i8>d8"]
+  },
+  {
+    "id": "palace-capture-reflected",
+    "pieces": [{"cell":"f9","owner":1,"piece":"general"},{"cell":"e8","owner":0,"piece":"soldier"},{"cell":"f8","owner":1,"piece":"horse"},{"cell":"i8","owner":0,"piece":"chariot"},{"cell":"e7","owner":1,"piece":"soldier"},{"cell":"d2","owner":0,"piece":"general"}],
+    "inCheck": false,
+    "legal": ["e8>e9","e8>d8","e8>f8","i8>i9","i8>i10","i8>h8","i8>g8","i8>f8","i8>i7","i8>i6","i8>i5","i8>i4","i8>i3","i8>i2","i8>i1","d2>d3","d2>e2","d2>d1"],
+    "mate": ["i8>f8"]
+  },
+  {
+    "id": "counterstroke-reflected",
+    "pieces": [{"cell":"d9","owner":1,"piece":"general"},{"cell":"e9","owner":1,"piece":"chariot"},{"cell":"g9","owner":0,"piece":"chariot"},{"cell":"c8","owner":0,"piece":"horse"},{"cell":"i8","owner":0,"piece":"chariot"},{"cell":"e1","owner":0,"piece":"general"}],
+    "inCheck": true,
+    "legal": ["g9>e9","c8>e9","c8>e7","i8>e8","e1>f1"],
+    "mate": ["g9>e9"]
+  }
+]

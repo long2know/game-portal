@@ -41,3 +41,33 @@ and invalid checkpoints throw `InvalidDataException`.
   solution field is projected. A set or targeted hint that would leave the
   cell unchanged is rejected. Both games count successful actions as `Moves`,
   including hints and recycles. Completed games reject further actions.
+
+## Mahjong Solitaire (`mahjong-solitaire/`)
+
+- Clear the 78-tile, four-tier Lantern Stack by matching two identical suited faces.
+  At selection time, each tile needs one open horizontal side and no overlap
+  from any higher tier. Partial overlap also covers a tile; front and back edges
+  do not restrict removal.
+- Seeds assign faces to a full, legal removal sequence, so every initial deal
+  can be solved. Other matching choices can run out of pairs. **Hint** marks an
+  available pair without removing it; it does not promise a way out after every
+  choice. **Undo** restores the last pair, **Restart deal** resets the same seed,
+  and confirmed **New game** starts a different deal.
+- This game creates no guest and has no server save. Its browser-local progress
+  key is `${mount}court-mahjong-solitaire-v1` (including the mount's trailing
+  slash), exported by [`mahjong-solitaire-save.ts`](../web/src/portal/games/mahjong-solitaire-save.ts)
+  without loading the game. The versioned save stores the seed and replays
+  validated matches on load. The regular route resumes it; adding `?fresh=1`
+  opens the **New game** confirmation without replacing progress on cancel.
+  Without browser storage the deal remains playable until navigation or reload.
+
+### Daily Mahjong Solitaire
+
+Daily Court uses the same 78-tile stack, rule engine, faces, Hint and Undo.
+The day’s deal seed is the number of UTC days since 1970-01-01, interpreted
+as an unsigned 32-bit integer. The generator assigns equal faces to the
+pairs of a legal removal sequence, so the initial deal has a solution.
+Clearing the stack earns completion for that date. **Restart today’s deal**
+resets that exact seed without removing an earned completion; there is no
+new random deal in Daily Court. Its dated progress is [stored separately](portal-api.md#daily-court)
+and never changes the practice deal.

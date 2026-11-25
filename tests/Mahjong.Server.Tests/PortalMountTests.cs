@@ -12,21 +12,24 @@ public sealed class PortalMountTests
     private const string Authority = "games.example.test:8443";
     private const string Edge = "https://" + Authority;
 
-    [Fact]
-    public async Task ServesBothBuiltShellsOnlyAtTheirCanonicalMountedRoutes()
+    [Theory]
+    [InlineData(Mount)]
+    [InlineData("/game-portal")]
+    public async Task ServesBothBuiltShellsOnlyAtTheirCanonicalMountedRoutes(string mount)
     {
-        await using var server = BoardTableTests.PortalServer();
+        await using var server = BoardTableTests.PortalServer().WithSetting("BASE_URL", mount);
         await server.StartAsync();
         using var http = Http(server);
-        var portal = await ReadShell(Mount + "/");
-        var mahjong = await ReadShell(Mount + "/mahjong/");
+        var portal = await ReadShell(mount + "/");
+        var mahjong = await ReadShell(mount + "/mahjong/");
         Assert.NotEqual(portal, mahjong);
         Assert.Contains("Changsha Mahjong</title>", mahjong);
-        Assert.Equal(mahjong, await ReadShell(Mount + "/mahjong/play/reconnect"));
+        Assert.Equal(mahjong, await ReadShell(mount + "/mahjong/play/reconnect"));
         foreach (var game in new[] { "", "mahjong", "chess", "go", "reversi", "checkers", "chinese-checkers",
-            "holdem", "solitaire", "sudoku", "word-tiles" })
+            "holdem", "solitaire", "sudoku", "word-tiles", "farkle", "backgammon", "lantern-run", "xiangqi", "gomoku",
+            "mahjong-solitaire", "big-two", "daily-court" })
         {
-            var bare = game.Length == 0 ? Mount : Mount + "/" + game;
+            var bare = game.Length == 0 ? mount : mount + "/" + game;
             const string query = "?next=invite%2Ftoken&keep=1";
             using var redirect = await http.GetAsync(bare + query + "#invite");
             Assert.Equal(HttpStatusCode.PermanentRedirect, redirect.StatusCode);
@@ -35,7 +38,7 @@ public sealed class PortalMountTests
         }
         foreach (var html in new[] { portal, mahjong })
         {
-            var assets = Regex.Matches(html, @"(?:src|href)=""(/portal/assets/[^""]+)""")
+            var assets = Regex.Matches(html, $@"(?:src|href)=""({Regex.Escape(mount)}/assets/[^""]+)""")
                 .Select(match => match.Groups[1].Value).ToArray();
             Assert.Contains(assets, asset => asset.EndsWith(".js", StringComparison.Ordinal));
             Assert.Contains(assets, asset => asset.EndsWith(".css", StringComparison.Ordinal));
@@ -47,19 +50,23 @@ public sealed class PortalMountTests
                 Assert.NotEmpty(await response.Content.ReadAsByteArrayAsync());
             }
         }
-        using var head = await http.SendAsync(new HttpRequestMessage(HttpMethod.Head, Mount + "/chess/"));
-        Assert.Equal("text/html", head.Content.Headers.ContentType?.MediaType);
-        Assert.Empty(await head.Content.ReadAsByteArrayAsync());
+        foreach (var path in new[] { "/big-two/", "/daily-court/" })
+        {
+            using var head = await http.SendAsync(new HttpRequestMessage(HttpMethod.Head, mount + path));
+            Assert.Equal("text/html", head.Content.Headers.ContentType?.MediaType);
+            Assert.Empty(await head.Content.ReadAsByteArrayAsync());
+        }
 
-        foreach (var path in new[] { "/", "/mahjong/", "/portal-extra/chess/", Mount + "/portal.html", Mount + "/index.html",
-            Mount + "/Chess/", Mount + "/chess/unknown", Mount + "/chess-extra/", Mount + "/unknown", Mount + "/mahjong-extra/" })
+        foreach (var path in new[] { "/", "/mahjong/", mount + "-extra/chess/", mount + "/portal.html", mount + "/index.html",
+            mount + "/Chess/", mount + "/chess/unknown", mount + "/chess-extra/", mount + "/unknown", mount + "/mahjong-extra/",
+            mount + "/big-two/unknown", mount + "/big-two-extra/", mount + "/daily-court/unknown", mount + "/api/daily-court" })
         {
             using var missing = await http.GetAsync(path);
             Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
             Assert.NotEqual("text/html", missing.Content.Headers.ContentType?.MediaType);
         }
-        Assert.Equal("ready", (await http.GetFromJsonAsync<JsonElement>(Mount + "/health/ready")).Text("status"));
-        Assert.Equal(1, (await http.GetFromJsonAsync<JsonElement>(Mount + "/api/version")).GetProperty("protocolVersion").GetInt32());
+        Assert.Equal("ready", (await http.GetFromJsonAsync<JsonElement>(mount + "/health/ready")).Text("status"));
+        Assert.Equal(1, (await http.GetFromJsonAsync<JsonElement>(mount + "/api/version")).GetProperty("protocolVersion").GetInt32());
 
         async Task<string> ReadShell(string path)
         {
@@ -68,7 +75,7 @@ public sealed class PortalMountTests
             Assert.Equal("text/html", response.Content.Headers.ContentType?.MediaType);
             Assert.True(response.Headers.CacheControl?.NoCache);
             var html = await response.Content.ReadAsStringAsync();
-            Assert.Contains("data-base=\"/portal/\"", html);
+            Assert.Contains($"data-base=\"{mount}/\"", html);
             Assert.DoesNotContain("data-base=\"/\"", html);
             Assert.DoesNotContain("\"./assets/", html);
             return html;

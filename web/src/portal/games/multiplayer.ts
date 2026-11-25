@@ -8,7 +8,7 @@ import type { PortalHost } from "../host";
 import { rememberTable, tableEntry } from "../invite-handoff";
 import { expired, field, gameFrame, invitationField, messageFor } from "./shared";
 
-type Game = "holdem" | "word-tiles" | "farkle" | "backgammon";
+type Game = "holdem" | "word-tiles" | "farkle" | "backgammon" | "big-two";
 export type MultiplayerTable<P> = Pick<Table, "id" | "revision" | "status" | "seat" | "seats" | "invite" | "endReason" | "endedBySeat">
   & { position: P | null };
 export interface MatchView<P> {
@@ -17,7 +17,7 @@ export interface MatchView<P> {
 }
 type Options<P, A> = {
   game: Game;
-  endpoint: "poker" | "words" | "farkle" | "backgammon";
+  endpoint: "poker" | "words" | "farkle" | "backgammon" | "big-two";
   playerCounts: number[];
   view: (play: (action: A) => void, next: () => void) => MatchView<P>;
 };
@@ -81,7 +81,8 @@ export class Multiplayer<P, A extends object> {
     for (const control of this.setupActions) control.type = "submit";
     this.setup = el("form", "setup-form",
       el("h2", "", inviteOnly ? "A friend saved you a seat." : "Set the table."),
-      el("p", "muted", inviteOnly ? "Join with the name your friends will see." : "Start with a bot or share a private invitation."),
+      el("p", "muted", inviteOnly ? "Join with the name your friends will see." : options.game === "big-two" ?
+        "Play with three bots, or share a private invitation for four human seats." : "Start with a bot or share a private invitation."),
       field("Display name", this.name),
       ...(inviteOnly || options.playerCounts.length < 2 ? [] : [field("Players", this.players)]),
       el("div", "setup-actions", ...this.setupActions));

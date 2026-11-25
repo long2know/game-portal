@@ -124,11 +124,16 @@ public sealed class KongTests
     }
 
     [Theory]
-    [InlineData("bu", "plain", 1)]
-    [InlineData("gang", "robKong", 6)]
-    public void RobbingAnAddedKongKeepsOriginalPengAndOnlyTakesTheAddedTile(string kind, string code, int points)
+    [InlineData("bu", "plain", ChangshaEngine.Profile, "d5", 1)]
+    [InlineData("gang", "robKong", ChangshaEngine.Profile, "d5", 6)]
+    [InlineData("bu", "plain", ChangshaEngine.TwoBirdProfile, "d5 c4", 2)]
+    [InlineData("gang", "robKong", ChangshaEngine.TwoBirdProfile, "d5 c4", 12)]
+    public void RobbingAnAddedKongKeepsOriginalPengAndOnlyTakesTheAddedTile(string kind, string code,
+        string profile, string birds, int points)
     {
-        var state = Added();
+        var state = profile == ChangshaEngine.Profile ? Added() :
+            AtTurn([AddedReadyHand, CanRob, "", ""], "d5 c4 c8 d6 d7 c9", dealer: 2, drawn: "b5",
+                melds: [new(0, "peng", "b5 b5 b5", 3)], profile: profile);
         var pending = Select(state, 0, kind, "b5");
         var view = ChangshaEngine.ViewPublic(pending);
         Assert.Null(view.Settlement);
@@ -149,7 +154,9 @@ public sealed class KongTests
         Assert.Equal(code, Assert.Single(winner.Patterns).Code);
         Assert.Equal(0, settlement.SourceSeat);
         Assert.Equal(1, settlement.NextDealerSeat);
-        Assert.Equal(state.Wall.Length - 1, robbed.Wall.Length);
+        var expectedBirds = birds.Split(' ');
+        Assert.Equal(expectedBirds, settlement.Birds);
+        Assert.Equal(state.Wall.Length - expectedBirds.Length, robbed.Wall.Length);
         Assert.Equal("peng", Assert.Single(robbed.Seats[0].Melds).Kind);
         Assert.Equal(pending.Window!.Trigger, robbed.ClaimedWinTile);
         Assert.DoesNotContain(pending.Window.Trigger!.Value, robbed.Seats[0].Hand);

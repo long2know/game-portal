@@ -7,7 +7,7 @@ namespace Mahjong.Server;
 internal sealed record ServerOptions(string DataDirectory, Uri? PublicOrigin, IPAddress[] TrustedProxies, PathString PathBase,
     TimeSpan TurnLimit, TimeSpan ClaimLimit, TimeSpan BotDelay, TimeSpan PauseLimit, TimeSpan LeaseLimit,
     TimeSpan TickInterval, TimeSpan PruneInterval, TimeSpan TestClockOffset,
-    bool AllowDevelopmentHttp, bool AllowHttpLoopbackOrigin, bool BehindHttpsProxy)
+    bool AllowDevelopmentHttp, bool AllowHttpLoopbackOrigin, bool BehindHttpsProxy, bool PortalEnabled)
 {
     public const int MessageLimit = 16 * 1024;
     public static readonly TimeSpan RoomIdleLimit = TimeSpan.FromHours(24);
@@ -65,7 +65,8 @@ internal sealed record ServerOptions(string DataDirectory, Uri? PublicOrigin, IP
                 : throw new InvalidOperationException("Mahjong:TrustedProxies entries must be explicit IP addresses."))
             .ToArray();
 
-        var defaultBotDelayMilliseconds = config.GetValue<bool>("Portal:Enabled") ? 1000 : 700;
+        var portal = config.GetValue<bool>("Portal:Enabled");
+        var defaultBotDelayMilliseconds = portal ? 1000 : 700;
         return new ServerOptions(directory, origin, proxies, pathBase,
             TimeSpan.FromSeconds(ReadInt("TurnSeconds", 30, 1, 120)),
             TimeSpan.FromSeconds(ReadInt("ClaimSeconds", 8, 1, 30)),
@@ -76,7 +77,7 @@ internal sealed record ServerOptions(string DataDirectory, Uri? PublicOrigin, IP
             TimeSpan.FromSeconds(ReadInt("PruneSeconds", 30, 1, 60)),
             TimeSpan.FromSeconds(ReadInt("UtcOffsetSeconds", 0, -172_800, 172_800)),
             environment.IsDevelopment() || environment.IsEnvironment("Testing"),
-            config.GetValue<bool>("Mahjong:AllowHttpLoopbackOrigin"), behindHttpsProxy);
+            config.GetValue<bool>("Mahjong:AllowHttpLoopbackOrigin"), behindHttpsProxy, portal);
 
         (string Key, string? Value) ReadDeploymentSetting(string name, string fallback)
         {

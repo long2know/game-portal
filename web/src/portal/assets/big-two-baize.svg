@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 160" preserveAspectRatio="none">
+  <defs>
+    <pattern id="linen" width="60" height="43" patternUnits="userSpaceOnUse" patternTransform="rotate(-3)">
+      <path d="M1 0v43M9 0v43m9-43v43M27 0v43m10-43v43M46 0v43m9-43v43" stroke="#1b3839" opacity=".58"/>
+      <path d="M0 5h60m-60 8h60m-60 9h60m-60 7h60m-60 8h60" stroke="#688275" opacity=".47" stroke-width=".76"/>
+      <path d="m8 7 11-.35m23 9 10-.4m-30 6 6 .2m-26 7 9-.35m25 7 16-.8" stroke="#9aad89" opacity=".36" stroke-width=".68"/>
+    </pattern>
+    <g id="stitch" fill="none" stroke="#b48a68" stroke-linecap="round">
+      <path d="M5 34V6h44M9 32V10h33" stroke-width=".85"/>
+      <path d="m12 18 5-6 6 6-6 7Zm3 0 2-2 2 2-2 2" stroke-width=".8"/>
+    </g>
+  </defs>
+  <path d="M0 0h360v160H0z" fill="#334d4a"/>
+  <path d="M0 0h360v27l-77-7-105 9-113-5L0 33zm0 109 88-8 117 8 155-12v34l-150 18-118-6-92 7z" fill="#406258"/>
+  <path d="M0 0h360v160H0z" fill="url(#linen)"/>
+  <path d="m2 47 86 5 38-3m113 55 74-8 44 2M91 125l44 1m53-2 76 1" stroke="#617c6e" opacity=".6" fill="none"/>
+  <path d="M4 35V4h350v152H5v-36" fill="none" stroke="#243a37" opacity=".8" stroke-width="2"/>
+  <use href="#stitch" x="7" y="6"/><use href="#stitch" transform="translate(353 6) scale(-1 1)"/>
+  <use href="#stitch" transform="translate(7 154) scale(1 -1)"/><use href="#stitch" transform="translate(353 154) scale(-1)"/>
+</svg>

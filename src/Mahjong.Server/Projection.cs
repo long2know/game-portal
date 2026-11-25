@@ -23,6 +23,8 @@ internal static class Projection
                 room.HostSeat,
                 room.MatchHands,
                 room.RulesVersion,
+                room.TableTotals,
+                nextDealerSeat = table is null ? room.NextDealerSeat : table.Settlement?.NextDealerSeat,
                 paused = room.PauseStartedUtc.HasValue,
                 room.AutoResumeAtUtc,
                 seats = room.Seats.Select((chair, index) => new

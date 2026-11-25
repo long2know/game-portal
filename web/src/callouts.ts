@@ -15,7 +15,7 @@ const clips = {
     peng: new URL("./calls/peng-higher.mp3?no-inline", import.meta.url).href,
     hu: new URL("./calls/hu-higher.mp3?no-inline", import.meta.url).href,
   },
-  mixed: { ...lower, chi: new URL("./calls/chow.mp3?no-inline", import.meta.url).href },
+  mixed: { ...lower, chi: new URL("./calls/cha-english.mp3?no-inline", import.meta.url).href },
 };
 
 export class Callouts {

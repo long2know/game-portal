@@ -1,20 +1,25 @@
 import { readFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
+import { savedMahjong, savedSeats, savedSolo } from "./continue-support";
+import { exerciseStack } from "./east-court-support";
 import { fitsPhone } from "./portal-support";
 
 test.beforeEach(({ baseURL }) => {
   test.skip(!baseURL || !/^\/(?:game-)?portal\/$/.test(new URL(baseURL).pathname), "Requires the published portal.");
 });
 
-test("lobby presents thirteen real destinations with local, cold catalog art", async ({ page, baseURL, request }) => {
+test("lobby presents seventeen real destinations with local, cold catalog art", async ({ page, baseURL, request }) => {
   const mount = new URL(baseURL!);
   const href = (path: string) => new URL(path, mount).href;
   const assets = new Set<string>();
+  const reads: string[] = [];
   await page.route("**/*", route => new URL(route.request().url()).origin === mount.origin ? route.continue() : route.abort());
   page.on("request", event => {
-    if (!event.isNavigationRequest()) assets.add(event.url());
+    if (event.url() === href("api/saves")) reads.push(event.method());
+    else if (!event.isNavigationRequest()) assets.add(event.url());
   });
+  const saves = page.waitForResponse(response => response.url() === href("api/saves"));
   const heroStudy = page.waitForResponse(response => /\/assets\/court-study-[\w-]+\.svg$/.test(response.url()));
   const catalogArt = page.waitForResponse(response => /\/assets\/catalog-marks-[\w-]+\.svg$/.test(response.url()));
   const html = (await page.goto(mount.href))!;
@@ -28,8 +33,12 @@ test("lobby presents thirteen real destinations with local, cold catalog art", a
   const art = await catalogArt;
   expect(art.ok()).toBe(true);
   expect((await heroStudy).ok()).toBe(true);
+  const anonymous = await saves;
+  expect(await anonymous.json()).toEqual({ saves: [] });
+  expect(anonymous.headers()["set-cookie"]).toBeUndefined();
+  await expect(page.getByRole("region", { name: "Continue playing" })).toHaveCount(0);
   const games = ["mahjong", "chess", "go", "reversi", "checkers", "chinese-checkers", "holdem", "solitaire",
-    "sudoku", "word-tiles", "farkle", "backgammon", "lantern-run"];
+    "sudoku", "word-tiles", "farkle", "backgammon", "lantern-run", "xiangqi", "gomoku", "mahjong-solitaire", "big-two"];
   const cards = page.getByRole("region", { name: "Choose a game" }).getByRole("link");
   await expect(cards).toHaveCount(games.length);
   await expect(cards.filter({ hasText: "↗" })).toHaveCount(0);
@@ -67,6 +76,8 @@ test("lobby presents thirteen real destinations with local, cold catalog art", a
   ];
   expect(lobbyAssets).toHaveLength(coldAssets.length);
   expect(lobbyAssets.map(asset => asset.pathname.split("/").pop())).toEqual(expect.arrayContaining(coldAssets));
+  expect(reads).toEqual(["GET"]);
+  expect(assets.has(href("api/guest"))).toBe(false);
   const compressed = await Promise.all([...assets].map(async asset => {
     const response = await request.get(asset);
     expect(response.ok(), asset).toBe(true);
@@ -83,6 +94,29 @@ test("catalog links announce the game and player context without changing the in
     "2 players Control the center, develop your pieces, and trap the king.");
   await expect(page.getByRole("link", { name: "Play Solitaire", exact: true })).toHaveAccessibleDescription(
     "Solo · Draw one Build four suited piles from ace to king; alternate colors in the tableau.");
+  await expect(page.getByRole("link", { name: "Play Mahjong Solitaire", exact: true })).toHaveAccessibleDescription(
+    "Solo · Tile matching Match free pairs from a four-tier lantern stack. Play and save in this browser.");
+});
+
+test("the mounted Mahjong Solitaire route paints and plays the local stack without creating a guest", async ({ page, baseURL, request }, info) => {
+  const mount = new URL(baseURL!);
+  const canonical = await request.get(new URL("mahjong-solitaire?fresh=1", mount).href, { maxRedirects: 0 });
+  expect(canonical.status()).toBe(308);
+  expect(canonical.headers().location).toBe(`${mount.pathname}mahjong-solitaire/?fresh=1`);
+  expect((await request.get(new URL("mahjong-solitaire/private-table/", mount).href)).status()).toBe(404);
+  await exerciseStack(page, new URL("mahjong-solitaire/", mount), info);
+});
+
+test("Continue opens the listed seat, and a fresh bot table leaves prior and shared tables alone", async ({ page, baseURL }, info) => {
+  await savedSeats(page, baseURL!, info);
+});
+
+test("Continue confirms server solo replacement and leaves local confirmation to Mahjong Solitaire", async ({ page, baseURL }) => {
+  await savedSolo(page, baseURL!);
+});
+
+test("Continue restarts Mahjong only with an attached lease and waits for the redrawn snapshot", async ({ page, baseURL }) => {
+  await savedMahjong(page, baseURL!);
 });
 
 test("the 320px and 390px landing header fits all controls in one row with room for wider fonts", async ({ page }) => {
@@ -132,9 +166,10 @@ test("320px catalog keeps previews, copy and both hero actions usable", async ({
 
   const choose = page.getByRole("link", { name: "Choose a game ↓", exact: true });
   const play = page.getByRole("link", { name: "Play Mahjong", exact: true });
+  const daily = page.getByRole("link", { name: "Open Daily Court", exact: true });
   const featured = page.getByRole("link", { name: "Take a seat", exact: true });
   const chess = page.getByRole("link", { name: "Set up Chess", exact: true });
-  for (const link of [choose, play, featured, chess]) {
+  for (const link of [choose, play, daily, featured, chess]) {
     const { width, height } = (await link.boundingBox())!;
     expect(Math.min(width, height)).toBeGreaterThanOrEqual(44);
   }
@@ -166,10 +201,14 @@ test("320px catalog keeps previews, copy and both hero actions usable", async ({
   }
   await page.setViewportSize({ width: 320, height: 740 });
   await choose.focus();
-  for (const link of [play, featured, chess]) {
+  for (const link of [play, daily, featured, chess]) {
     await page.keyboard.press("Tab");
     await expect(link).toBeFocused();
     await expect(link).toHaveCSS("outline-style", "solid");
+    if (link === daily) {
+      await expect(daily).toBeInViewport({ ratio: 1 });
+      await expect(daily).toHaveCSS("outline-width", "3px");
+    }
   }
   await choose.tap();
   await expect(page).toHaveURL(href("#games"));

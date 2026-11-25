@@ -1,3 +1,4 @@
+import "./board-room.css";
 import type { Guest } from "../protocol";
 import { isLive } from "./api";
 import type { BotDifficulty, GameDefinition, Move, Table } from "./api";

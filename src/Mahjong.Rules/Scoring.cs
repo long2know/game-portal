@@ -19,11 +19,13 @@ internal static class Scoring
         PhysicalTile winningTile, int? source, WinContext context)
     {
         var winners = winningSeats.Select(seat => Classify(state, seat, winningTile, source, context)).ToImmutableArray();
-        PhysicalTile? bird = context == WinContext.LastTile ? winningTile :
-            state.Wall.IsEmpty ? null : state.Wall[0].Tile;
-        if (bird.HasValue && context != WinContext.LastTile)
-            state = state with { Wall = state.Wall.RemoveAt(0), Birds = [bird.Value] };
-        int? birdSeat = bird is { } tile ? (state.Start.DealerSeat + Tiles.Rank(tile.FaceIndex) - 1) % 4 : null;
+        var revealCount = state.Start.Profile == ChangshaEngine.TwoBirdProfile ? 2 : 1;
+        ImmutableArray<PhysicalTile> birds = context == WinContext.LastTile ? [winningTile] :
+            [.. state.Wall.Take(revealCount).Select(entry => entry.Tile)];
+        if (context != WinContext.LastTile && !birds.IsEmpty)
+            state = state with { Wall = state.Wall.RemoveRange(0, birds.Length), Birds = birds };
+        var birdSeats = birds.Select(tile => (state.Start.DealerSeat + Tiles.Rank(tile.FaceIndex) - 1) % 4)
+            .ToImmutableArray();
 
         var transfers = OpeningTransfers(state);
         foreach (var winner in winners)
@@ -33,13 +35,13 @@ internal static class Scoring
                 if (payer == winner.Seat)
                     continue;
                 var dealer = state.Start.DealerSeat == winner.Seat || state.Start.DealerSeat == payer;
-                var hit = birdSeat == winner.Seat || birdSeat == payer;
+                var hits = birdSeats.Count(seat => seat == winner.Seat || seat == payer);
                 var basePayment = winner.Patterns.Sum(pattern => pattern.Points + (dealer ? 1 : 0));
-                transfers.Add(new(payer, winner.Seat, basePayment * (hit ? 2 : 1), "win"));
+                transfers.Add(new(payer, winner.Seat, checked(basePayment * (1 + hits)), "win"));
             }
         }
         var nextDealer = winners.Length == 1 ? winners[0].Seat : source!.Value;
-        return Finish(state, "win", nextDealer, source, winners, bird is { } shown ? [Tiles.Face(shown)] : [], transfers);
+        return Finish(state, "win", nextDealer, source, winners, [.. birds.Select(Tiles.Face)], transfers);
     }
 
     internal static GameState SettleDraw(GameState state) =>
@@ -116,8 +118,8 @@ internal static class Scoring
         var deltas = new int[4];
         foreach (var transfer in transfers)
         {
-            deltas[transfer.FromSeat] -= transfer.Points;
-            deltas[transfer.ToSeat] += transfer.Points;
+            deltas[transfer.FromSeat] = checked(deltas[transfer.FromSeat] - transfer.Points);
+            deltas[transfer.ToSeat] = checked(deltas[transfer.ToSeat] + transfer.Points);
         }
         return state with
         {

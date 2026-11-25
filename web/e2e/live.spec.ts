@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
-import type { Ack, ClientMessage, Command, Option, Snapshot } from "../src/protocol";
+import type { Ack, ClientMessage, Command, Option, RulesVersion, Snapshot } from "../src/protocol";
 
 class Player {
   state: Snapshot | null = null;
@@ -132,11 +132,15 @@ async function observeRecovery(page: Page): Promise<{
   return { attempts, order, holdNextBot: () => new Promise(resolve => { botWaiting = resolve; }) };
 }
 
-async function createTable(player: Player, visibility: "invite" | "public", match: "One hand" | "Four hands", bots: boolean): Promise<Snapshot> {
+async function createTable(player: Player, visibility: "invite" | "public", match: "One hand" | "Four hands", bots: boolean,
+  rules?: RulesVersion): Promise<Snapshot> {
   await player.click("Play with friends");
   const dialog = player.page.getByRole("dialog", { name: "Create a table" });
   await dialog.getByLabel("Who can join?").selectOption(visibility);
   await dialog.getByLabel("Match length").selectOption({ label: match });
+  const birds = dialog.getByLabel("Birds");
+  await expect(birds).toHaveValue("changsha-v1");
+  if (rules) await birds.selectOption(rules);
   if (bots) await dialog.getByLabel("Fill the other three seats with bots").check();
   await dialog.getByRole("button", { name: "Create table" }).tap();
   await expect(player.page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
@@ -204,8 +208,8 @@ test("invite table with two cookie sessions: settings, chat, retry, legal match 
   try {
     await host.open();
     await page.getByLabel("Display name").fill("River Host");
-    const waiting = await createTable(host, "invite", "One hand", false);
-    expect(waiting.room.rulesVersion).toBe("changsha-v1");
+    const waiting = await createTable(host, "invite", "One hand", false, "changsha-two-bird-v1");
+    expect(waiting.room.rulesVersion).toBe("changsha-two-bird-v1");
     await host.click("Invite friends");
     const invitation = await page.getByRole("textbox", { name: "Invite link", exact: true }).inputValue();
     const link = new URL(invitation);
@@ -222,6 +226,8 @@ test("invite table with two cookie sessions: settings, chat, retry, legal match 
     await visitor.click("Join");
     const joined = await visitor.waitFor(state => state.roomId === waiting.roomId && state.self.seat !== waiting.self.seat);
     expect(joined.self.inviteCode).toBeNull();
+    await expect(visitor.page.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByRole("button", { name: "Mark ready", exact: true })).toBeEnabled();
     await expect.poll(() => new URL(visitor.page.url()).hash).toBe("");
     const guestValue = async (browserContext: BrowserContext) => (await browserContext.cookies()).find(cookie => cookie.name === "mahjong_guest");
     const primaryCookie = await guestValue(context);
@@ -314,12 +320,27 @@ test("invite table with two cookie sessions: settings, chat, retry, legal match 
     expect(host.kinds.has("discard")).toBe(true);
     const result = page.getByRole("dialog", { name: "Match results" });
     await expect(result.getByRole("row")).toHaveCount(5);
+    await expect(result.getByRole("columnheader")).toHaveText(["Seat", "This hand", "Match total", "Table total"]);
+    await expect(result.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
     await expect(result.getByRole("button", { name: "New game" })).toHaveCount(0);
     await expect(result.getByRole("button", { name: "Leave table" })).toBeEnabled();
     expect(finished.game!.settlement!.seatResults.reduce((sum, score) => sum + score.delta, 0)).toBe(0);
-    expect(await result.getByRole("row").nth(1).getByRole("cell").nth(1).textContent()).toBe(
-      finished.game!.settlement!.seatResults[0].total > 0 ? `+${finished.game!.settlement!.seatResults[0].total}` :
-        String(finished.game!.settlement!.seatResults[0].total));
+    const { game } = finished;
+    const settlement = game!.settlement!;
+    expect(finished.room.tableTotals).toHaveLength(4);
+    const display = (n: number) => n > 0 ? `+${n}` : String(n);
+    await expect(result.getByRole("row").nth(1).getByRole("cell")).toHaveText([
+      settlement.seatResults[0].delta, settlement.seatResults[0].total, finished.room.tableTotals![0],
+    ].map(display));
+    await expect(result.getByText(`Current dealer: ${finished.room.seats[game!.dealerSeat].displayName}`)).toBeVisible();
+    await expect(result.getByText(`Next dealer: ${finished.room.seats[settlement.nextDealerSeat!].displayName}`)).toBeVisible();
+    const counted = result.getByRole("group", { name: /^Counts for / });
+    await expect(counted).toHaveCount(settlement.birds.length);
+    for (const [index, face] of settlement.birds.entries()) {
+      const target = (game!.dealerSeat + Number(face[1]) - 1) % 4;
+      await expect(counted.nth(index)).toHaveAccessibleName(new RegExp(`^Counts for ${finished.room.seats[target].displayName}`));
+      await expect(counted.nth(index).locator("use")).toHaveAttribute("href", new RegExp(`#lt-${face}$`));
+    }
     await expect(visitor.page.getByRole("button", { name: "Rematch" })).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath("live-match-results.png"), fullPage: true });
     const beforeRematch = host.state!;
@@ -328,6 +349,11 @@ test("invite table with two cookie sessions: settings, chat, retry, legal match 
     await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
     await expect(page.getByRole("button", { name: "Start match" })).toBeDisabled();
     expect(rematch.roomId).toBe(beforeRematch.roomId);
+    expect(rematch.room.tableTotals).toEqual(finished.room.tableTotals);
+    expect(rematch.room.rulesVersion).toBe("changsha-two-bird-v1");
+    expect(rematch.room.nextDealerSeat).toBe(settlement.nextDealerSeat);
+    await expect(page.getByRole("main").getByText(
+      `Next dealer: ${rematch.room.seats[settlement.nextDealerSeat!].displayName}`, { exact: true })).toBeVisible();
     expect(rematch.gameRevision).toBeGreaterThan(beforeRematch.gameRevision);
     expect(rematch.room.seats.map(seat => seat.kind)).toEqual(["human", "human", "bot", "bot"]);
     expect(rematch.room.seats.filter(seat => seat.kind === "human").every(seat => !seat.ready)).toBe(true);
@@ -357,10 +383,10 @@ test("normal pacing: public discovery, atomic bot table, takeover and a real dis
     await host.click("Refresh public tables");
     await expect(page.getByText("Couldn’t load the list.", { exact: false })).toBeVisible();
     await page.unroute("**/api/rooms");
-    const publicTable = await createTable(host, "public", "Four hands", false);
+    const publicTable = await createTable(host, "public", "Four hands", false, "changsha-two-bird-v1");
     await visitor.open();
     const listed = visitor.page.locator(`.room-row[data-key="${publicTable.roomId}"]`);
-    await expect(listed).toContainText("1 / 4 seats · Four hands");
+    await expect(listed).toContainText("1 / 4 seats · Four hands · Two birds (house rules)");
     await listed.getByRole("button").tap();
     await visitor.waitFor(state => state.roomId === publicTable.roomId);
     await visitor.click("Leave table");
@@ -372,6 +398,7 @@ test("normal pacing: public discovery, atomic bot table, takeover and a real dis
     await host.click("Play with bots");
     const botTable = await host.waitFor(state => state.roomId !== publicTable.roomId && state.room.seats.filter(seat => seat.kind === "bot").length === 3);
     expect(botTable.roomRevision).toBe(1);
+    expect(botTable.room.rulesVersion).toBe("changsha-v1");
     const second = new Player(await context.newPage());
     await trackSocketCloses(second.page);
     await second.open();

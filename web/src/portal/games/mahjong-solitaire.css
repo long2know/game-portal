@@ -1,0 +1,85 @@
+.mahjong-solitaire { max-inline-size: 960px; margin-inline: auto; }
+.stack-header { margin-block-end: clamp(10px, 2vw, 21px); }
+.stack-header h1 { margin-block-start: 4px; font-size: clamp(2.07rem, 6vw, 4rem); }
+.stack-layout { display: grid; align-items: start; gap: clamp(13px, 2.8vw, 26px); }
+.stack-frame {
+  inline-size: min(100%, 560px);
+  --rail-width: clamp(6px, 1.45vw, 12px);
+  background-color: #724e3c;
+}
+.stack-board {
+  position: relative; isolation: isolate; aspect-ratio: 1.24;
+  border: 1px solid #2c3028; border-radius: 2px;
+  background: #35514f url("../assets/solitaire-well.svg?no-inline") center / 100% 100% no-repeat;
+  box-shadow: 0 0 0 1px var(--rail-copper), inset 1px 3px #1a2e2f;
+}
+.stack-tile {
+  position: absolute; z-index: calc(2 + var(--tier)); isolation: isolate;
+  left: calc((var(--x) + .75 - var(--tier) * .17) * 100% / 21.5);
+  top: calc((var(--y) + .86 - var(--tier) * .23) * 100% / 13.65);
+  inline-size: calc(200% / 21.5); block-size: calc(200% / 13.65);
+  border: 0; padding: 0; background: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.stack-tile::before {
+  content: ""; position: absolute; inset: 0 1px 0 0; pointer-events: none;
+  border: 1px solid #4d4933; border-radius: 13%;
+  background: #a78a61; box-shadow: inset 0 -2px #627449, 1px 2px #1a3231b8;
+}
+.stack-tile .tile-face {
+  position: absolute; inset: 0 1px clamp(2px, .7vw, 5px) 0;
+  display: grid; place-items: center; pointer-events: none;
+  border: 1px solid #ab946e; border-radius: 13%; overflow: hidden;
+  background: var(--court-bone) #f5e8c5;
+  box-shadow: inset 1px 1px #fff3d4, inset -1px -1px #c8b692, 0 1px #72583d;
+}
+.stack-tile .tile-art { inline-size: 92%; block-size: 91%; }
+.stack-tile[data-state="boxed"] .tile-face { background-color: #c9b799; border-color: #a18a69; box-shadow: inset 1px 1px #dfcfac; }
+.stack-tile[data-state="covered"] .tile-face { background-color: #ad9879; border-color: #8d795c; box-shadow: none; }
+.stack-tile[aria-disabled="true"] { cursor: default; }
+.stack-tile[data-state="free"]::after {
+  content: ""; position: absolute; inset: 9% auto auto 12%; inline-size: 19%; aspect-ratio: 1;
+  border: solid #8e6140; border-width: 1px 0 0 1px; pointer-events: none;
+}
+.stack-tile[data-selected] .tile-face { border: 2px solid #743927; background-color: #ffdc8d; box-shadow: inset 0 0 0 1px #ffefbf; }
+.stack-tile[data-hinted] .tile-face { outline: 2px dashed #21554e; outline-offset: -3px; }
+.stack-tile:focus-visible { outline: none; }
+.stack-tile:focus-visible .tile-face { outline: 2px dashed #342722; outline-offset: -2px; }
+.stack-panel {
+  display: grid; gap: 7px; min-inline-size: 0; padding: clamp(10px, 2vw, 17px);
+  background: #213833; border: 1px solid #586f62; border-radius: 7px; box-shadow: inset 0 1px #a884623b;
+}
+.stack-ledger {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 4px 12px; padding-block-end: 6px; border-block-end: 1px solid #8a795b;
+}
+.stack-ledger h2 { font-size: clamp(1.23rem, 2.8vw, 1.68rem); }
+.stack-count { color: var(--brass); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.stack-feedback { min-block-size: 2.8em; color: #ffdda6; font-size: .94rem; }
+.stack-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.stack-actions .button { font-size: .84rem; padding: .52rem .68rem; }
+.stack-rule { font-size: .88rem; }
+.stack-keys, .stack-storage { color: var(--muted); font-size: .78rem; }
+
+@media (min-width: 690px) {
+  .stack-layout { grid-template-columns: minmax(0, 1.65fr) minmax(230px, 1fr); }
+}
+@media (orientation: landscape) and (max-height: 430px) and (min-width: 510px) {
+  body:has(.mahjong-solitaire) .shell { padding-block-start: max(4px, env(safe-area-inset-top)); }
+  body:has(.mahjong-solitaire) .header { margin-block-end: 5px; padding-block-end: 3px; }
+  .stack-header { margin-block-end: 8px; }
+  .stack-header .eyebrow { font-size: .62rem; }
+  .stack-header h1 { margin-block-start: 1px; font-size: 1.74rem; }
+  .stack-layout { grid-template-columns: minmax(0, min(52%, calc((100dvh - 116px) * 1.24))) minmax(0, 1fr); gap: 12px; }
+  .stack-frame { --rail-width: 6px; }
+  .stack-panel { padding: 8px; gap: 4px; }
+  .stack-feedback { min-block-size: 0; }
+}
+@media (forced-colors: active) {
+  .stack-board { background: Canvas; border-color: CanvasText; }
+  .stack-tile { forced-color-adjust: none; }
+  .stack-tile .tile-face { border: 1px solid #38312a; }
+  .stack-tile[data-state="covered"] .tile-face, .stack-tile[data-state="boxed"] .tile-face { border-style: dashed; }
+  .stack-tile[data-selected] .tile-face { border: 2px solid Highlight; }
+  .stack-tile[data-hinted] .tile-face, .stack-tile:focus-visible .tile-face { outline-color: Highlight; }
+}

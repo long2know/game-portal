@@ -1,0 +1,17 @@
+.save-shelf { margin-block: clamp(15px, 3.25vw, 33px); }
+.save-shelf > h2 { font-size: clamp(1.7rem, 3.2vw, 2.45rem); margin-block-end: 8px; }
+.save-list {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 7px;
+  margin: 0; padding: 0; list-style: none;
+}
+.save-row {
+  min-inline-size: 0; display: grid; align-content: space-between; gap: 6px;
+  padding: clamp(9px, 1.5vw, 16px); border: 1px solid #806950; border-radius: 6px;
+  background: #23392d; box-shadow: inset 0 1px #b58e65, inset 0 -2px #17271f;
+}
+.save-row h3 { font-size: 1.26rem; }
+.save-row p { font-size: .79rem; }
+.save-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; }
+.save-actions .button { font-size: .85rem; padding: .5rem .76rem; }
+.save-notice { margin-block-start: 7px; color: var(--brass); font-size: .88rem; }
+.save-notice:empty { margin: 0; }

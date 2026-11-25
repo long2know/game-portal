@@ -84,48 +84,45 @@
 
 @media (orientation: landscape) and (max-height: 420px) and (min-width: 630px) {
   .modal:has(.winning-hands) {
-    width: min(calc(100vw - var(--safe-l) - var(--safe-r) - 24px), 680px);
+    width: min(calc(100vw - var(--safe-l) - var(--safe-r) - 16px), 688px);
+    max-height: calc(var(--visual-viewport, 100dvh) - var(--safe-t) - var(--safe-b) - 16px);
   }
   .modal:has(.winning-hands) .modal-head { padding-block: 2px; }
   .modal:has(.winning-hands) .modal-content { padding: 6px 10px; }
-  .modal-content > .form:has(> .winning-hands) {
-    grid-template-columns: minmax(min-content, .28fr) minmax(0, 1fr);
+  .result-review:has(> .winning-hands) {
+    grid-template-columns: minmax(168px, 28%) minmax(0, 1fr);
     align-items: start;
     gap: 3px 8px;
   }
-  .modal-content > .form:has(> .winning-hands) > :is(.result-section, .note, .row-actions) {
+  .result-review:has(> .winning-hands) > :is(.result-section, .note, .row-actions) {
     grid-column: 1 / -1;
   }
-  .modal-content > .form:has(> .winning-hands) > :is(.detail, .note) {
+  .result-overview :is(.detail, .note) {
     line-height: 1.2;
     overflow-wrap: anywhere;
   }
-  /* Keep the next-hand controls beside the hands unless more scoring details precede them. */
-  .modal-content > .form:has(> .winning-hands):has(> .note):not(:has(> .result-section)) > :is(.note, .row-actions) {
-    grid-column: 1;
-  }
-  .modal-content > .form:has(> .note):not(:has(> .result-section)) > .winning-hands {
-    grid-column: 2;
-    grid-row: 2 / span 3;
-  }
+  .result-overview { gap: 2px; }
+  .result-overview .note { font-size: .79rem; }
+  .result-summary.form { min-width: 0; gap: 3px; }
   .modal:has(.winning-hands) .scoreboard { font-size: .83rem; line-height: 1.2; }
   .modal:has(.winning-hands) .scoreboard :is(th, td) { padding: 2px 3px; }
   /* Let scores size their columns; long seat names must not grow their row. */
   .modal:has(.winning-hands) .scoreboard :is(th, td):not(:first-child) {
     width: 1%;
-    white-space: nowrap;
   }
-  .modal:has(.winning-hands) .scoreboard tbody th {
-    max-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  .modal:has(.winning-hands) .scoreboard td { white-space: nowrap; }
+  .modal:has(.winning-hands) .scoreboard tbody th { max-width: 0; }
   .winning-hands.form { gap: 5px; }
-  .modal .winner { padding: 3px 5px; gap: 3px; }
-  .modal .winner h3 { font-size: .96rem; overflow-wrap: anywhere; }
+  .modal .winner { padding: 2px 5px; gap: 2px; }
+  .modal .winner h3 { font-size: .96rem; line-height: 1.22; overflow-wrap: anywhere; }
   .modal .winner .tile-target { width: 22px; height: 30px; }
   .winner > .result-tiles { column-gap: 3px; }
   .winner .meld-group { padding-inline: 3px; }
+  .winner .meld-group:not(.winning-event) .meld-caption {
+    contain: inline-size;
+    justify-self: stretch;
+    overflow-wrap: anywhere;
+  }
+  .winner .winning-event { inline-size: min-content; }
   .winner .meld-group .result-tiles { column-gap: 0; }
 }

@@ -1,0 +1,84 @@
+.tableau[data-scale="table"]:is([data-game="xiangqi"], [data-game="gomoku"]) {
+  background: var(--court-timber);
+  min-block-size: clamp(140px, 30vw, 310px);
+  box-shadow: inset 0 0 0 1px #bc9066, inset 0 0 0 5px #38291f;
+}
+.tableau[data-scale="table"]:is([data-game="xiangqi"], [data-game="gomoku"]) .catalog-mark {
+  inset: 5%; inline-size: 90%; block-size: 90%;
+}
+[data-game="xiangqi"] .board-grid {
+  background: #d3a571 url("./assets/xiangqi-board.svg?no-inline") center / 100% 100% no-repeat;
+}
+[data-game="xiangqi"] .lattice path { stroke: #4f3227; }
+[data-game="xiangqi"] .lattice .xiangqi-cuts { stroke: #664836; stroke-width: .8px; }
+.xiangqi-river {
+  fill: #583b2d; font: 730 .27px var(--serif); letter-spacing: .04px;
+}
+[data-game="xiangqi"] .square-shape { inline-size: 95%; block-size: 95%; }
+[data-game="xiangqi"] .token {
+  --disc-edge: #542b24;
+  --disc-ink: #fff0c8;
+  --disc-ring: #e6a079;
+  --disc-wash: #ac5146;
+  --disc-shade: #7a392f;
+  border: 1px solid var(--disc-edge);
+  background: var(--court-bone) var(--disc-wash);
+  background-size: 28px 24px;
+  box-shadow: inset -1px -2px var(--disc-shade), inset 1px 1px var(--disc-ring),
+    0 1px var(--disc-edge), 1px 2px #4e3229b8;
+}
+[data-game="xiangqi"] .token[data-side="onyx"] {
+  --disc-edge: #272722;
+  --disc-ink: #f3e5b9;
+  --disc-ring: #91937b;
+  --disc-wash: #43463e;
+  --disc-shade: #282b25;
+}
+[data-game="xiangqi"] .token::before {
+  content: ""; position: absolute; inset: 11%; border-radius: 50%;
+  border: 1px solid var(--disc-ring); box-shadow: inset 0 1px var(--disc-edge); opacity: .84;
+}
+.xiangqi-seal {
+  position: relative; inline-size: 72%; block-size: 72%; color: var(--disc-ink);
+  fill: none; stroke: currentColor; stroke-width: 1.55; stroke-linecap: round; stroke-linejoin: round;
+}
+.xiangqi-seal .seal-cut { color: var(--disc-edge); transform: translateY(.85px); }
+[data-game="xiangqi"] .square[data-source]:not([data-selected], [data-target])::before {
+  content: ""; position: absolute; z-index: 1; inset: auto auto 1%; inline-size: 23%;
+  border-block-end: 2px solid #fff0bf; box-shadow: 0 1px #5b3325; pointer-events: none;
+}
+[data-game="xiangqi"] .square[data-selected] { background-color: #efcf9469; }
+
+[data-game="gomoku"] .board-grid {
+  background: #c6a67d url("./assets/gomoku-board.svg?no-inline") center / 100% 100% no-repeat;
+}
+[data-game="gomoku"] .lattice path { stroke: #5b4938; stroke-width: .9px; }
+[data-game="gomoku"] .lattice circle { fill: #48392f; }
+.board-grid .token:has(.gomoku-stone) {
+  inline-size: 100%; block-size: 100%; background: none; border: 0; box-shadow: none;
+}
+.gomoku-stone { inline-size: 100%; block-size: 100%; }
+[data-game="gomoku"] .square[data-last] > .square-shape::after { content: none; }
+[data-game="gomoku"] .square[data-last] .token[data-piece="stone"]::before {
+  position: absolute; z-index: 1; box-shadow: none;
+}
+[data-game="gomoku"] .square[data-target]::after {
+  width: 15%; min-width: 2px; border: 0; background: #593e2e; box-shadow: none;
+}
+[data-game="gomoku"] .square[data-target]:is(:focus-visible, :hover)::after {
+  width: 45%; border: 1px solid #f6e1ba; background: #604433;
+}
+
+@media (forced-colors: active) {
+  :is([data-game="xiangqi"], [data-game="gomoku"]) .board-grid { background: Canvas; }
+  :is([data-game="xiangqi"], [data-game="gomoku"]) .lattice path { stroke: CanvasText; }
+  .xiangqi-river, [data-game="gomoku"] .lattice circle { fill: CanvasText; }
+  .board-deck:is([data-game="xiangqi"], [data-game="gomoku"]) .square:focus-visible {
+    outline-color: Highlight; box-shadow: none;
+  }
+  [data-game="xiangqi"] .square[data-source]:not([data-selected], [data-target])::before { border-color: Highlight; }
+  [data-game="xiangqi"] .square[data-selected] { outline: 2px solid Highlight; outline-offset: -2px; }
+  [data-game="xiangqi"] .square[data-target]::after { border-color: CanvasText; background: Highlight; }
+  [data-game="xiangqi"] .square[data-target][data-occupied]::after { border-color: Highlight; background: none; }
+  [data-game="gomoku"] .square[data-target]::after { background: Highlight; }
+}

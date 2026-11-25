@@ -18,6 +18,10 @@ internal static class PortalApi
 
     public sealed record RevisionRequest(long Revision);
 
+    public static Task<IResult> ForOptionalGuestReadAsync(HttpContext context, IResult anonymous,
+        Func<GuestRow, CancellationToken, Task<IResult>> action) =>
+        CookieGuest(context).HasValue ? ForGuestAsync(context, false, action) : Task.FromResult(anonymous);
+
     public static async Task<IResult> ForGuestAsync(HttpContext context, bool write,
         Func<GuestRow, CancellationToken, Task<IResult>> action)
     {

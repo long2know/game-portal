@@ -1,12 +1,14 @@
 import type { ActorMoment, SeatCast } from "./actors";
 import { button, el, places, reconcile, text, wind } from "./dom";
 import { center, seatSpot, TableEffects } from "./effects";
+import { canManageMatch, tableScore } from "./mahjong-profile";
+import { meldKey, meldNames, publicMelds, setMelds } from "./melds";
+import { MeldViewer } from "./meld-viewer";
 import type { Game, GameSeat, Meld, Option, OptionKind, RoomSeat, Seat, Snapshot, Tile } from "./protocol";
 import { faceName, tileFace, tileLabel } from "./tile";
 
-const meldNames = { chi: "Chow", peng: "Peng", gang: "Kong", bu: "Supplement" } as const;
 const optionNames: Record<OptionKind, string> = {
-  discard: "Discard", draw: "Draw", chi: "Chow", peng: "Peng", gang: "Roll for Kong", bu: "Supplement",
+  discard: "Discard", draw: "Draw", chi: "Cha", peng: "Peng", gang: "Roll for Kong", bu: "Supplement",
   hu: "Hu · Win", pass: "Pass", reveal: "Reveal",
 };
 const choiceOrder: OptionKind[] = ["hu", "reveal", "gang", "bu", "peng", "chi", "draw", "pass"];
@@ -15,43 +17,7 @@ const windowNames = {
 } as const;
 const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
 
-function meldKey(meld: Meld, index: number): string {
-  return `${index}:${meld.kind}:${meld.method ?? ""}:${meld.fromSeat ?? "_"}:${meld.tiles.join("/")}`;
-}
-
-function meldGroup(meld: Meld, local: boolean, index: number): HTMLElement {
-  const method = meld.method ?? (meld.fromSeat === null ? "concealed" : "open");
-  const node = el("div", `meld-group meld-${method}`);
-  const label = el("span", "meld-caption");
-  const tiles = el("div", "meld-tiles");
-  node.setAttribute("role", "group");
-  node.append(tiles, label);
-  meld.tiles.forEach((face, i) => {
-    const tile = tileLabel(face, "meld-tile");
-    if (local) tile.dataset.meldTile = `${index}-${i}`;
-    if (i === 2 && meld.fromSeat !== null && meld.kind !== "chi") tile.classList.add("sourced");
-    if (i === 3 && method === "added") tile.classList.add("stacked");
-    tiles.append(tile);
-  });
-  return node;
-}
-
-export function setMelds(parent: HTMLElement, melds: Meld[], dealer: Seat, local = false): void {
-  reconcile(parent, melds, meldKey, (meld, index) => meldGroup(meld, local, index), (node, meld) => {
-    const from = meld.fromSeat === null ? null : wind(meld.fromSeat, dealer);
-    const method = meld.method === "added" ? "Added " : meld.method === "concealed" ? "Concealed " : "";
-    const label = `${method}${meldNames[meld.kind]}${from ? ` · from ${from}` : ""}`;
-    node.setAttribute("aria-label", label);
-    text(node.lastElementChild!, label);
-  });
-}
-
 export type TableCue = "draw" | "discard" | "call" | "chi" | "peng" | "turn" | "win" | "exhausted";
-
-export function canManageMatch(state: Snapshot | null): boolean {
-  return !!state?.game && state.room.hostSeat === state.self.seat &&
-    state.room.seats.every(seat => seat.seat === state.self.seat || seat.kind === "bot");
-}
 
 const signed = (points: number) => points > 0 ? `+${points}` : points < 0 ? `−${-points}` : "0";
 
@@ -85,7 +51,8 @@ function lane(stage: HTMLElement, plane: HTMLElement, place: string): Lane {
   const feedback = el("span", "seat-feedback");
   feedback.setAttribute("aria-hidden", "true");
   feedback.hidden = true;
-  label.append(wind, el("div", "seat-label-text", name, details, count), score, feedback, melds, reveals);
+  label.append(wind, el("div", "seat-label-text", name, details, count),
+    el("span", "seat-ledger", el("small", "", "Table"), score), feedback, melds, reveals);
   stage.append(label);
   plane.append(wall, backs, river);
   for (const element of [wall, backs]) element.setAttribute("aria-hidden", "true");
@@ -99,7 +66,7 @@ function blocks(parent: HTMLElement, count: number): void {
 
 function updateLane(
   lane: Lane, lobby: RoomSeat, game: GameSeat, self: Seat, dealer: Seat,
-  active: boolean, wall: number, latest: boolean,
+  active: boolean, wall: number, latest: boolean, total: number,
 ): void {
   const own = lobby.seat === self;
   const direction = wind(lobby.seat, dealer);
@@ -111,15 +78,14 @@ function updateLane(
   const isDealer = lobby.seat === dealer;
   const presence = lobby.kind === "bot" ? " · Bot" : lobby.kind === "human" && !lobby.connected ? " · Away" : "";
   text(lane.details, `${isDealer ? "Dealer" : direction}${presence}`);
-  text(lane.score, game.total);
-  lane.score.setAttribute("aria-label", `${game.total} points`);
-  lane.label.title = `${direction}${isDealer ? " · Dealer" : ""} · ${lobby.displayName ?? "Open seat"} · ${game.concealedCount} concealed · ${game.total} points`;
+  text(lane.score, total);
+  lane.label.title = `${direction}${isDealer ? " · Dealer" : ""} · ${lobby.displayName ?? "Open seat"} · ${game.concealedCount} concealed · Table total: ${total} · Match total: ${game.total}`;
   lane.river.setAttribute("aria-label", `${direction} discards, oldest first`);
   blocks(lane.wall, wall);
   blocks(lane.backs, own ? 0 : game.concealedCount);
   if (!own) {
     text(lane.details.nextElementSibling!, `${isDealer ? `, ${direction} wind` : ""}, ${game.concealedCount} concealed tiles`);
-    setMelds(lane.melds, game.melds, dealer);
+    setMelds(lane.melds, publicMelds(game.melds), dealer);
   }
   reconcile(lane.river, game.discards, (face, i) => `${i}:${face}`, face =>
     el("li", "river-tile", tileLabel(face)), (node, _, i) =>
@@ -153,6 +119,7 @@ export interface TableHooks {
 
 export class TableView {
   readonly root = el("section", "play");
+  private readonly exposed = new MeldViewer(this.root);
   private readonly stage = el("div", "board-stage");
   private readonly plane = el("div", "board-plane");
   private readonly lanes = places.map(place => lane(this.stage, this.plane, place));
@@ -186,6 +153,7 @@ export class TableView {
 
   constructor(private readonly hooks: TableHooks) {
     this.root.setAttribute("aria-label", "Mahjong table");
+    this.root.tabIndex = -1;
     this.stage.setAttribute("aria-label", "Four-seat table and discard rivers");
     const well = el("div", "board-well");
     const corners = ["nw", "ne", "sw", "se"].map(position => {
@@ -198,6 +166,7 @@ export class TableView {
     this.plane.prepend(well, ...corners);
     this.plane.append(center);
     this.stage.prepend(this.plane);
+    this.stage.append(this.exposed.trigger, this.exposed.announce);
     this.resultButton = button("View results", "btn primary", hooks.results);
     this.pauseButton = button("Pause", "btn subtle pause-btn", hooks.pause);
     this.optionsButton = button("⋯", "btn icon-btn", hooks.manage);
@@ -216,7 +185,7 @@ export class TableView {
     this.melds.setAttribute("aria-label", "Your melds");
     const actions = el("div", "table-actions", this.hint, this.choices, this.discard, this.resultButton);
     this.hint.setAttribute("aria-live", "polite");
-    this.root.append(status, this.stage, rack, actions, this.effects.root);
+    this.root.append(status, this.stage, rack, actions, this.exposed.root, this.effects.root);
     const stopMotion = () => {
       this.effects.clear();
       this.#clearCast();
@@ -321,6 +290,7 @@ export class TableView {
     if ((!live && changed) || still || !sameHand || settling) this.#clearCast();
     else if (changed) this.#pendingCast = undefined;
     this.#castLoad ??= this.#loadCast();
+    this.exposed.update(state, sameTable && sameHand ? previous : null);
     if (!game) return;
     const motion = live && !still;
     const cast = this.#cast;
@@ -381,7 +351,7 @@ export class TableView {
       const pendingDiscard = game.phase === "claim" && trigger?.seat === seat &&
         trigger.faces.length === 1 && trigger.faces[0] === table.discards.at(-1);
       updateLane(lane, lobby, table, self.seat, game.dealerSeat,
-        game.turnSeat === seat && game.phase === "turn", count, pendingDiscard);
+        game.turnSeat === seat && game.phase === "turn", count, pendingDiscard, tableScore(state, seat));
       if (before && table.discards.length === before.discards.length + 1) {
         discards.push({ lane, seat, face: table.discards.at(-1)!, own: seat === self.seat });
       }
