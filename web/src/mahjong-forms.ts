@@ -123,7 +123,7 @@ function resultRack(name: string, tiles: Face[], style = ""): HTMLElement {
   return rack;
 }
 
-function resultsContent(state: Snapshot, actions: HTMLElement[], managed: boolean): HTMLElement {
+function resultsContent(state: Snapshot, nextHand: HTMLButtonElement | null, actions: HTMLElement[], managed: boolean): HTMLElement {
   const game = state.game!;
   const settlement = game.settlement!;
   const seatName = (seat: Seat) => state.room.seats.find(item => item.seat === seat)?.displayName ?? wind(seat, game.dealerSeat);
@@ -149,7 +149,10 @@ function resultsContent(state: Snapshot, actions: HTMLElement[], managed: boolea
     deltas.append(el("tr", "", name, points, el("td", "", sign(row.total)), el("td", "", sign(tableScore(state, row.seat)))));
   });
   const scoreboard = el("table", "scoreboard", el("caption", "sr-only", "Scores by seat"), head, deltas);
-  root.append(el("div", "form result-summary", overview, scoreboard));
+  const summaryColumn = el("div", "form result-summary");
+  if (nextHand) summaryColumn.append(el("div", "row-actions", nextHand));
+  summaryColumn.append(overview, scoreboard);
+  root.append(summaryColumn);
   if (settlement.reason === "win") {
     const hands = el("div", "form winning-hands");
     for (const winner of settlement.winners) {
@@ -167,7 +170,7 @@ function resultsContent(state: Snapshot, actions: HTMLElement[], managed: boolea
     }
     root.append(hands);
   }
-  if (managed) root.append(actionRow);
+  if (managed && actions.length) root.append(actionRow);
   if (settlement.birds.length) root.append(el("section", "result-section", el("h3", "", "Birds"),
     el("div", "result-tiles", ...settlement.birds.map(face => {
       const hit = ((game.dealerSeat + Number(face[1]) - 1) % 4) as Seat;
@@ -214,19 +217,19 @@ export function showTableDialog({ modal, opener, snapshot, actions, command }: T
     command(op === "quit" ? { op: "leaveRoom", payload: { ...payload, abandon: true } } : { op, payload });
   };
   const controls: HTMLButtonElement[] = [];
+  const nextHand = results && !complete ? button("Next hand", "btn primary", () => send("nextHand")) : null;
   const title = results ? complete ? "Match results" : "Hand results" : "Table options";
   const show = () => {
     modal.show(results ? "results" : "match", title, content, managed ? opener : undefined);
-    actions(controls);
+    actions(nextHand ? [nextHand, ...controls] : controls);
   };
-  if (results && !complete) controls.push(button("Next hand", "btn primary", () => send("nextHand")));
   if (managed) {
     const add = (op: MatchAction) => {
       const { label, warning } = matchActions[op];
       const choice = button(label, "btn secondary", () => {
         const cancel = button("Cancel", "btn subtle", () => {
           show();
-          choice.focus({ preventScroll: true });
+          choice.focus();
         });
         const confirm = button(op === "restartMatch" ? "Start new game" : "Quit table", "btn primary", () => {
           actions([confirm, cancel]);
@@ -247,7 +250,7 @@ export function showTableDialog({ modal, opener, snapshot, actions, command }: T
     if (state.room.hostSeat === state.self.seat) controls.push(button("Rematch", "btn primary", () => send("rematch")));
     controls.push(button("Leave table", "btn subtle", () => send("leaveRoom")));
   }
-  const content = results ? resultsContent(state, controls, managed) : el("div", "form",
+  const content = results ? resultsContent(state, nextHand, controls, managed) : el("div", "form",
     el("p", "detail", "Start over with these bots or leave this table permanently."), el("div", "row-actions", ...controls));
   show();
 }

@@ -94,11 +94,9 @@
     align-items: start;
     gap: 3px 8px;
   }
-  .result-review:has(> .winning-hands) > :is(.result-section, .note) {
+  .result-review:has(> .winning-hands) > :is(.result-section, .note, .row-actions) {
     grid-column: 1 / -1;
   }
-  .result-review:has(> .winning-hands) > .result-summary { grid-row: 1 / span 2; }
-  .result-review:has(> .winning-hands) > .row-actions { grid-area: 2 / 2; }
   .result-overview :is(.detail, .note) {
     line-height: 1.2;
     overflow-wrap: anywhere;
@@ -113,17 +111,18 @@
     width: 1%;
   }
   .modal:has(.winning-hands) .scoreboard td { white-space: nowrap; }
-  .modal:has(.winning-hands) .scoreboard tbody th {
-    max-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  .modal:has(.winning-hands) .scoreboard tbody th { max-width: 0; }
   .winning-hands.form { gap: 5px; }
   .modal .winner { padding: 2px 5px; gap: 2px; }
   .modal .winner h3 { font-size: .96rem; line-height: 1.22; overflow-wrap: anywhere; }
   .modal .winner .tile-target { width: 22px; height: 30px; }
   .winner > .result-tiles { column-gap: 3px; }
   .winner .meld-group { padding-inline: 3px; }
+  .winner .meld-group:not(.winning-event) .meld-caption {
+    contain: inline-size;
+    justify-self: stretch;
+    overflow-wrap: anywhere;
+  }
+  .winner .winning-event { inline-size: min-content; }
   .winner .meld-group .result-tiles { column-gap: 0; }
 }

@@ -650,10 +650,12 @@ for (const [width, height] of [[1440, 900], [740, 320]] as const) {
           document.documentElement.style.setProperty(`--safe-${edge}`, `${inset}px`);
         }
       });
-      // Exercise wider host font metrics without depending on installed fonts.
+      // Stress both columns with wider text and larger font metrics than the compact defaults.
       await page.addStyleTag({ content: `
-        .modal .winner .meld-caption { letter-spacing: .08em; }
-        .modal .scoreboard { letter-spacing: .06em; }
+        .modal .winner h3 { font-size: 1.075rem; }
+        .modal .winner .meld-caption { font-size: .74rem; letter-spacing: .09em; }
+        .modal .scoreboard { font-size: .9rem; letter-spacing: .065em; }
+        .modal .result-overview :is(.detail, .note) { font-size: .95rem; letter-spacing: .04em; }
       ` });
     }
     await expect(page.locator(".seat-actor")).toHaveCount(4);
@@ -703,8 +705,10 @@ for (const [width, height] of [[1440, 900], [740, 320]] as const) {
     await page.screenshot({ path: testInfo.outputPath("02-lantern-tableau-374ms.png") });
 
     const updatedName = width === 740 ? "Jade of the Lantern Hall" : "Jade II";
+    const dealerName = width === 740 ? "River of the Jade Court" : players[0];
     wire.publish({ ...won, roomRevision: won.roomRevision + 1,
-      room: { ...won.room, seats: won.room.seats.map(seat => seat.seat === 3 ? { ...seat, displayName: updatedName } : seat) } });
+      room: { ...won.room, seats: won.room.seats.map(seat => seat.seat === 3 ? { ...seat, displayName: updatedName } :
+        seat.seat === 0 ? { ...seat, displayName: dealerName } : seat) } });
     await expect(page.locator('.seat-label[data-seat="3"] .seat-name')).toHaveText(updatedName);
     expect(await midpoint(relays.nth(0))).toEqual(docked[0]);
     const results = page.getByRole("dialog", { name: "Hand results" });
@@ -718,7 +722,8 @@ for (const [width, height] of [[1440, 900], [740, 320]] as const) {
     }
     await expect(results).toBeVisible();
     await expect(results.getByText("Willow and Ink won this hand.")).toBeVisible();
-    await expect(results.getByRole("row", { name: "River (you) -16 -16 -16" })).toHaveCount(1);
+    await expect(results.getByRole("row", { name: `${dealerName} (you) -16 -16 -16` })).toHaveCount(1);
+    await expect(results.getByText(`Next dealer: ${dealerName}`, { exact: true })).toBeVisible();
     await expect(results.getByRole("rowheader", { name: updatedName, exact: true })).toBeVisible();
     const firstWinner = results.locator(".winner").filter({ hasText: "Willow" });
     const secondWinner = results.locator(".winner").filter({ hasText: "Ink" });
@@ -750,9 +755,16 @@ for (const [width, height] of [[1440, 900], [740, 320]] as const) {
         const box = (await button.boundingBox())!;
         expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
       }
+      const nextBounds = (await next.boundingBox())!;
+      const handBounds = (await results.locator(".winning-hands").boundingBox())!;
+      expect(nextBounds.x + nextBounds.width).toBeLessThan(handBounds.x);
+      await testInfo.attach("compact-review-bounds", {
+        body: JSON.stringify({ nextHand: nextBounds, winningHands: handBounds }), contentType: "application/json",
+      });
       expect(await results.getByRole("cell").evaluateAll(cells =>
         cells.every(cell => cell.scrollWidth <= cell.clientWidth))).toBe(true);
       const point = await midpoint(next);
+      expect(await next.evaluate((node, p) => node.contains(document.elementFromPoint(p.x, p.y)), point)).toBe(true);
       await page.touchscreen.tap(point.x, point.y);
     } else {
       await next.focus();
