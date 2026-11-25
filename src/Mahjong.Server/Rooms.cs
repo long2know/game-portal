@@ -696,7 +696,7 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
     }
 
     private void SendSnapshot(Peer peer, int seat, RoomCheckpoint room, DateTimeOffset utc) =>
-        peer.Send(Projection.Snapshot(room, seat, utc,
+        peer.Send(Projection.Snapshot(room, seat, utc, portalEnabled: options.PortalEnabled,
             id => _attached.TryGetValue(id, out var current) && IsAttached(current, room.Id)));
 
     private void Broadcast(RoomCheckpoint room, DateTimeOffset utc, Peer? except = null)

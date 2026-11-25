@@ -1,10 +1,14 @@
+using System.Collections.Immutable;
 using Mahjong.Rules;
 
 namespace Mahjong.Server;
 
 internal static class Projection
 {
-    public static object Snapshot(RoomCheckpoint room, int seat, DateTimeOffset utc, Func<Guid, bool> connected)
+    // Absolute seat order matches the artwork in web/src/actors.ts.
+    private static readonly ImmutableArray<string> PortalBotNames = ["Maple", "Pip", "Tallow", "Nori"];
+
+    public static object Snapshot(RoomCheckpoint room, int seat, DateTimeOffset utc, bool portalEnabled, Func<Guid, bool> connected)
     {
         var table = room.Game is null ? null : ChangshaEngine.ViewPublic(room.Game);
         var view = room.Game is null ? null : ChangshaEngine.ViewSeat(room.Game, seat);
@@ -31,7 +35,7 @@ internal static class Projection
                 {
                     seat = index,
                     kind = chair.IsBot ? "bot" : chair.IsOpen ? "open" : "human",
-                    chair.DisplayName,
+                    displayName = portalEnabled && chair.IsBot ? PortalBotNames[index] : chair.DisplayName,
                     chair.Ready,
                     connected = chair.GuestId is { } id && connected(id)
                 }).ToArray(),

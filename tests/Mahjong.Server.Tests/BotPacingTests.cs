@@ -169,7 +169,7 @@ public sealed class BotPacingTests
     }
 
     private static JsonElement Snapshot(RoomCheckpoint room, DateTimeOffset now) =>
-        JsonSerializer.SerializeToElement(Projection.Snapshot(room, 0, now, _ => false), Wire.Json);
+        JsonSerializer.SerializeToElement(Projection.Snapshot(room, 0, now, portalEnabled: false, _ => false), Wire.Json);
 
     private static DateTimeOffset Deadline(JsonElement snapshot) => snapshot.Window().GetProperty("deadlineUtc").GetDateTimeOffset();
 
