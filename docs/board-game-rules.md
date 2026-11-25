@@ -34,3 +34,22 @@ These are casual, unranked rules. Bots use legal moves only and do not receive h
 - `View` lists authoritative, session-neutral move IDs. Submit full IDs without parsing them. Turn advances one seat per `Apply` (including passes and complete chains). Finished games have no moves or turn; do not schedule a bot. Empty `winners` means a draw when finished.
 - Cell coordinates are zero-based from the top left; an empty playable cell still has an ID, but its `owner` and `piece` are null. Checkers provides only its 32 dark squares. Chinese Checkers lists only holes on a 17×25 half-column grid: horizontal neighbours differ by two columns and diagonal neighbours by one row and one column.
 - A placement has only `to`; an off-board pass has neither endpoint. A hop/jump `via` contains intermediate landing IDs in order, excluding the destination. Chinese Checkers provides one canonical shortest chain per reachable endpoint. English Checkers can offer different chains for the same endpoints, including a king returning to its origin; use full move IDs and labels to offer all choices.
+
+## Daily Xiangqi
+
+Red has one move to checkmate Black. Any actual checkmate succeeds. A legal
+non-mating move (including a stalemate, which normally loses for Black) leaves
+the original position ready for another try. Replay uses the same position
+without taking away completion earned for that UTC date.
+
+The [published corpus](../web/src/portal/games/daily-xiangqi.json) consists of
+nine original compositions and their nine left–right reflections, spanning
+chariot, horse, soldier, cannon-screen, capture, and discovered-check patterns.
+The cycle starts on 2026-11-25 UTC and repeats every 18 days in file order.
+Positions, all legal move IDs, and all checkmates are public static data loaded
+only when opening the tactic. The browser uses the normal Xiangqi board but
+does not implement its own rule engine. The [corpus tests](../tests/JadeCourt.Games.Tests/DailyXiangqiTests.cs)
+rebuild each anchor, use `XiangqiGame.View` to verify every legal move, and
+use `Apply` plus `View` to enumerate all terminal checkmates. When editing an
+edition, verify its reflection too; preserve the published order within the
+edition version.

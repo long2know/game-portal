@@ -5,7 +5,8 @@ Set `Portal__Enabled=true` to enable the game APIs and portal shell (the default
 `/portal/chess/`, `/portal/go/`, `/portal/reversi/`, `/portal/checkers/`,
 `/portal/chinese-checkers/`, `/portal/holdem/`, `/portal/solitaire/`, `/portal/sudoku/`,
 `/portal/word-tiles/`, `/portal/farkle/`, `/portal/backgammon/`, `/portal/lantern-run/`,
-`/portal/xiangqi/`, `/portal/gomoku/`, `/portal/mahjong-solitaire/`, and `/portal/big-two/`. `/portal/mahjong/` and
+`/portal/xiangqi/`, `/portal/gomoku/`, `/portal/mahjong-solitaire/`, `/portal/big-two/`,
+and the Daily Court feature at `/portal/daily-court/`. `/portal/mahjong/` and
 its nested SPA routes serve the existing Changsha Mahjong client. The bare routes return
 a 308 with the query intact. Browsers retain the original fragment because the redirect
 does not supply one. Other shell
@@ -69,6 +70,26 @@ solo save, confirmation replaces the saved deal. A Mahjong restart replaces the 
 in place; if the restart cannot be confirmed, use **Continue** to check the table
 before trying again. Browser-local Mahjong Solitaire appears here only on a device with
 a valid save for this mount, and confirms the fresh deal on its own page.
+
+## Daily Court
+
+Open `daily-court/` from the lobby at either portal mount. The picker uses only
+the fragments `#xiangqi` and `#mahjong-solitaire`; neither identifies a player
+or table. The browser uses its device clock in UTC and changes editions at
+00:00 UTC, including when returning to a suspended tab. Both mounts and all
+devices using the same release and UTC date receive the same [Xiangqi
+tactic](board-game-rules.md#daily-xiangqi) and [Mahjong Solitaire
+deal](solo-rules.md#daily-mahjong-solitaire).
+
+Daily play fetches only the same-origin shell and static assets. There is no
+`/api/daily-court`, guest session, room, leaderboard, sync, or server-side
+progress. A loaded challenge is playable without a connection; reopening
+while offline depends on the browser cache. Browser storage keeps at most
+one dated record per challenge under `${mount}court-daily-xiangqi-v1` and
+`${mount}court-daily-mahjong-solitaire-v1`. Records from other dates are
+ignored and replaced on play. Records stay separate across mounts and from
+the practice save; a server backup contains none of them. If storage is
+blocked or full, progress lasts for the current page only.
 
 ## Private player invites
 

@@ -154,6 +154,13 @@ h1 { letter-spacing: -.036em; }
   margin-block-start: 5px; text-align: end;
   color: var(--muted); font-size: .76rem;
 }
+.daily-shelf {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px;
+  border: 1px solid #866449; border-radius: 7px; background: #253a32;
+}
+.daily-stamp { inline-size: 52px; flex: none; }
+.daily-shelf-copy { flex: 1 1 170px; color: var(--muted); font-size: .86rem; }
+.daily-shelf h2 { color: var(--brass); margin-block-end: 3px; }
 .catalog { margin-block: clamp(16px, 3.25vw, 21px); scroll-margin-block-start: 15px; }
 .section-title { display: flex; gap: 3px 9px; justify-content: space-between; align-items: baseline; flex-wrap: wrap; margin-block-end: 11px; }
 .section-title h2 { font-size: clamp(1.9rem, 4vw, 3rem); }

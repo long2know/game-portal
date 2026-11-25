@@ -1,5 +1,5 @@
 import { apiCode, mountedJson } from "./api";
-import { catalogPreview } from "./catalog-art";
+import { catalogPreview, dailySeal } from "./catalog-art";
 import { catalog } from "./catalog";
 import type { GameId } from "./catalog";
 import { el, link } from "./dom";
@@ -20,6 +20,16 @@ function discoverSaves(mount: string, before: HTMLElement): void {
   };
   void refresh();
   window.addEventListener("pageshow", event => { if (event.persisted) void refresh(); });
+}
+
+function dailyShelf(mount: string): HTMLElement {
+  const heading = el("h2", "", "Daily Court");
+  heading.id = "daily-shelf-title";
+  const feature = el("section", "daily-shelf", dailySeal(),
+    el("div", "daily-shelf-copy", heading, el("p", "", "One Xiangqi tactic. One Mahjong Solitaire stack. New at midnight UTC.")),
+    link("Open Daily Court", `${mount}daily-court/`, "button secondary"));
+  feature.setAttribute("aria-labelledby", heading.id);
+  return feature;
 }
 
 export function lobby(mount: string): HTMLElement {
@@ -64,7 +74,8 @@ export function lobby(mount: string): HTMLElement {
   }
   section.append(el("div", "section-title", heading,
     el("p", "section-caption", `${games.length} games · No account required`)), grid);
-  const root = el("div", "lobby", hero, section);
-  discoverSaves(mount, section);
+  const daily = dailyShelf(mount);
+  const root = el("div", "lobby", hero, daily, section);
+  discoverSaves(mount, daily);
   return root;
 }

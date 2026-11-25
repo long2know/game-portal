@@ -9,11 +9,24 @@ import type { TilePair } from "./mahjong-stack";
 
 const freshSeed = () => crypto.getRandomValues(new Uint32Array(1))[0];
 
-export function mount({ main, mount }: Pick<PortalHost, "main" | "mount">): void {
+interface DailyStack {
+  seed: number;
+  saved: string | null;
+  current: () => boolean;
+  storageAvailable: boolean;
+  save: (snapshot: string, won: boolean) => boolean;
+}
+
+export function mount({ main, mount }: Pick<PortalHost, "main" | "mount">, daily?: DailyStack): void {
   const key = mahjongSolitaireProgressKey(mount);
   let saved: MahjongStack | null = null;
-  try { saved = MahjongStack.restore(localStorage.getItem(key)); } catch { /* Storage is optional. */ }
-  let stack = saved ?? new MahjongStack(freshSeed());
+  if (daily) {
+    saved = MahjongStack.restore(daily.saved);
+    if (saved?.seed !== daily.seed) saved = null;
+  } else {
+    try { saved = MahjongStack.restore(localStorage.getItem(key)); } catch { /* Storage is optional. */ }
+  }
+  let stack = saved ?? new MahjongStack(daily?.seed ?? freshSeed());
   let chosen: number | null = null;
   let hinted: TilePair | undefined;
   let focused: number | null = null;
@@ -21,7 +34,8 @@ export function mount({ main, mount }: Pick<PortalHost, "main" | "mount">): void
   const rule = "Match two identical tiles that have nothing above them and at least one open side.";
   const heading = el("h1", "", "Mahjong Solitaire");
   heading.id = "stack-title";
-  const header = el("header", "stack-header", el("p", "eyebrow", "The lantern stack"), heading);
+  const header = el("header", "stack-header", el("p", "eyebrow", "The lantern stack"), heading,
+    ...(daily ? [el("p", "intro", "Clear today’s four-tier stack by matching all 78 tiles.")] : []));
   const well = el("div", "stack-board");
   well.setAttribute("role", "group");
   well.setAttribute("aria-label", "Lantern stack tiles");
@@ -33,16 +47,18 @@ export function mount({ main, mount }: Pick<PortalHost, "main" | "mount">): void
   const confirmation = new Confirmation();
   const hint = button("Hint", "button secondary", suggest);
   const undo = button("Undo", "button secondary", takeBack);
-  const restart = button("Restart deal", "button secondary", () => confirmation.show("Restart deal",
+  const restartLabel = daily ? "Restart today’s deal" : "Restart deal";
+  const restart = button(restartLabel, "button secondary", () => confirmation.show(restartLabel,
     "This brings back every tile in the same deal and clears your moves.", restart, () => reset(stack.seed, "This deal has been restarted.")));
-  const newGame = button("New game", "button primary", askNew);
+  const newGame = daily ? null : button("New game", "button primary", askNew);
+  const nextDeal = newGame ?? restart;
   const instructions = el("p", "stack-rule", rule);
   instructions.id = "stack-rules";
   const keyboard = el("p", "stack-keys", "Arrow keys move among free tiles. Enter or Space selects; Escape clears selection.");
   keyboard.id = "stack-keys";
   const panel = el("section", "stack-panel",
     el("div", "stack-ledger", el("h2", "", "Your deal"), tally),
-    feedback, el("div", "stack-actions", hint, undo, restart, newGame),
+    feedback, el("div", "stack-actions", hint, undo, restart, ...(newGame ? [newGame] : [])),
     instructions, el("p", "stack-keys", "Open tiles have a small corner mark. Darker tiles are covered or blocked on both sides."),
     keyboard, storage);
   const game = el("section", "mahjong-solitaire", header,
@@ -66,16 +82,22 @@ export function mount({ main, mount }: Pick<PortalHost, "main" | "mount">): void
   main.append(game);
   paintFaces();
   render(saved?.canUndo ? "Your saved deal is ready." : "Choose any open tile to start.");
-  persist();
-
-  const url = new URL(location.href);
-  if (url.searchParams.get("fresh") === "1") {
-    url.searchParams.delete("fresh");
-    history.replaceState(history.state, "", url);
-    askNew();
+  if (daily) storage.hidden = daily.storageAvailable;
+  else {
+    persist();
+    const url = new URL(location.href);
+    if (url.searchParams.get("fresh") === "1") {
+      url.searchParams.delete("fresh");
+      history.replaceState(history.state, "", url);
+      askNew();
+    }
   }
 
   function persist(): void {
+    if (daily) {
+      if (daily.current()) storage.hidden = daily.save(stack.save(), stack.remaining === 0);
+      return;
+    }
     try {
       localStorage.setItem(key, stack.save());
       storage.hidden = true;
@@ -114,18 +136,20 @@ export function mount({ main, mount }: Pick<PortalHost, "main" | "mount">): void
     if (focused === null || stack.state(focused) !== "free") {
       const next = stack.tiles.find(({ id }) => stack.state(id) === "free")?.id ?? null;
       rove(next);
-      if (restoreFocus) (next === null ? newGame : tiles[next]).focus();
+      if (restoreFocus) (next === null ? nextDeal : tiles[next]).focus();
     }
-    if (document.activeElement === hint && !available) (stack.canUndo ? undo : newGame).focus();
+    if (document.activeElement === hint && !available) (stack.canUndo ? undo : nextDeal).focus();
     if (document.activeElement === undo && !stack.canUndo) hint.focus();
     text(tally, `${stack.remaining} / ${tiles.length} tiles left`);
     text(feedback, outcome === "won" ? "Stack cleared. You matched every tile!" :
-      outcome === "stuck" ? "No free pair remains. Undo a match, restart this deal, or start a new one." : notice);
+      outcome === "stuck" ? daily ? "No free pair remains. Undo a match or restart today’s deal." :
+        "No free pair remains. Undo a match, restart this deal, or start a new one." : notice);
     hint.disabled = !available;
     undo.disabled = !stack.canUndo;
   }
 
   function select(id: number): void {
+    if (daily && !daily.current()) return;
     const state = stack.state(id);
     if (state === "removed") return;
     if (state !== "free") {
@@ -149,6 +173,7 @@ export function mount({ main, mount }: Pick<PortalHost, "main" | "mount">): void
   }
 
   function suggest(): void {
+    if (daily && !daily.current()) return;
     hinted = stack.hint(chosen);
     if (!hinted) return;
     const first = hinted[0];
@@ -159,6 +184,7 @@ export function mount({ main, mount }: Pick<PortalHost, "main" | "mount">): void
   }
 
   function takeBack(): void {
+    if (daily && !daily.current()) return;
     const pair = stack.undo();
     if (!pair) return;
     chosen = null;
@@ -170,6 +196,7 @@ export function mount({ main, mount }: Pick<PortalHost, "main" | "mount">): void
   }
 
   function reset(seed: number, notice: string): void {
+    if (daily && !daily.current()) return;
     stack = new MahjongStack(seed);
     chosen = null;
     hinted = undefined;
@@ -180,6 +207,7 @@ export function mount({ main, mount }: Pick<PortalHost, "main" | "mount">): void
   }
 
   function askNew(): void {
+    if (!newGame) return;
     confirmation.show("New game", "Start a new deal? This replaces the deal saved in this browser.", newGame, () => {
       const seed = freshSeed();
       reset(seed === stack.seed ? (seed + 1) >>> 0 : seed, "A new solvable deal is ready.");

@@ -16,6 +16,7 @@ const { origin, pathname } = app;
 const mount = pathname.slice(0, -1);
 const extraClientRoutes = [
   'holdem', 'solitaire', 'sudoku', 'word-tiles', 'farkle', 'backgammon', 'lantern-run', 'mahjong-solitaire', 'big-two',
+  'daily-court',
 ];
 const newBoards = { xiangqi: 'standard', gomoku: 'freestyle' };
 assert(['http:', 'https:'].includes(app.protocol) && ['/portal', '/game-portal'].includes(mount)
@@ -69,7 +70,8 @@ async function checkApplication() {
   assert.deepEqual((await json('health/ready')).value, { status: 'ready' });
   assert.deepEqual((await json('health/live')).value, { status: 'live' });
   assert.deepEqual((await json('api/version')).value, { appVersion, protocolVersion: 1, commitSha });
-  const missing = ['no-such-board/', 'farkle/not-a-table/', 'backgammon/not-a-table/', 'lantern-run/private-table/', 'assets/infra-smoke-missing.js'];
+  const missing = ['no-such-board/', 'farkle/not-a-table/', 'backgammon/not-a-table/', 'lantern-run/private-table/',
+    'daily-court/private-table/', 'api/daily-court', 'assets/infra-smoke-missing.js'];
   if (app.protocol === 'http:') missing.push('/api/version', '/mahjong/');
   for (const path of missing) {
     const response = await fetchApp(path);

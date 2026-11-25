@@ -13,7 +13,7 @@ import { onlineLobby } from "./social-entry";
 const app = document.querySelector<HTMLElement>("#app")!;
 const mount = app.dataset.base ?? "/";
 const route = location.pathname.startsWith(mount) ? location.pathname.slice(mount.length).replace(/\/$/, "") : "";
-const localPuzzle = route === "mahjong-solitaire";
+const localPuzzle = route === "mahjong-solitaire" || route === "daily-court";
 const api = portalApi(mount);
 let guest: Guest | undefined;
 let opening: Promise<Guest> | undefined;
@@ -101,7 +101,9 @@ const expansions = {
   backgammon: () => import("./games/backgammon"),
   "big-two": () => import("./games/big-two"),
 };
-if (localPuzzle) {
+if (route === "daily-court") {
+  void openGame("Daily Court", async () => (await import("./daily-court")).mountDailyCourt(main, mount));
+} else if (route === "mahjong-solitaire") {
   void openGame(catalog[route].name, async () => (await import("./games/mahjong-solitaire")).mount({ main, mount }));
 } else if (music) {
   const onlineGame = isInviteGame(route);

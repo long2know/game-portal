@@ -60,3 +60,14 @@ and invalid checkpoints throw `InvalidDataException`.
   validated matches on load. The regular route resumes it; adding `?fresh=1`
   opens the **New game** confirmation without replacing progress on cancel.
   Without browser storage the deal remains playable until navigation or reload.
+
+### Daily Mahjong Solitaire
+
+Daily Court uses the same 78-tile stack, rule engine, faces, Hint and Undo.
+The day’s deal seed is the number of UTC days since 1970-01-01, interpreted
+as an unsigned 32-bit integer. The generator assigns equal faces to the
+pairs of a legal removal sequence, so the initial deal has a solution.
+Clearing the stack earns completion for that date. **Restart today’s deal**
+resets that exact seed without removing an earned completion; there is no
+new random deal in Daily Court. Its dated progress is [stored separately](portal-api.md#daily-court)
+and never changes the practice deal.

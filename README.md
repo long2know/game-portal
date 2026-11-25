@@ -6,6 +6,8 @@ The catalog also includes [Xiangqi and Gomoku](docs/board-game-rules.md), [Big T
 
 The catalog is at `/portal/`; Changsha Mahjong is at `/portal/mahjong/`. Jade Letters keeps its existing `/portal/word-tiles/` URL for bookmarks and invites. For a solo arcade game, open `/portal/lantern-run/` and use arrows, WASD, or swipes and the on-screen controls. Lantern Run saves your best finished run in this browser only, not on a leaderboard. Jade Court is a separate service and data store. Leave any existing Mahjong container, volume, and `/mahjong/` proxy route unchanged.
 
+[Daily Court](docs/portal-api.md#daily-court) pairs a one-move Xiangqi tactic with a solvable Mahjong Solitaire stack. Both reset at 00:00 UTC and keep progress in this browser only.
+
 ## Run the published image
 
 On a Linux/amd64 Docker host, use GHCR **only after** [CI verifies anonymous access](docs/operations.md#run-the-published-image). If the package is private, use the [verified no-login image archive](docs/operations.md#no-login-image-archive) or [build from source](#run-with-docker-compose). Use a fresh `jade-court-data` volume, never a volume from another service.

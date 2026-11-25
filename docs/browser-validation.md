@@ -112,6 +112,29 @@ another tab leaves a saved game alone until you choose **Resume your table**.
 older server; guest, game and WebSocket routes still use the app. Run published
 smoke without that flag to verify the integrated social backend.
 
+## Daily Court
+
+The [Daily Court spec](../web/e2e/daily-court.spec.ts) uses the real portal
+shell and assets at either mount. It plays the legal UI moves, rejects a
+stalemate and a mismatched tile pair, verifies both mates in one edition,
+and follows a stack’s legal removal sequence through all 78 tiles. It
+checks canonical URLs, painted local artwork, keyboard and touch input,
+320 px portrait and desktop geometry, browser-only progress, blocked storage,
+play after loading offline, and UTC rollover in a non-UTC time zone.
+
+With the [built publish](operations.md#release-gates-and-local-verification)
+already listening at a portal mount, run just this spec with:
+
+```sh
+BASE_URL=http://127.0.0.1:8912/portal/ npm --prefix web run test:e2e -- \
+  e2e/daily-court.spec.ts --project=chromium --project=webkit
+```
+
+The published-server browser smoke selects it for both portal mounts. Its UTC
+clock is controlled for repeatable test dates, but the puzzles, art, and play
+paths are not fixtures. The catalog browser spec checks the complete cold
+portal byte budget, including the sheet that carries the Daily Court stamp.
+
 ## Asset and feedback budget
 
 The frozen Lantern Hall package measures **32,613 gzip bytes** cold, including the favicon, 155 bytes below the **32 KiB** budget. Full play is **58,214 bytes**, plus **638 bytes** for the optional Settings Fullscreen chunk (**58,852 bytes** for all static assets). The Hall and cast load as deferred JS and CSS when entering the table or its waiting room, and the suited-face SVG loads at the first marked face. These are same-origin assets; no font files, audio recordings or video are fetched. The earlier depth and seat-actor build measured **32,682 bytes** cold (86 bytes below budget) and **50,087 bytes** for the full table. The **30,634-byte** cold and **42,429-byte** full-table estimates are historical, from the desktop, tile-art and motion pass before depth and actors. See [asset provenance and the budget breakdown](assets.md#static-asset-budget) for these per-file gzip estimates, not HTTP transfer measurements.

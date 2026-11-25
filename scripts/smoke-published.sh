@@ -71,7 +71,8 @@ export TMPDIR="$work/scratch"
 mkdir -- "$TMPDIR"
 server_pid=
 catalog_spec=e2e/catalog.spec.ts
-portal_specs=("$catalog_spec" e2e/portal.spec.ts e2e/mahjong-audio.spec.ts e2e/board-controls.spec.ts e2e/expansion.spec.ts e2e/dice-games.spec.ts e2e/art-direction.spec.ts e2e/lantern-run.spec.ts e2e/social.spec.ts)
+daily_spec=e2e/daily-court.spec.ts
+portal_specs=("$catalog_spec" "$daily_spec" e2e/portal.spec.ts e2e/mahjong-audio.spec.ts e2e/board-controls.spec.ts e2e/expansion.spec.ts e2e/dice-games.spec.ts e2e/art-direction.spec.ts e2e/lantern-run.spec.ts e2e/social.spec.ts)
 
 stop_server() {
   local pid=$server_pid
@@ -171,7 +172,7 @@ run_portal_browsers() {
   local board_titles='(the phone catalog opens each board setup|: real phone lattice|: places a real bot move|: follows a real chain)'
   local -a specs=("${portal_specs[@]}")
   if [[ ${mount%/} == /game-portal ]]; then
-    specs=("$catalog_spec" e2e/dice-games.spec.ts e2e/mahjong-audio.spec.ts e2e/lantern-run.spec.ts e2e/social.spec.ts)
+    specs=("$catalog_spec" "$daily_spec" e2e/dice-games.spec.ts e2e/mahjong-audio.spec.ts e2e/lantern-run.spec.ts e2e/social.spec.ts)
   fi
   for spec in "${specs[@]}"; do
     [[ -s "web/$spec" ]] || { echo "Missing portal browser spec: web/$spec" >&2; return 1; }
