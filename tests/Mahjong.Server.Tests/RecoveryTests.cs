@@ -8,6 +8,46 @@ namespace Mahjong.Server.Tests;
 public sealed class RecoveryTests
 {
     [Fact]
+    public async Task PortalBotNamesProjectLegacyCheckpointWithoutChangingRecoveredTable()
+    {
+        const string mount = "/game-portal";
+        await using var server = new Kestrel(("TurnSeconds", 120), ("ClaimSeconds", 30), ("BotDelayMilliseconds", 5000))
+            .WithSetting("BASE_URL", mount).WithSetting("Portal__Enabled", "true");
+        server.WithSetting("GamePortal__DataDirectory", server.DataDirectory);
+        await server.StartAsync();
+        var user = new User(server, mount);
+        await user.Guest("Jade Guest");
+        using var host = await user.Connect();
+        var playing = await Start(host);
+        var roomId = playing.Text("roomId");
+        (await host.Command("setPaused", new { roomId, expectedRoomRevision = playing.RoomRevision(), paused = true })).Ok();
+        var paused = await host.Snapshot(s => s.At("room", "paused").GetBoolean());
+        const string selectCheckpoint = "SELECT Checkpoint FROM Rooms";
+        var checkpoint = Assert.IsType<string>(await ReadScalar(server, selectCheckpoint));
+        using (var saved = JsonDocument.Parse(checkpoint))
+        {
+            Assert.Equal(["Jade Guest", "Bot 2", "Bot 3", "Bot 4"],
+                saved.RootElement.GetProperty("seats").EnumerateArray().Select(chair => chair.Text("displayName")));
+        }
+
+        await server.StopAsync();
+        await server.StartAsync();
+        using var resumed = await user.Connect();
+        (await resumed.Sync(roomId)).Ok();
+        var recovered = await resumed.Snapshot();
+        Assert.Equal(roomId, recovered.Text("roomId"));
+        Assert.Equal(paused.RoomRevision(), recovered.RoomRevision());
+        Assert.Equal(paused.GameRevision(), recovered.GameRevision());
+        Assert.Equal(["Jade Guest", "Pip", "Tallow", "Nori"],
+            recovered.At("room", "seats").EnumerateArray().Select(chair => chair.Text("displayName")));
+        Assert.True(JsonElement.DeepEquals(paused.GetProperty("room"), recovered.GetProperty("room")), "The paused room must be preserved.");
+        Assert.True(JsonElement.DeepEquals(paused.Table(), recovered.Table()), "The recovered game must keep its state and window.");
+        Assert.True(JsonElement.DeepEquals(paused.Private(), recovered.Private()), "The returned player must keep their seat and hand.");
+        Assert.True(string.Equals(checkpoint, await ReadScalar(server, selectCheckpoint) as string, StringComparison.Ordinal),
+            "Recovery and projection must not rewrite the checkpoint.");
+    }
+
+    [Fact]
     public async Task PrivateViewsAndCommittedChoiceSurviveLostAckAndProcessRestart()
     {
         await using var server = new Kestrel(("TurnSeconds", 18), ("ClaimSeconds", 4), ("BotDelayMilliseconds", 5000));

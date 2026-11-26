@@ -101,10 +101,18 @@ test("the portal Mahjong finish is fetched with the Hall and leaves the landscap
   await expect(page.locator('.connection[data-status="online"]')).toBeVisible();
   expect(hallStyles).toEqual([]);
   await tap(page, "Play with bots");
+  const botCards = page.locator(".seat-card").filter({ hasText: "Bot · Ready" });
+  await expect(botCards.getByRole("heading", { level: 2 })).toHaveText(["Pip", "Tallow", "Nori"]);
   await tap(page, "Mark ready");
   await tap(page, "Start match");
   await expect(page.locator(".hall-dial-plate")).toBeVisible();
   expect(hallStyles).toEqual([200]);
+  for (const seat of [1, 2, 3]) {
+    const actor = page.locator(`[data-actor-seat="${seat}"]`);
+    const label = page.locator(`.seat-label[data-seat="${seat}"] .seat-name`);
+    await expect(actor).toHaveAttribute("data-character", /.+/);
+    await expect(label).toHaveText((await actor.getAttribute("data-character"))!);
+  }
   const paint = await page.locator(".board-plane").evaluate(node => {
     const app = node.closest("#app")!;
     const well = node.querySelector(".board-well")!;

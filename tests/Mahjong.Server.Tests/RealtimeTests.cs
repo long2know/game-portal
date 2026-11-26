@@ -267,6 +267,50 @@ public sealed class RealtimeTests
         Assert.Null(joined.Private().Text("inviteCode"));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task BotSnapshotNamesFollowAbsoluteSeatsOnlyInPortalMode(bool portalEnabled)
+    {
+        const string mount = "/portal";
+        await using var server = new Kestrel().WithSetting("BASE_URL", mount)
+            .WithSetting("Portal__Enabled", portalEnabled ? "true" : "false");
+        server.WithSetting("GamePortal__DataDirectory", server.DataDirectory);
+        await server.StartAsync();
+        var hostUser = new User(server, mount);
+        var memberUser = new User(server, mount);
+        await hostUser.Guest("Bot 1");
+        await memberUser.Guest("Bot 2");
+        using var host = await hostUser.Connect();
+        using var member = await memberUser.Connect();
+        (await host.Command("createRoom", new { visibility = "public", matchHands = 1, fillBots = true })).Ok();
+        var created = await host.Snapshot();
+        var roomId = created.Text("roomId");
+        var botNames = portalEnabled ? new[] { "Maple", "Pip", "Tallow", "Nori" } : ["Bot 1", "Bot 2", "Bot 3", "Bot 4"];
+        Assert.Equal([(0, "human", "Bot 1"), (1, "bot", botNames[1]), (2, "bot", botNames[2]), (3, "bot", botNames[3])],
+            Roster(created));
+
+        (await host.Command("setBot", new { roomId, expectedRoomRevision = created.RoomRevision(), seat = 1, enabled = false })).Ok();
+        var open = await host.Snapshot();
+        Assert.Equal((1, "open", null), Roster(open)[1]);
+        (await member.Command("joinRoom", new { roomId })).Ok();
+        var joined = await member.Snapshot();
+        Assert.Equal(1, joined.Private().GetProperty("seat").GetInt32());
+        Assert.Equal((1, "human", "Bot 2"), Roster(joined)[1]);
+        Assert.Equal(Roster(joined), Roster(await host.Snapshot(s => s.RoomRevision() == joined.RoomRevision())));
+
+        (await host.Command("leaveRoom", new { roomId, expectedRoomRevision = joined.RoomRevision() })).Ok();
+        var transferred = await member.Snapshot(s => s.Chair(0).Text("kind") == "open");
+        Assert.Equal((0, "open", null), Roster(transferred)[0]);
+        (await member.Command("setBot", new { roomId, expectedRoomRevision = transferred.RoomRevision(), seat = 0, enabled = true })).Ok();
+        Assert.Equal([(0, "bot", botNames[0]), (1, "human", "Bot 2"), (2, "bot", botNames[2]), (3, "bot", botNames[3])],
+            Roster(await member.Snapshot()));
+
+        static (int Seat, string Kind, string? Name)[] Roster(JsonElement snapshot) =>
+            snapshot.At("room", "seats").EnumerateArray().Select(chair =>
+                (chair.GetProperty("seat").GetInt32(), chair.Text("kind"), chair.GetProperty("displayName").GetString())).ToArray();
+    }
+
     [Fact]
     public async Task ConcurrentAdmissionAndStartReserveAPlayingSeatOnLeave()
     {
