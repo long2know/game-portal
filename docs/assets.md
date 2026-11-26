@@ -73,6 +73,21 @@ Use Vite's production `web/dist` and Node 26.13.1 `gzipSync` on each file, then 
 
 The two HTML entries share only the small emblem asset at startup; there is no shared preload or board-game bundle in the Mahjong shell. The published lobby includes the CSS-loaded Go study and the small catalog sheet, not the gameplay material sheets. Chess requests a separate **1,848 gzip-byte** sprite; the lobby does not fetch it. The portal Mahjong repaint is inlined in the lazy Hall styles and inline character art; it adds no cold asset requests. The Settings form, table cue synthesizer, scores, and speech player/clips remain deferred: the Mahjong child fetches only the selected clips once an opted-in, audible table has Web Audio unlocked. The portal lobby never fetches the alternative score or speech.
 
+With Flower Cards and Ink Grids, the portal still fetches five cold assets:
+its entry JS and CSS, the shared emblem, the Go study, and the catalog sheet.
+The Mahjong child still fetches three: its entry JS and CSS and the emblem.
+The budgets below include the served HTML at each mount. Board-lattice,
+square and move-mark styles load with the board renderer (including Daily
+Xiangqi), not on the lobby. The two new catalog marks use the existing sheet;
+the game modules and playable art are not requested there.
+
+| Combined native build, including served HTML | Gzip bytes | Limit |
+|---|---:|---:|
+| `/portal/` | 23,877 | 24,576 |
+| `/game-portal/` | 23,881 | 24,576 |
+| `/portal/mahjong/` | 24,314 | 32,768 |
+| `/game-portal/mahjong/` | 24,317 | 32,768 |
+
 | Earlier combined portal art and audio build (before the catalog redraw) | Gzip bytes | Limit |
 |---|---:|---:|
 | `/portal/mahjong/` cold, including favicon | 32,468 | 32,768 |

@@ -162,7 +162,9 @@ export class Multiplayer<P, A extends object> {
     }
     this.view.root.hidden = !position || status === "closed";
     if (!this.view.root.hidden) this.view.show(table, !unavailable && !finished);
-    if (previouslyFocused instanceof HTMLElement && previouslyFocused.closest("[hidden]")) this.frame.heading.focus();
+    const focused = document.activeElement;
+    if (previouslyFocused instanceof HTMLElement && previouslyFocused.closest("[hidden]") &&
+      (focused === previouslyFocused || focused === document.body)) this.frame.heading.focus();
   }
 
   private adopt(table: MultiplayerTable<P>): void {

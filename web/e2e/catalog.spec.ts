@@ -110,6 +110,7 @@ test("Ink Grids opens its canonical browser-only route without guest, music, or 
   expect(bare.status()).toBe(308);
   expect(bare.headers().location).toBe(`${mount.pathname}nonograms/?from=bookmark`);
   expect((await request.get(new URL("nonograms/private-table/", mount).href)).status()).toBe(404);
+  expect((await request.get(new URL("api/nonograms", mount).href)).status()).toBe(404);
   await page.addInitScript(mount => localStorage.setItem(`${mount}court-music`, "pending-on"), mount.pathname);
   const requests = new Set<string>();
   page.on("request", request => requests.add(new URL(request.url()).pathname));

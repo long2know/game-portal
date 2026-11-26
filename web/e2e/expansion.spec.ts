@@ -271,7 +271,7 @@ test.describe("mounted Jade Court expansion", () => {
         expect([0, 1]).toContain(turn);
         if (table.seat !== turn) table = await flowerRead(players[turn], endpoint);
         const legal = table.position.legalActions;
-        play = legal.plays.find(play => play.targetIds.length === 2) ?? legal.plays.find(play => play.targetIds.length > 0);
+        play = legal.plays.find(play => play.targetIds.length === 1) ?? legal.plays.find(play => play.targetIds.length > 0);
         if (play) break;
         const move = legal.canScore ? { kind: "score" } as const : flowerCandidate(table.position);
         expect(move, "a legal move before the first matching hand play").toBeDefined();
@@ -366,6 +366,9 @@ test.describe("mounted Jade Court expansion", () => {
     await page.reload();
     const bank = button(page, "Bank points");
     await targets(bank);
+    const koi = button(page, "Call Koi-Koi");
+    if (table.position.legalActions.canContinue) await targets(koi);
+    else await expect(koi).toHaveCount(0);
     const seat = table.position.seats.find(seat => seat.seat === table.seat)!;
     expect(seat.yaku.length).toBeGreaterThan(0);
     for (const set of seat.yaku) await expect(page.locator(".koi-decision")).toContainText(set.name);
