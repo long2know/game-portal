@@ -113,6 +113,8 @@ Faces are suited codes `b1`–`b9` (bamboo), `c1`–`c9` (characters), `d1`–`d
 
 Seat IDs are absolute (`0`–`3`). Turn order is `(seat + 1) % 4`, displayed counterclockwise: from the viewer's seat at the bottom, offsets `0`, `1`, `2`, `3` are near, right, far, left. Only the discarder’s immediate successor may call Cha (`chi`), so the meld’s `fromSeat` is the claimant’s left neighbor. Seat references on the wire remain absolute.
 
+In Jade Court (`Portal__Enabled=true`), `room.seats[].displayName` names bots after the artwork at their absolute seat: 0 Maple (Fox), 1 Pip (Rabbit), 2 Tallow (Tanuki), 3 Nori (Dragon). This applies to new and recovered rooms without rewriting saved names. Human names are unchanged, open seats have `null`, and standalone bots still display `Bot 1`–`Bot 4`.
+
 `kongRoll` is non-null only during the replacement turn after a committed Gang. `seat` identifies the player who made the Gang, and `lowerDie` is the smaller face used to pick the replacement stack. Choosing the legal `gang` option requests the roll, with no separate command. A pending rob, Bu, ordinary draws, and any subsequent discard claim do not show a roll.
 
 `room.tableTotals` and `room.nextDealerSeat` are additive; clients reading older snapshots may see neither. The next dealer is public to seated members (including invite joins before Ready) if a waiting choice exists, or from the current settlement in `betweenHands`/`complete`. It is `null` during play or while waiting with no saved choice. Use `game.dealerSeat` to show the actual hand dealer.
