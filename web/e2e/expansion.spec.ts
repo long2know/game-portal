@@ -1011,10 +1011,26 @@ test.describe("mounted Jade Court expansion", () => {
       await button(page, "Center board").tap();
       await fits(page);
       await page.screenshot({ path: info.outputPath("word-duel-multiplayer-320.png"), fullPage: true });
-      const restored = watch(peer, endpoint, "GET");
-      await peer.reload();
-      expect((await body<Table<Words>>(await restored)).position).toEqual(second.position);
-      await expect(wordSquare(wordBoard(peer), reply.row, reply.column, 15)).toHaveAccessibleName(/last play/);
+      // Ignore polls from the old document; read the persisted body outside the browser navigation.
+      let committed = false;
+      peer.on("framenavigated", frame => { if (frame === peer.mainFrame()) committed = true; });
+      const reloaded = peer.waitForRequest(request => committed && request.url() === endpoint &&
+        request.method() === "GET" && request.frame() === peer.mainFrame());
+      await Promise.all([reloaded, peer.reload()]);
+      const restored = await peer.request.get(endpoint);
+      await expect(restored).toBeOK();
+      expect((await restored.json() as Table<Words>).position).toEqual(second.position);
+
+      const board = wordBoard(peer);
+      const recent = wordSquare(board, reply.row, reply.column, 15);
+      await expect(board.locator("[data-recent]")).toHaveCount(1);
+      await expect(recent).toHaveAttribute("data-recent", "");
+      await expect(recent).toHaveAccessibleName(/last play/);
+      await expect(recent.locator(".word-tile > span")).toHaveText(reply.tile.letter);
+      const ownScore = peer.getByRole("list", { name: "Scores and rack sizes" }).getByRole("listitem")
+        .filter({ has: peer.getByText("You", { exact: true }) });
+      await expect(ownScore.locator(".word-score-value")).toHaveText(`${replyScore} pts`);
+      await expect(wordRack(peer).locator(".word-tile > span")).toHaveText(second.position.rack.map(tile => tile.letter));
     } finally { await desktop.close(); }
   });
 
