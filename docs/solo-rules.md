@@ -71,3 +71,38 @@ Clearing the stack earns completion for that date. **Restart today’s deal**
 resets that exact seed without removing an earned completion; there is no
 new random deal in Daily Court. Its dated progress is [stored separately](portal-api.md#daily-court)
 and never changes the practice deal.
+
+## Ink Grids (`nonograms/`)
+
+- Each number is the length of an uninterrupted ink run. Read the row clues
+  left to right and the column clues top to bottom; separate adjacent runs by
+  at least one unpainted square. A **0** means no ink. The twelve original
+  plates (four each at 5×5, 8×8 and 10×10) have exactly one solution apiece and
+  can all be solved by line deduction without guessing. The
+  [Ink Grids spec](../web/e2e/nonograms.spec.ts) independently enumerates the
+  solutions and plays the released controls at either portal mount.
+- Select **Ink**, **X Empty**, or **Erase**, then tap a square. An X rules a
+  square out; the undecided dot is not a ruling. Tap a clue to highlight that
+  line. With the grid focused, arrows move among squares and their clue
+  headers; Enter or Space uses the selected tool on a square. **I**, **X** and
+  **E** apply the corresponding marks directly. **Enlarge grid** gives each
+  square a 52 px target; swipe inside the paper to see more, or use **Fit grid**
+  for the overview. The top and left clues stay in view as you scroll.
+- **Hint** marks a forced square without changing it. It filters the possible
+  placements in each line using your marks, passes forced deductions between
+  lines, and reports a contradiction if no placement remains. It does not
+  check against an answer bitmap or silently remove your guesses. A print is
+  earned only when all ink runs match their row and column clues. Remaining
+  unpainted squares need not be crossed out. **Undo** can reopen a finished
+  plate; **Reset puzzle** confirms before clearing only that plate.
+- The selected plate, marks and up to 32 recent edits per plate stay in this
+  browser under `${mount}court-ink-grids-v1` (mount includes the trailing
+  slash). No guest, API, shared save or leaderboard is involved. If browser
+  storage is unavailable, marks survive plate changes but not navigation or
+  reload. Browser tabs do not synchronize their edits.
+- The silhouettes, paper fibers and print-room artwork are original. The
+  [Conceptis rules](https://www.conceptispuzzles.com/index.aspx?uri=puzzle/pic-a-pix/rules)
+  were consulted for run separation, and the
+  [Pattern manual](https://www.chiark.greenend.org.uk/~sgtatham/puzzles/doc/pattern.html)
+  for three-state and keyboard conventions. No outside puzzles, artwork,
+  fonts or code ship with Ink Grids.
