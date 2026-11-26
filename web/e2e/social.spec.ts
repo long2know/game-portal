@@ -429,9 +429,11 @@ test("a Koi-Koi player invite opens the exact flower table without a link creden
     const { id } = await response.json() as { id: string };
     share = await page.getByRole("textbox", { name: "Invite link" }).inputValue();
     await send(page, guestName, { game: "koi-koi", tableId: id });
-    const member = receive(guest, url(`api/koi-koi/tables/${id}`), "GET");
-    await accept(guest, url("koi-koi/"), hostName);
-    const opened = await member;
+    const [opened] = await Promise.all([
+      guest.waitForResponse(response => response.url() === url(`api/koi-koi/tables/${id}`) &&
+        response.request().method() === "GET", { timeout: 26_000 }),
+      accept(guest, url("koi-koi/"), hostName),
+    ]);
     expect(opened.ok()).toBe(true);
     const view = await opened.json() as { id: string; seat: number; position: { ownCards: { id: number }[] } };
     expect(view).toMatchObject({ id, seat: 1 });

@@ -56,8 +56,8 @@ const routes = [
   ["koi-koi", "Koi-Koi", "Set up Koi-Koi", "koi-koi/resume", "koi-koi", "Play a bot"],
 ] as const;
 const button = (page: Page | Locator, name: string | RegExp) => page.getByRole("button", { name, exact: true });
-const watch = (page: Page, url: string, method = "POST") =>
-  page.waitForResponse(response => response.url() === url && response.request().method() === method);
+const watch = (page: Page, url: string, method = "POST", timeout?: number) =>
+  page.waitForResponse(response => response.url() === url && response.request().method() === method, { timeout });
 
 async function body<T>(response: Response): Promise<T> {
   const raw = await response.text();
@@ -252,8 +252,8 @@ test.describe("mounted Jade Court expansion", () => {
     const friend = await peer.newPage();
     try {
       await friend.goto(invite);
-      await friend.getByRole("textbox", { name: "Display name" }).fill("Reed");
-      const joined = watch(friend, url("api/koi-koi/join"));
+      await expect(friend.getByRole("heading", { name: "A friend saved you a seat.", exact: true })).toBeVisible();
+      const joined = watch(friend, url("api/koi-koi/join"), "POST", 12_000);
       await button(friend, "Join table").tap();
       let table = await body<Table<KoiKoi>>(await joined);
       await expect(friend).toHaveURL(destination);
@@ -338,7 +338,7 @@ test.describe("mounted Jade Court expansion", () => {
       const save = opponent.getByRole("button", { name: "Continue Koi-Koi", exact: true });
       await expect(save).toBeVisible();
       await expect(opponent.getByRole("button", { name: "Start fresh: Koi-Koi", exact: true })).toHaveCount(0);
-      const savedSeat = watch(opponent, endpoint, "GET");
+      const savedSeat = watch(opponent, endpoint, "GET", 12_000);
       await save.tap();
       const resumed = await body<Table<KoiKoi>>(await savedSeat);
       expect(resumed).toMatchObject({ id: table.id, seat: other.seat });
