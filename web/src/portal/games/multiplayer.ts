@@ -8,7 +8,7 @@ import type { PortalHost } from "../host";
 import { rememberTable, tableEntry } from "../invite-handoff";
 import { expired, field, gameFrame, invitationField, messageFor } from "./shared";
 
-type Game = "holdem" | "word-tiles" | "farkle" | "backgammon" | "big-two";
+type Game = "holdem" | "word-tiles" | "farkle" | "backgammon" | "big-two" | "koi-koi";
 export type MultiplayerTable<P> = Pick<Table, "id" | "revision" | "status" | "seat" | "seats" | "invite" | "endReason" | "endedBySeat">
   & { position: P | null };
 export interface MatchView<P> {
@@ -17,9 +17,11 @@ export interface MatchView<P> {
 }
 type Options<P, A> = {
   game: Game;
-  endpoint: "poker" | "words" | "farkle" | "backgammon" | "big-two";
+  endpoint: "poker" | "words" | "farkle" | "backgammon" | "big-two" | "koi-koi";
   playerCounts: number[];
   view: (play: (action: A) => void, next: () => void) => MatchView<P>;
+  study?: HTMLElement;
+  guide?: HTMLElement;
 };
 
 export const nameAt = <P>({ seats, seat }: MultiplayerTable<P>, index: number) =>
@@ -35,6 +37,7 @@ export class Multiplayer<P, A extends object> {
   private readonly name = el("input");
   private readonly players = el("select");
   private readonly setup: HTMLFormElement;
+  private readonly setupPanel: HTMLElement;
   private readonly setupActions: HTMLButtonElement[];
   private readonly status = el("p", "feature-status");
   private readonly roster = el("ul", "waiting-roster");
@@ -90,11 +93,14 @@ export class Multiplayer<P, A extends object> {
       event.preventDefault();
       void this.enter(event.submitter !== friends);
     });
+    this.setupPanel = options.study ? el("div", "setup", this.setup, options.study) : this.setup;
     this.status.setAttribute("role", "status");
     this.match = el("div", "feature-stack", this.status, this.share.root, this.waiting, this.view.root,
       el("div", "feature-controls", this.leave, this.restart));
     host.main.append(this.frame.root);
-    this.frame.root.append(this.setup, this.match, this.retry, this.confirm.root);
+    this.frame.root.append(this.setupPanel, this.match, this.retry);
+    if (options.guide) this.frame.root.append(options.guide);
+    this.frame.root.append(this.confirm.root);
     void this.open();
     document.addEventListener("court-display-name", () => {
       void host.openGuest().then(guest => this.remember(guest), () => {});
@@ -122,7 +128,7 @@ export class Multiplayer<P, A extends object> {
       busy: !!table && isLive(table),
       table: table?.status === "waiting" && this.online && !this.busy && table.invite && openSeat
         ? { game: this.options.game, tableId: table.id } : undefined });
-    this.setup.hidden = !!table;
+    this.setupPanel.hidden = !!table;
     this.match.hidden = !table;
     this.match.setAttribute("aria-busy", String(this.busy));
     const unavailable = !this.guest || this.busy || !this.online;

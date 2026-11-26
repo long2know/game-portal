@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <symbol id="month-1" viewBox="0 0 64 64">
+    <path fill="#a9a477" opacity=".5" d="M0 56q17-14 38-13l21-7 5 5v23H0z"/>
+    <path fill="#956b53" stroke="#352c29" stroke-width="2.4" d="M1 62q16-3 25-19 8-9 21-11l10 3q-16 1-24 14l-4 15H0z"/>
+    <path fill="#47634d" stroke="#273831" stroke-width="2" d="M8 41q7-14 19-12l16-2 7 4-13 3-5 6-11-1zM31 23q7-9 19-6l13 3-1 5-14-1-8 7zM4 51l7-6 13 2 2 5-12 3-13 1z"/>
+    <path fill="none" stroke="#a4a675" stroke-width="1.2" d="m12 38 18-4m7-11 21-1M7 51l14-2"/>
+  </symbol>
+  <symbol id="month-2" viewBox="0 0 64 64">
+    <path fill="none" stroke="#42302e" stroke-width="4" d="M8 66Q30 59 36 43t18-14M31 51l-12-8m19-6 2-12"/>
+    <path fill="#b85d62" stroke="#68383e" stroke-width="1.8" d="M22 36q6-8 10-1 8-1 6 6-2 5-6 4-2 7-7 3-7 2-8-3-1-7 5-9zm22-13q6-8 11-2 8-3 7 5 5 4 0 8-4 3-7 1-7 4-9-2-6-2-2-10zM5 42q3-8 10-5 6-1 6 5l-4 8L7 50z"/>
+    <path fill="#e2ba91" d="m24 40 4-2 4 4-5 4zm26-14 5-2 3 5-5 3zM9 43l6-2 1 5-5 1z"/>
+    <path fill="#87515a" d="m36 23 5-5 5 4-5 7zM5 55l8-2 5 5-10 2z"/>
+  </symbol>
+  <symbol id="month-3" viewBox="0 0 64 64">
+    <path fill="none" stroke="#4d3733" stroke-width="3.2" d="M-2 52q18-8 36-7l21-8M25 46l12-13M18 47l-7-13m25 11 12 10"/>
+    <path fill="#d2978c" stroke="#81505b" stroke-width="1.7" d="M33 31q-4-7 2-9l4 3 4-4q7 4 3 9l5 3q-2 8-9 6l-4 5q-6-2-7-8l-5-3 2-5zm15 5q1-6 6-5l2 4 5-1q4 5-2 8l1 5q-7 3-9-3l-5-1zm-42-5q-2-5 4-6l4 3 4-2q5 4 1 8l1 5q-4 3-8-1l-5 2q-4-3-1-6z"/>
+    <path fill="#edc196" d="m34 31 7-3 3 6-5 2zm18 8 6-1-3 5zM9 32l6-1 1 4-5 1z"/>
+    <path fill="#a67075" d="m16 56 7-3 1 5-4 4zm29 4 6-1 2 5-6 1zm14-9 5-1v4l-3 3z"/>
+  </symbol>
+  <symbol id="month-4" viewBox="0 0 64 64">
+    <path fill="none" stroke="#3f4436" stroke-width="3.6" d="M64 28Q30 22 8 38m38-9-7 25m-18-21-5 22m38-26-1 20"/>
+    <path fill="#79835d" stroke="#3e4e3d" stroke-width="1.5" d="M60 26Q47 11 34 20q12 13 26 6zM31 28q-13-7-22 0 8 7 22 0zm-7 6Q15 48 4 46q0-10 20-12z"/>
+    <path fill="#9880a1" stroke="#53425d" stroke-width="1.9" d="M11 37q5-5 12-1l-2 10-3 9-4 8-4-8-1-9zM34 34q7-4 13 1l-3 12-5 12-4 4-4-14zM51 32l8-2 3 7-3 11-6 8-4-8z"/>
+    <path fill="none" stroke="#d1a9c0" stroke-width="2" d="m11 43 8 2m-7 5 5 2m17-13 9 3m-8 4 6 2m10-9 7 1m-8 5 5 2"/>
+  </symbol>
+  <symbol id="month-5" viewBox="0 0 64 64">
+    <path fill="#81916d" stroke="#344d42" stroke-width="2" d="M0 63q4-16 13-26l-3 20q10-9 19-26l-6 26 14-9-6 15zm36 1 12-36-3 29 14-19-5 21 10-5v10z"/>
+    <path fill="none" stroke="#415748" stroke-width="2.4" d="m19 63 6-34m25 35 3-31"/>
+    <path fill="#857d9c" stroke="#43445d" stroke-width="1.8" d="M22 36Q4 34 7 26q9-3 15 0-3-14 5-15 7 4 1 15 10-7 16-1-1 10-13 11l-5-3-4 3zm28 2q-12-3-11-9l10 1 4-9 4 1 1 7 6-1v8l-9 3-3-2z"/>
+    <path fill="#e1aa69" d="m20 29 8-3 6 3-7 4zm29 5 6-3 4 2-4 3z"/>
+  </symbol>
+  <symbol id="month-6" viewBox="0 0 64 64">
+    <path fill="#667b5c" stroke="#354537" stroke-width="2" d="M24 63 32 47q-21 7-29-6l20 3-9-15 18 13q14-18 27-14-3 11-12 14l14 3q-8 12-21 8l-5 11z"/>
+    <path fill="#b87273" stroke="#713f43" stroke-width="2" d="M11 44Q2 38 8 29q1-8 10-10 2-8 11-6 8-8 15 0 10-2 13 8 7 5 4 14 0 8-12 11-5 7-14 4-11 5-17-2z"/>
+    <path fill="#d39488" stroke="#8b484d" stroke-width="1.6" d="M15 34q-1-8 8-8 0-8 8-7l5 5q9-5 14 1l-2 6q10 2 8 7-5 4-13 3-7 7-13 2-9 1-13-3z"/>
+    <path fill="none" stroke="#f0c39d" stroke-width="2" d="m25 33 7-4 10 1m-15 6 9 2 8-4"/>
+  </symbol>
+  <symbol id="month-7" viewBox="0 0 64 64">
+    <path fill="#9d8d67" opacity=".55" d="M2 61q26-20 62-12v15H0z"/>
+    <path fill="none" stroke="#444d3e" stroke-width="2.6" d="M26 64Q17 42 4 30m21 34q7-25 33-34M28 61 34 35m-13 15L8 45m23 7 19-7"/>
+    <path fill="#78845e" stroke="#455943" stroke-width="1.5" d="M8 40q9 1 10 8-10 5-15 1 1-5 5-9zm24 11q0-8 6-15l8 4-5 9zm12-5q3-7 11-7l8 4q-6 8-19 3zM17 57q-12 2-16-5 10-5 16 5zm22 3q5-8 14-7l5 4q-9 6-19 3z"/>
+    <path fill="#b6828a" stroke="#694d65" stroke-width="1.2" d="m2 27 6-3 4 3-4 6H3zm8 7 5-3 4 4-3 5-6-2zm43-5 5-5 5 3-4 6-6 1zm-7 4 4-1 4 4-5 4-5-4zm-14-5 4-3 4 3-3 7-5 1z"/>
+  </symbol>
+  <symbol id="month-8" viewBox="0 0 64 64">
+    <path fill="#51605c" stroke="#38443d" stroke-width="2" d="M0 50q25-13 47-6l17 8v12H0z"/>
+    <path fill="none" stroke="#c3a770" stroke-width="1.8" d="M9 64Q13 46 7 29m12 35q4-17-3-27m12 27q-5-13-1-27m17 27q-1-16 6-23m-1 23 11-13M4 42l5 8m27 14-5-12"/>
+    <path fill="#bb9b6a" stroke="#806e59" stroke-width="1" d="M6 39 3 30l3-9 4 7-2 9zm13 7-5-7 1-9 5 5 1 9zm6 0-2-8 4-9 2 7-2 9zm21 5 1-8 7-9 1 7-4 7z"/>
+  </symbol>
+  <symbol id="month-9" viewBox="0 0 64 64">
+    <path fill="#74825e" stroke="#3c5143" stroke-width="2" d="M8 64q6-9 20-11L12 43q-3-5 0-7l7 2 4-6 10 11 7-6 5 7 11-1-4 8-10 5 17 4-3 4z"/>
+    <path fill="#bd945e" stroke="#735340" stroke-width="1.8" d="M19 35q-8-4-3-10l5 1-1-8 5-3 6 6 2-10 5-2 4 9 6-6 5 4-1 9 8 1 2 5-7 6 4 7-6 3-7-4-1 8-6 1-4-7-7 4-5-4 3-7z"/>
+    <path fill="none" stroke="#efe0a2" stroke-width="2.1" d="m24 29 12 5m-8-13 9 11m2-15 2 14m8-11-5 13m12-4-11 7m6 5-10-4m-1 9-2-9m-9 6 6-7"/>
+    <circle cx="40" cy="34" r="4" fill="#874739"/>
+  </symbol>
+  <symbol id="month-10" viewBox="0 0 64 64">
+    <path fill="none" stroke="#513a31" stroke-width="3.2" d="M-1 62q30-20 63-22M20 52l-4-16m18 11 3-15m7 13 12 11"/>
+    <path fill="#b66e4a" stroke="#743e35" stroke-width="1.7" d="m18 38-9 1 3-5-9-6 8-1-1-9 5 6 5-10 3 10 9-3-5 8 6 4-9 2z"/>
+    <path fill="#9d5946" stroke="#683a35" stroke-width="1.7" d="m38 33-7-1 3-5-9-4 9-2 1-11 6 7 7-6 1 8 10-1-5 7 6 5-13 1-3 6zm15 23-6-4 7-1 3-9 4 7 3-1v14l-7 2z"/>
+    <path fill="none" stroke="#e3a878" stroke-width="1.4" d="m19 34 1-10m0 10-9-5m9 5 7-8m14 6 2-12m-2 12-7-10m7 10 11-6"/>
+  </symbol>
+  <symbol id="month-11" viewBox="0 0 64 64">
+    <path fill="#738b7c" opacity=".55" d="m0 57 64-10v17H0z"/>
+    <path fill="none" stroke="#404b3c" stroke-width="4" d="M62 64Q63 36 50 22L29 8" />
+    <path fill="none" stroke="#536854" stroke-width="2.2" d="M55 27Q29 14 24 36t-6 20M50 23Q32 13 31 33t-5 21M48 21Q10 11 11 39l-4 16m43-30Q42 22 39 39l-1 17m17-23q-7-2-8 13l-3 13"/>
+    <path fill="none" stroke="#8b9a73" stroke-width="1.6" d="m8 42 6-9m6 8 8-9m1 12 6-9m4 10 6-9m1 15 5-7"/>
+    <path fill="none" stroke="#b2ad7e" stroke-width="1.2" d="m3 62 13-1m17-1 12-2"/>
+  </symbol>
+  <symbol id="month-12" viewBox="0 0 64 64">
+    <path fill="#788165" stroke="#414e41" stroke-width="2" d="M32 58Q14 64 2 50q5-16 24-15 9 5 6 23zm5 0q-1-17 13-20 10 1 14 10-8 14-27 10z"/>
+    <path fill="none" stroke="#494d40" stroke-width="2.5" d="M33 64V20m0 32-13-7m13 11 15-8M33 41l-8-14m8 9 11-14"/>
+    <path fill="#8d7d9d" stroke="#574761" stroke-width="1.8" d="M30 14q-4-9 4-11 6 5 3 12l-3 5zm-11 7q-7-3-5-10 8-3 11 4l1 9zm22-3q1-9 8-7 7 6 0 11l-8 2zM12 31q-6-7 1-12 6 3 6 11l-2 4zm12 3q-4-7 2-11 8 5 4 12l-4 4zm20-5q4-9 10-6 4 7-5 11l-6 1z"/>
+    <path fill="#c9a4ac" d="m31 15 5-1-2 6zm-11 4 5-1 1 6zm22 2 6-1-7 5z"/>
+  </symbol>
+  <symbol id="crane" viewBox="0 0 64 64">
+    <circle cx="42" cy="12" r="10" fill="#bb745b"/>
+    <path fill="none" stroke="#393935" stroke-width="1.5" d="m24 31-12 8m16-7-12 10"/>
+    <path fill="#f1e5cb" stroke="#343532" stroke-width="1.8" d="M19 29q9-5 15-4l8-6 8-4 4 3-7 3q-2 9-12 11l-9 4-14-4 7-3z"/>
+    <path fill="#494844" stroke="#343532" stroke-width="1.5" d="M26 30Q17 23 8 8q15 6 23 13l4 7z"/>
+    <path fill="#a33e3d" d="m48 16 5-4 2 3-2 2z"/>
+  </symbol>
+  <symbol id="warbler" viewBox="0 0 64 64">
+    <path fill="#85894c" stroke="#3e4737" stroke-width="2" d="M11 29l9-8q4-12 16-11 9-9 16 0l7 3-7 3q-5 15-22 15l-7-3-16 7z"/>
+    <path fill="#c2a96c" stroke="#585344" stroke-width="1.3" d="M23 22q5-7 16-5l-7 9-11 1z"/>
+    <circle cx="47" cy="12" r="1.8" fill="#303231"/>
+  </symbol>
+  <symbol id="curtain" viewBox="0 0 64 64">
+    <path fill="#9a574d" stroke="#563633" stroke-width="2" d="m4 9 56 2v20l-11-5-12 3-11-5-11 1-11-5z"/>
+    <path fill="#cf9771" d="m13 10 6 .2v15l-4-.1-2-.9zm16 .5 6 .2v17l-6-2.7zm17 .7 6 .2v16l-3-1.5-3 .5z"/>
+    <path fill="none" stroke="#4b3532" stroke-width="2" d="M1 9h62m-57 1 1 18m51-17v26"/>
+    <path fill="#ac734f" d="m5 28 4 1 1 7-5-2zm51 8 4 1 1 6-5-2z"/>
+  </symbol>
+  <symbol id="cuckoo" viewBox="0 0 64 64">
+    <path fill="#c89a61" d="M54 6a12 12 0 0 0 1 20 13 13 0 0 1-14-13 13 13 0 0 1 13-7z"/>
+    <path fill="#50635c" stroke="#343c3b" stroke-width="1.8" d="M6 15q13 2 20 8L22 6q9 2 14 9l6 1 5 4-6 2q-4 8-14 6l-9 3-10-4 10-3z"/>
+    <path fill="none" stroke="#d3bf99" stroke-width="1.4" d="m14 27 10-.5m10-6 7 1"/>
+  </symbol>
+  <symbol id="bridge" viewBox="0 0 64 64">
+    <path fill="#7c9a96" stroke="#485f5e" stroke-width="1.6" d="M1 18q17-5 29 2 16 4 32-3v9q-11 8-31 4Q13 26 1 33z"/>
+    <path fill="none" stroke="#433633" stroke-width="7" d="m5 29 14-12 11 5 14-12 14 3"/>
+    <path fill="none" stroke="#ad7656" stroke-width="4.2" d="m5 28 14-12 11 5 14-12 14 3"/>
+    <path fill="none" stroke="#e6b380" stroke-width="1.5" d="m9 22 5 5m7-14-2 6m20-10 5 5m6-5-1 5"/>
+  </symbol>
+  <symbol id="butterflies" viewBox="0 0 64 64">
+    <path fill="#ce9f59" stroke="#493b37" stroke-width="1.8" d="M23 14Q14 5 7 6 4 13 13 18q-9 3-4 9 8 3 15-7 5 7 11 2 3-6-5-6 7-7 3-13-7 1-10 11z"/>
+    <path fill="#789389" stroke="#3e4c48" stroke-width="1.7" d="M49 14q-8-6-12-3-2 7 6 8-3 5 0 8 6 1 8-7 10 4 11-2l-5-3q4-4 2-8-6 0-10 7z"/>
+    <path fill="none" stroke="#493b37" stroke-width="1.4" d="m23 10 2 13m-2-13-2-5m3 5 3-5m21 9 4 7"/>
+  </symbol>
+  <symbol id="boar" viewBox="0 0 64 64">
+    <path fill="#8d6b58" stroke="#413936" stroke-width="2" d="M8 24q4-13 22-13l11 3 6-5 3 8 4 6 7 1-1 6-10 3-5 8-4-1 1-8-14 1-7 6-5-1 2-9-8-2-6 4-2-2z"/>
+    <path fill="none" stroke="#d8a57b" stroke-width="2" d="m18 17 8-2 9 1m-14 4 9-1m22 8 4 1 3-3"/>
+    <circle cx="49" cy="22" r="1.5" fill="#343435"/>
+  </symbol>
+  <symbol id="moon" viewBox="0 0 64 64">
+    <circle cx="38" cy="19" r="17" fill="#e0bd80" stroke="#80665c" stroke-width="1.8"/>
+    <path fill="none" stroke="#f1d5a4" stroke-width="1.8" d="M26 14q6-9 16-7"/>
+    <path fill="#535e62" d="M0 35q13-6 25-1l15 3 24-3v4l-19 2-25-2-20 1z"/>
+  </symbol>
+  <symbol id="geese" viewBox="0 0 64 64">
+    <path fill="#48585a" d="M2 10q7 0 13 5l3-8 3-2 5 2-5 2-1 8 4 5-5 3-2-4Q6 21 2 10zm25 11q8 1 12 5l4-9 7 1-6 4-1 7 4 3-5 3-4-4q-8-1-11-10zm22-9 6 3 3-7 5 1-3 4-1 4 2 3-4 2-3-3z"/>
+    <path fill="none" stroke="#957666" stroke-width="1.4" d="m6 31 12 3m28 6 11-3"/>
+  </symbol>
+  <symbol id="cup" viewBox="0 0 64 64">
+    <path fill="#ac6650" stroke="#523c35" stroke-width="2" d="M3 35q20-8 38-1L26 52v5l-15 1-1-5z"/>
+    <path fill="#dba87a" stroke="#523c35" stroke-width="1.6" d="M3 35q7-7 21-7 10 0 17 6-5 7-18 8-15 1-20-7z"/>
+    <path fill="none" stroke="#f3d1a0" stroke-width="1.7" d="m11 36 10-3 11 1m-20 14 9 1"/>
+  </symbol>
+  <symbol id="deer" viewBox="0 0 64 64">
+    <path fill="#b59068" stroke="#503e37" stroke-width="2" d="m9 35-4-4 5-2q11-7 27 0l7-8 5-4 3 3 7-1 2 4-8 5-3 9-2 15-5 1 1-15-6 1-2 8-5 1 1-9-14 1-3 13-4-1 1-15z"/>
+    <path fill="none" stroke="#503e37" stroke-width="1.6" d="m48 20-3-9 2-7m-2 10-6-5m11 10 2-9 5-4m-5 6-1-7"/>
+    <path fill="none" stroke="#f0c998" stroke-width="2.2" d="m15 31 2-.2m5 1 2-.1m4-.2 2 .2"/>
+  </symbol>
+  <symbol id="rain" viewBox="0 0 64 64">
+    <path fill="#9e6155" stroke="#553e38" stroke-width="2" d="M2 26q10-17 23-17 9 3 14 16-16-6-37 1z"/>
+    <path fill="#535b5b" stroke="#35423e" stroke-width="1.7" d="m15 57 7-14-1-11 8-5 7 5 6 8-10 4 3 13z"/>
+    <circle cx="28" cy="29" r="4" fill="#d0a881" stroke="#553e38" stroke-width="1.5"/>
+    <path fill="none" stroke="#553e38" stroke-width="1.8" d="m22 11 7 41"/>
+    <path fill="none" stroke="#708a88" stroke-width="1.7" d="m46 6-4 9m13-4-6 12m13 2-5 9M8 38 3 49"/>
+  </symbol>
+  <symbol id="swallow" viewBox="0 0 64 64">
+    <path fill="#454d54" stroke="#333d41" stroke-width="1.8" d="M9 36l10-5-13-3 15-2L13 9q13 3 17 14l9-4 15-12q-1 12-9 18l9 2 3 4-7 1-12 6-14-3-14 3z"/>
+    <path fill="#d5a381" d="M45 27l7 3-11 5-11-1z"/>
+  </symbol>
+  <symbol id="lightning" viewBox="0 0 64 64">
+    <path fill="#819691" stroke="#455b59" stroke-width="1.5" d="M2 17q4-10 15-7 4-8 16-4 8-6 16 3l13 3v5l-12 4-15-2-18 4z"/>
+    <path fill="#d2ab60" stroke="#72543d" stroke-width="1.8" d="M35 17 23 35l11-2-6 19 21-28-12 4 7-12z"/>
+  </symbol>
+  <symbol id="phoenix" viewBox="0 0 64 64">
+    <path fill="#b77856" stroke="#644439" stroke-width="1.8" d="M11 45q15 5 20-14l-8 4Q11 32 9 20l14 6Q10 18 13 8q12 7 17 17l4-12 9-6 7 3-2 4 8 2-10 3q-2 17-12 23L23 52l-14 2 12-8z"/>
+    <path fill="none" stroke="#e3b87a" stroke-width="2" d="m19 15 11 13 6-7m-20 5 13 6 9-5m-16 18 12-7m8-26 5-8"/>
+    <circle cx="44" cy="12" r="1.4" fill="#4d3733"/>
+  </symbol>
+  <symbol id="poem" viewBox="0 0 64 64">
+    <path fill="#a85f55" stroke="#573937" stroke-width="1.9" d="m11 7 16 3-7 37-7-5-9 4z"/>
+    <path fill="none" stroke="#eed2a4" stroke-width="1.5" d="m15 16 6 1m-7 4 4 1m-5 4 6 1m-8 5 5 .5"/>
+  </symbol>
+  <symbol id="red-ribbon" viewBox="0 0 64 64">
+    <path fill="#ac5c50" stroke="#573834" stroke-width="1.9" d="m11 7 16 3-7 37-7-5-9 4z"/>
+    <path fill="none" stroke="#cd977b" stroke-width="1.3" d="m13 12-5 28m15-26-4 23"/>
+  </symbol>
+  <symbol id="blue-ribbon" viewBox="0 0 64 64">
+    <path fill="#657d8e" stroke="#3d4950" stroke-width="1.9" d="m45 7 15 5-7 36-7-6-9 3z"/>
+    <path fill="none" stroke="#a9a9a0" stroke-width="1.3" d="m47 12-6 26m15-23-5 24"/>
+  </symbol>
+</svg>

@@ -61,7 +61,7 @@ export function lobby(mount: string): HTMLElement {
     const descriptionIds = [seats.id, summary.id];
     const card = el("a", flagship ? "game-card game-card-featured" : "game-card",
       catalogPreview(game),
-      el("div", "game-card-body", ...(flagship ? [seats, title, summary] : [title, summary, seats])));
+      el("div", "game-card-body", ...(flagship ? [seats, title, summary] : [title, seats, summary])));
     if (flagship) {
       title.id = "catalog-mahjong-name";
       descriptionIds.unshift(title.id);

@@ -9,7 +9,7 @@ test.beforeEach(({ baseURL }) => {
   test.skip(!baseURL || !/^\/(?:game-)?portal\/$/.test(new URL(baseURL).pathname), "Requires the published portal.");
 });
 
-test("lobby presents seventeen real destinations with local, cold catalog art", async ({ page, baseURL, request }) => {
+test("lobby presents nineteen real destinations with local, cold catalog art", async ({ page, baseURL, request }) => {
   const mount = new URL(baseURL!);
   const href = (path: string) => new URL(path, mount).href;
   const assets = new Set<string>();
@@ -38,7 +38,7 @@ test("lobby presents seventeen real destinations with local, cold catalog art", 
   expect(anonymous.headers()["set-cookie"]).toBeUndefined();
   await expect(page.getByRole("region", { name: "Continue playing" })).toHaveCount(0);
   const games = ["mahjong", "chess", "go", "reversi", "checkers", "chinese-checkers", "holdem", "solitaire",
-    "sudoku", "word-tiles", "farkle", "backgammon", "lantern-run", "xiangqi", "gomoku", "mahjong-solitaire", "big-two"];
+    "sudoku", "word-tiles", "farkle", "backgammon", "lantern-run", "xiangqi", "gomoku", "mahjong-solitaire", "big-two", "koi-koi", "nonograms"];
   const cards = page.getByRole("region", { name: "Choose a game" }).getByRole("link");
   await expect(cards).toHaveCount(games.length);
   await expect(cards.filter({ hasText: "↗" })).toHaveCount(0);
@@ -96,6 +96,32 @@ test("catalog links announce the game and player context without changing the in
     "Solo · Draw one Build four suited piles from ace to king; alternate colors in the tableau.");
   await expect(page.getByRole("link", { name: "Play Mahjong Solitaire", exact: true })).toHaveAccessibleDescription(
     "Solo · Tile matching Match free pairs from a four-tier lantern stack. Play and save in this browser.");
+  await expect(page.getByRole("link", { name: "Set up Koi-Koi", exact: true })).toHaveAccessibleDescription(
+    "2 players · Flower cards Match cards by month, collect scoring sets, and bank your points or call Koi-Koi.");
+  await expect(page.getByRole("link", { name: "Play Ink Grids", exact: true })).toHaveAccessibleDescription(
+    "Solo · Picture logic Read the row and column clues to uncover a picture. Play and save in this browser.");
+});
+
+test("Ink Grids opens its canonical browser-only route without guest, music, or social traffic", async ({
+  page, baseURL, request,
+}) => {
+  const mount = new URL(baseURL!);
+  const bare = await request.get(new URL("nonograms?from=bookmark", mount).href, { maxRedirects: 0 });
+  expect(bare.status()).toBe(308);
+  expect(bare.headers().location).toBe(`${mount.pathname}nonograms/?from=bookmark`);
+  expect((await request.get(new URL("nonograms/private-table/", mount).href)).status()).toBe(404);
+  await page.addInitScript(mount => localStorage.setItem(`${mount}court-music`, "pending-on"), mount.pathname);
+  const requests = new Set<string>();
+  page.on("request", request => requests.add(new URL(request.url()).pathname));
+  await page.setViewportSize({ width: 320, height: 730 });
+  await page.goto(new URL("nonograms/", mount).href);
+  await expect(page).toHaveTitle("Ink Grids · Jade Court");
+  await expect(page.getByRole("heading", { name: "Ink Grids", exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole("link", { name: "‹ All games", exact: true })).toHaveAttribute("href", mount.pathname);
+  await expect(page.getByRole("button", { name: /Online lobby|Music/ })).toHaveCount(0);
+  await fitsPhone(page);
+  expect([...requests].filter(path => /\/api\/|\/assets\/(?:ambient|social|koi-koi)-/.test(path))).toEqual([]);
+  expect([...requests]).toEqual(expect.arrayContaining([expect.stringMatching(/\/assets\/nonograms-[\w-]+\.js$/)]));
 });
 
 test("the mounted Mahjong Solitaire route paints and plays the local stack without creating a guest", async ({ page, baseURL, request }, info) => {

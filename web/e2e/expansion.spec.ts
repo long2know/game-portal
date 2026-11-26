@@ -13,6 +13,19 @@ type BigTwo = {
   ownCards: BigTwoCard[]; legalMasks: number[]; canPass: boolean;
   lastPlay: { seat: number; cards: BigTwoCard[]; kind: string } | null;
 };
+type KoiCard = { id: number; month: number; kind: "bright" | "animal" | "ribbon" | "plain"; name: string };
+type KoiPlay = { cardId: number; targetIds: number[] };
+type KoiKoi = {
+  phase: "hand" | "draw" | "decision" | "roundEnd" | "finished";
+  turnSeat: number | null; dealerSeat: number; round: number; totalRounds: number;
+  ownCards: KoiCard[]; field: KoiCard[]; stockCount: number; drawnCard: KoiCard | null;
+  seats: { seat: number; handCount: number; score: number; continued: boolean; yaku: { name: string; points: number }[]; captured: KoiCard[] }[];
+  legalActions: { plays: KoiPlay[]; drawTargets: number[]; canScore: boolean; canContinue: boolean; canNextRound: boolean };
+  result: { winnerSeat: number | null; points: number; basePoints: number; sevenPointBonus: boolean; opponentContinued: boolean; nextDealerSeat: number } | null;
+  matchWinnerSeat: number | null;
+};
+type KoiAction = { kind: "play"; cardId: number; targetId?: number } | { kind: "takeDraw"; targetId: number }
+  | { kind: "score" } | { kind: "continue" };
 type Poker = {
   handNumber: number; actingSeat: number | null; ownCards: Card[]; board: Card[];
   legalActions: { raise?: { minTo: number; maxTo: number }; canFold: boolean; canCheck: boolean; callAmount: number | null } | null;
@@ -40,6 +53,7 @@ const routes = [
   ["farkle", "Farkle", "Set up Farkle", "farkle/resume", "farkle", "Play a bot"],
   ["backgammon", "Backgammon", "Set up Backgammon", "backgammon/resume", "backgammon", "Play a bot"],
   ["big-two", "Big Two", "Set up Big Two", "big-two/resume", "big-two", "Play with bots"],
+  ["koi-koi", "Koi-Koi", "Set up Koi-Koi", "koi-koi/resume", "koi-koi", "Play a bot"],
 ] as const;
 const button = (page: Page | Locator, name: string | RegExp) => page.getByRole("button", { name, exact: true });
 const watch = (page: Page, url: string, method = "POST") =>
@@ -132,6 +146,46 @@ const pokerCards = (page: Page) => page.getByRole("group", { name: "Your cards",
 const suitNames = ["clubs", "diamonds", "hearts", "spades"];
 const cardName = (rank: number, suit: string) => `${({ 1: "Ace", 11: "Jack", 12: "Queen", 13: "King", 14: "Ace" } as Record<number, string>)[rank] ?? rank} of ${suit}`;
 
+const flowerHand = (page: Page) => page.getByRole("group", { name: "Your cards", exact: true });
+const flowerField = (page: Page) => page.getByRole("group", { name: "Field cards", exact: true });
+const flowerCard = (area: Locator, id: number) => area.locator(`[data-card-id="${id}"]`);
+const flowerTable = (page: Page) => page.getByRole("region", { name: "Koi-Koi playing area" });
+const flowerIds = (area: Locator) => area.locator("[data-card-id]").evaluateAll(cards => cards.map(card => Number(card.getAttribute("data-card-id"))));
+const emptyFlowerActions = { plays: [], drawTargets: [], canScore: false, canContinue: false, canNextRound: false };
+const flowerAction = (play: KoiPlay, target = play.targetIds[0]): KoiAction => ({
+  kind: "play", cardId: play.cardId, ...(play.targetIds.length === 2 ? { targetId: target } : {}),
+});
+
+async function flowerRead(page: Page, endpoint: string): Promise<Table<KoiKoi>> {
+  const response = await page.request.get(endpoint);
+  expect(response.ok(), new URL(endpoint).pathname).toBe(true);
+  return response.json();
+}
+
+async function flowerWrite(page: Page, endpoint: string, table: Table<KoiKoi>, action?: KoiAction): Promise<Table<KoiKoi>> {
+  const response = await page.request.post(`${endpoint}/${action ? "actions" : "next"}`, {
+    headers: { Origin: new URL(endpoint).origin },
+    data: { revision: table.revision, ...(action ? { action } : {}) },
+  });
+  expect(response.ok(), `Koi-Koi ${action?.kind ?? "next"}: ${response.ok() ? "" : await response.text()}`).toBe(true);
+  return response.json();
+}
+
+function flowerCandidate({ legalActions, ownCards, field }: KoiKoi): KoiAction | undefined {
+  const value = (id: number) => {
+    const card = [...ownCards, ...field].find(card => card.id === id);
+    return id === 32 ? 8 : card?.kind === "bright" ? 5 : card?.kind === "ribbon" ? 3 : card?.kind === "animal" ? 2 : 1;
+  };
+  const choices = legalActions.plays.flatMap(play => (play.targetIds.length === 2 ? play.targetIds : [undefined]).map(target => ({
+    weight: play.targetIds.length ? value(play.cardId) + (target === undefined
+      ? play.targetIds.reduce((n, id) => n + value(id), 0) : value(target)) : -value(play.cardId),
+    action: flowerAction(play, target),
+  }))).sort((a, b) => b.weight - a.weight);
+  if (choices.length) return choices[0].action;
+  const draw = [...legalActions.drawTargets].sort((a, b) => value(b) - value(a))[0];
+  if (draw !== undefined) return { kind: "takeDraw", targetId: draw };
+}
+
 test.describe("mounted Jade Court expansion", () => {
   test.beforeEach(async ({ baseURL, page }) => {
     test.skip(!baseURL || !/^\/(?:game-)?portal\/$/.test(new URL(baseURL).pathname), "Requires the mounted portal runtime.");
@@ -148,7 +202,7 @@ test.describe("mounted Jade Court expansion", () => {
     await page.goto(url());
     await expect(page.getByRole("heading", { name: "Find your next move." })).toBeVisible();
     const featureAssets = () => [...seen].filter(path =>
-      /\/assets\/(?:holdem|solitaire|sudoku|words|farkle|backgammon|big-two|multiplayer|solo|cards|shared|room)-/.test(path));
+      /\/assets\/(?:holdem|solitaire|sudoku|words|farkle|backgammon|big-two|koi-koi|koi-deck|koi-felt|nonograms|multiplayer|solo|cards|shared|room)-/.test(path));
     expect(featureAssets()).toEqual([]);
     for (const [route, name, linkName, api, chunk, entry] of routes) {
       const bare = await request.get(url(`${route}?from=bookmark`), { maxRedirects: 0 });
@@ -174,6 +228,289 @@ test.describe("mounted Jade Court expansion", () => {
       await expect(page).toHaveURL(url());
     }
     expect(errors).toEqual([]);
+  });
+
+  test("Koi-Koi invites a second guest, matches a real month, and resumes only that guest’s hand", async ({ page, browser, baseURL }, info) => {
+    const url = (path: string) => new URL(path, baseURL).href;
+    const destination = url("koi-koi/");
+    await page.goto(destination);
+    await expect(page.locator(".koi-study .koi-card-art")).toHaveCount(3);
+    await expect(page.locator(".koi-study")).toHaveCSS("background-image", /koi-felt-[\w-]+\.svg/);
+    await targets(button(page, "Invite a friend"));
+    await page.locator(".koi-study").screenshot({ path: info.outputPath("koi-koi-study-320.png") });
+    const created = watch(page, url("api/koi-koi/tables"));
+    await button(page, "Invite a friend").tap();
+    const response = await created;
+    expect(response.request().postDataJSON()).toEqual({ players: 2, bots: false });
+    const waiting = await body<Table<KoiKoi>>(response);
+    expect(waiting.position).toBeNull();
+    await expect(button(page, "Invite players")).toBeEnabled();
+    const invite = await page.getByRole("textbox", { name: "Invite link" }).inputValue();
+    expect(new URL(invite).pathname).toBe(new URL(destination).pathname);
+    expect(new URL(invite).hash).toMatch(/^#invite=.+$/);
+    const peer = await browser.newContext({ viewport: portrait, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
+    const friend = await peer.newPage();
+    try {
+      await friend.goto(invite);
+      await friend.getByRole("textbox", { name: "Display name" }).fill("Reed");
+      const joined = watch(friend, url("api/koi-koi/join"));
+      await button(friend, "Join table").tap();
+      let table = await body<Table<KoiKoi>>(await joined);
+      await expect(friend).toHaveURL(destination);
+      expect(table.id).toBe(waiting.id);
+      expect(table.seat).not.toBe(waiting.seat);
+      const endpoint = url(`api/koi-koi/tables/${table.id}`);
+      const players = [page, friend];
+      let play: KoiPlay | undefined;
+      for (let attempts = 0; attempts < 18; attempts++) {
+        if (table.position.legalActions.canNextRound) {
+          table = await flowerWrite(players[table.seat], endpoint, table);
+          continue;
+        }
+        const turn = table.position.turnSeat!;
+        expect([0, 1]).toContain(turn);
+        if (table.seat !== turn) table = await flowerRead(players[turn], endpoint);
+        const legal = table.position.legalActions;
+        play = legal.plays.find(play => play.targetIds.length === 2) ?? legal.plays.find(play => play.targetIds.length > 0);
+        if (play) break;
+        const move = legal.canScore ? { kind: "score" } as const : flowerCandidate(table.position);
+        expect(move, "a legal move before the first matching hand play").toBeDefined();
+        table = await flowerWrite(players[turn], endpoint, table, move);
+      }
+      expect(play, "a real same-month capture").toBeDefined();
+      const match = play!;
+      const opened = players[table.seat];
+      const opponent = players[1 - table.seat];
+      await opened.reload();
+      const other = await flowerRead(opponent, endpoint);
+      const tray = flowerHand(opened);
+      await expect(tray.getByRole("button")).toHaveCount(table.position.ownCards.length);
+      await expect(flowerHand(opponent).getByRole("button")).toHaveCount(other.position.ownCards.length);
+      expect(await flowerIds(tray)).toEqual(table.position.ownCards.map(card => card.id));
+      expect(await flowerIds(flowerHand(opponent))).toEqual(other.position.ownCards.map(card => card.id));
+      expect(await flowerIds(flowerField(opened))).toEqual(table.position.field.map(card => card.id));
+      await expect.poll(() => flowerIds(flowerField(opponent))).toEqual(table.position.field.map(card => card.id));
+      const opponentVisible = await flowerIds(flowerTable(opponent));
+      expect(opponentVisible.filter(id => table.position.ownCards.some(card => card.id === id))).toEqual([]);
+      await expect(opponent.locator(`.koi-seat[data-seat="${table.seat}"]`)).toContainText(`${table.position.ownCards.length} in hand`);
+      await fits(opened);
+      await targets(...await tray.getByRole("button").all());
+      await expect(tray.locator(".koi-face-top").first()).toBeVisible();
+      await opened.screenshot({ path: info.outputPath("koi-koi-320-opening.png"), fullPage: true });
+      await desktopCrop(opened, flowerTable(opened), info.outputPath("koi-koi-desktop.png"));
+      await opened.setViewportSize({ width: 740, height: 320 });
+      await fits(opened);
+      await targets(...await tray.getByRole("button").all());
+      await flowerTable(opened).scrollIntoViewIfNeeded();
+      await expect(tray.getByRole("button").first()).toBeInViewport({ ratio: .9 });
+      await expect(flowerField(opened).getByRole("button").first()).toBeInViewport({ ratio: .9 });
+      await opened.screenshot({ path: info.outputPath("koi-koi-740x320.png") });
+      await opened.setViewportSize(portrait);
+      const chosen = flowerCard(tray, match.cardId);
+      const submitted: KoiAction[] = [];
+      opened.on("request", event => {
+        if (event.url() === `${endpoint}/actions`) submitted.push(event.postDataJSON().action);
+      });
+      await chosen.tap();
+      await expect(chosen).toHaveAttribute("aria-pressed", "true");
+      const matches = flowerField(opened).locator("[data-match]");
+      expect(await matches.evaluateAll(cards => cards.map(card => Number(card.getAttribute("data-card-id"))).sort((a, b) => a - b)))
+        .toEqual([...match.targetIds].sort((a, b) => a - b));
+      expect(submitted).toEqual([]);
+      const send = watch(opened, `${endpoint}/actions`);
+      if (match.targetIds.length === 2) {
+        await expect(button(opened, "Capture match")).toBeHidden();
+        const target = flowerCard(flowerField(opened), match.targetIds[0]);
+        await targets(target);
+        await target.tap();
+      } else await button(opened, match.targetIds.length === 1 ? "Capture match" : "Capture all three").tap();
+      const reply = await send;
+      expect(reply.request().postDataJSON()).toEqual({ revision: table.revision, action: flowerAction(match) });
+      const moved = await body<Table<KoiKoi>>(reply);
+      const captured = moved.position.seats.find(seat => seat.seat === moved.seat)!.captured.map(card => card.id);
+      expect(captured).toEqual(expect.arrayContaining([match.cardId, ...(match.targetIds.length === 2 ? match.targetIds.slice(0, 1) : match.targetIds)]));
+      await expect(chosen).toHaveCount(0);
+      const publicTray = opponent.locator(".koi-trays summary").filter({ hasText: / · Captures/ });
+      await expect(publicTray).toContainText(`· ${captured.length}`);
+      await publicTray.tap();
+      expect(await flowerIds(opponent.getByRole("group", { name: /Captured cards/ }))).toEqual(captured);
+      await opponent.goto(url(""));
+      const save = opponent.getByRole("button", { name: "Continue Koi-Koi", exact: true });
+      await expect(save).toBeVisible();
+      await expect(opponent.getByRole("button", { name: "Start fresh: Koi-Koi", exact: true })).toHaveCount(0);
+      const savedSeat = watch(opponent, endpoint, "GET");
+      await save.tap();
+      const resumed = await body<Table<KoiKoi>>(await savedSeat);
+      expect(resumed).toMatchObject({ id: table.id, seat: other.seat });
+      await expect(opponent).toHaveURL(destination);
+      await expect(flowerHand(opponent).getByRole("button")).toHaveCount(resumed.position.ownCards.length);
+      expect(await flowerIds(flowerHand(opponent))).toEqual(resumed.position.ownCards.map(card => card.id));
+    } finally { await peer.close(); }
+  });
+
+  test("Koi-Koi banks a real scoring set and makes the next round with the earned points", async ({ page, baseURL }) => {
+    const url = (path: string) => new URL(path, baseURL).href;
+    await page.goto(url("koi-koi/"));
+    const created = watch(page, url("api/koi-koi/tables"));
+    await button(page, "Play a bot").tap();
+    let table = await body<Table<KoiKoi>>(await created);
+    const endpoint = url(`api/koi-koi/tables/${table.id}`);
+    for (let steps = 0; steps < 45 && !(table.position.legalActions.canScore && table.position.round < table.position.totalRounds); steps++) {
+      const action = flowerCandidate(table.position);
+      if (action) table = await flowerWrite(page, endpoint, table, action);
+      else if (table.position.legalActions.canNextRound) table = await flowerWrite(page, endpoint, table);
+      else break;
+    }
+    expect(table.position.legalActions.canScore, "a scoring turn in actual bot play").toBe(true);
+    expect(table.position.round).toBeLessThan(table.position.totalRounds);
+    await page.reload();
+    const bank = button(page, "Bank points");
+    await targets(bank);
+    const seat = table.position.seats.find(seat => seat.seat === table.seat)!;
+    expect(seat.yaku.length).toBeGreaterThan(0);
+    for (const set of seat.yaku) await expect(page.locator(".koi-decision")).toContainText(set.name);
+    const scored = watch(page, `${endpoint}/actions`);
+    await bank.focus();
+    await page.keyboard.press("Enter");
+    const scoring = await scored;
+    expect(scoring.request().postDataJSON()).toEqual({ revision: table.revision, action: { kind: "score" } });
+    const settled = await body<Table<KoiKoi>>(scoring);
+    expect(settled.position.result?.winnerSeat).toBe(table.seat);
+    const points = settled.position.result!.points;
+    expect(points).toBeGreaterThan(0);
+    await expect(page.getByRole("region", { name: "Round result" })).toContainText(`You banked ${points}`);
+    await expect(page.locator(`.koi-seat[data-seat="${table.seat}"] .koi-seat-score strong`)).toHaveText(String(seat.score + points));
+    const next = button(page, "Next round");
+    await targets(next);
+    await expect(next).toBeFocused();
+    const dealt = watch(page, `${endpoint}/next`);
+    await next.tap();
+    const progress = await dealt;
+    expect(progress.request().postDataJSON()).toEqual({ revision: settled.revision });
+    const newRound = await body<Table<KoiKoi>>(progress);
+    expect(newRound.id).toBe(table.id);
+    expect(newRound.position.round).toBe(table.position.round + 1);
+    expect(newRound.position.dealerSeat).toBe(settled.position.result!.nextDealerSeat);
+    expect(newRound.position.seats.find(item => item.seat === table.seat)!.score).toBe(seat.score + points);
+    await expect(page.getByText(`Round ${newRound.position.round} / ${newRound.position.totalRounds}`, { exact: true })).toBeVisible();
+    await expect(page.locator(".koi-card[aria-pressed=true]")).toHaveCount(0);
+  });
+
+  test("Koi-Koi projected fixture exercises exact targets, focus, and a stacked Koi-Koi award", async ({ page, baseURL }, info) => {
+    // Only the Koi-Koi snapshots are substituted; the built shell, assets and input code are the real app.
+    const url = (path: string) => new URL(path, baseURL).href;
+    await page.route(url("koi-koi/"), async route => route.fulfill({ response: await route.fetch({ url: url("") }) }));
+    const sample = (id: number, kind: KoiCard["kind"], name: string): KoiCard => ({ id, month: Math.floor(id / 4) + 1, kind, name });
+    const crane = sample(0, "bright", "Crane");
+    const pineRibbon = sample(1, "ribbon", "Pine poem");
+    const pinePlain = sample(2, "plain", "Pine");
+    const cherry = sample(8, "bright", "Curtain");
+    const geese = sample(29, "animal", "Geese");
+    const moon = sample(28, "bright", "Moon");
+    const cup = sample(32, "animal", "Cup");
+    const pampas = sample(31, "plain", "Pampas grass");
+    const otherField = [cherry, sample(12, "animal", "Cuckoo"), sample(13, "ribbon", "Wisteria ribbon"), sample(14, "plain", "Wisteria")];
+    const ownCards = [crane, sample(4, "animal", "Warbler"), sample(9, "ribbon", "Cherry poem"), sample(15, "plain", "Wisteria"),
+      sample(36, "animal", "Deer")];
+    const seat = { seat: 0, handCount: ownCards.length, score: 0, continued: false, yaku: [], captured: [cup] };
+    const other = { ...seat, seat: 1, handCount: 4, captured: [] };
+    const opening: KoiKoi = {
+      phase: "hand", turnSeat: 0, dealerSeat: 0, round: 1, totalRounds: 4, result: null, matchWinnerSeat: null,
+      ownCards, field: [pineRibbon, pinePlain, ...otherField, moon, pampas], drawnCard: null, stockCount: 14, seats: [seat, other],
+      legalActions: { ...emptyFlowerActions, plays: [{ cardId: 0, targetIds: [1, 2] }, { cardId: 4, targetIds: [] },
+        { cardId: 9, targetIds: [8] }, { cardId: 15, targetIds: [12, 13, 14] }, { cardId: 36, targetIds: [] }] },
+    };
+    const draw: KoiKoi = {
+      ...opening, phase: "draw", ownCards: ownCards.slice(1), drawnCard: geese, stockCount: 13, field: [pineRibbon, ...otherField, moon, pampas],
+      seats: [{ ...seat, handCount: ownCards.length - 1, captured: [crane, pinePlain, cup] }, other],
+      legalActions: { ...emptyFlowerActions, drawTargets: [28, 31] },
+    };
+    const decision: KoiKoi = {
+      ...draw, phase: "decision", drawnCard: null, field: draw.field.filter(card => card.id !== 28),
+      seats: [{ ...draw.seats[0], captured: [...draw.seats[0].captured, geese, moon], yaku: [{ name: "Moon Viewing", points: 5 }] }, other],
+      legalActions: { ...emptyFlowerActions, canScore: true, canContinue: true },
+    };
+    const result: KoiKoi = {
+      ...decision, phase: "roundEnd", turnSeat: null,
+      seats: [{ ...decision.seats[0], continued: true }, { ...other, score: 28 }],
+      result: { winnerSeat: 1, points: 28, basePoints: 7, sevenPointBonus: true, opponentContinued: true, nextDealerSeat: 1 },
+      legalActions: { ...emptyFlowerActions, canNextRound: true },
+    };
+    const id = "d".repeat(32);
+    const endpoint = url(`api/koi-koi/tables/${id}`);
+    const submitted: unknown[] = [];
+    let position = opening, revision = 3;
+    const table = () => ({
+      id, seat: 0, revision, status: "playing", invite: null, position,
+      seats: [{ seat: 0, name: "Guest", occupied: true }, { seat: 1, name: "Willow", bot: true, occupied: true }],
+    });
+    await page.route(url("api/koi-koi/resume"), route => route.fulfill({ json: { tableId: id } }));
+    await page.route(endpoint, route => route.fulfill({ json: table() }));
+    await page.route(`${endpoint}/actions`, route => {
+      submitted.push(route.request().postDataJSON());
+      position = revision === 3 ? draw : revision === 4 ? decision : result;
+      revision++;
+      return route.fulfill({ json: table() });
+    });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const artwork = page.waitForResponse(response => /\/assets\/koi-deck-[\w-]+\.svg$/.test(response.url()));
+    await page.goto(url("koi-koi/"));
+    const hand = flowerHand(page);
+    const field = flowerField(page);
+    const arena = flowerTable(page);
+    await expect(hand.getByRole("button")).toHaveCount(ownCards.length);
+    expect((await artwork).ok()).toBe(true);
+    await expect.poll(() => arena.locator(".koi-card-art use").evaluateAll(uses =>
+      uses.every(use => (use as SVGGraphicsElement).getBBox().width > 0))).toBe(true);
+    for (const [cardId, count, action] of [[4, 0, "Leave on field"], [9, 1, "Capture match"], [15, 3, "Capture all three"]] as const) {
+      const card = flowerCard(hand, cardId);
+      await card.tap();
+      await expect(field.locator("[data-match]")).toHaveCount(count);
+      await expect(field.locator("button[aria-disabled=false]")).toHaveCount(0);
+      await targets(button(page, action));
+    }
+    expect(submitted).toEqual([]);
+    const chosen = flowerCard(hand, 0);
+    const ribbon = flowerCard(field, 1);
+    const plain = flowerCard(field, 2);
+    await chosen.focus();
+    await page.keyboard.press("Enter");
+    await expect(ribbon).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(plain).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(chosen).toBeFocused();
+    await expect(chosen).toHaveAttribute("aria-pressed", "false");
+    await page.keyboard.press("Enter");
+    await expect(plain).toHaveAccessibleName("January · Pine · Plain III");
+    await expect(field.locator("button[aria-disabled=false]")).toHaveCount(2);
+    await fits(page);
+    await page.screenshot({ path: info.outputPath("koi-fixture-phone.png"), fullPage: true });
+    await desktopCrop(page, arena, info.outputPath("koi-fixture-desktop.png"));
+    await page.setViewportSize({ width: 740, height: 320 });
+    await fits(page);
+    await targets(chosen, ribbon, plain);
+    await arena.screenshot({ path: info.outputPath("koi-fixture-landscape.png") });
+    await plain.tap();
+    await expect(arena.getByRole("img", { name: "August · Geese · Animal", exact: true })).toBeVisible();
+    await expect(arena.getByText("You captured 2 cards.", { exact: true })).toBeVisible();
+    await expect(flowerCard(field, 28)).toBeFocused();
+    await expect(field.locator("button[aria-disabled=false]")).toHaveCount(2);
+    await page.keyboard.press("Enter");
+    const bank = button(page, "Bank points");
+    const koi = button(page, "Call Koi-Koi");
+    await targets(bank, koi);
+    await expect(bank).toBeFocused();
+    await expect(arena.locator(".koi-decision")).toContainText("Moon Viewing · 5 points");
+    await koi.tap();
+    await expect(arena.getByText("Willow banked 28 points")).toBeVisible();
+    await expect(arena.getByText("7 from sets · 7+ points ×2 · Opponent called Koi-Koi ×2")).toBeVisible();
+    await expect(arena.getByText("Next dealer: Willow")).toBeVisible();
+    expect(submitted).toEqual([
+      { revision: 3, action: { kind: "play", cardId: 0, targetId: 2 } },
+      { revision: 4, action: { kind: "takeDraw", targetId: 28 } },
+      { revision: 5, action: { kind: "continue" } },
+    ]);
   });
 
   test("Big Two plays the exact opening card and rotates back to a real free lead", async ({ page, browser, baseURL }, info) => {

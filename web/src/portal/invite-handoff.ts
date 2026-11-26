@@ -1,5 +1,5 @@
 const games = ["mahjong", "chess", "go", "reversi", "checkers", "chinese-checkers", "holdem", "word-tiles", "farkle", "backgammon",
-  "xiangqi", "gomoku", "big-two"] as const;
+  "xiangqi", "gomoku", "big-two", "koi-koi"] as const;
 export type InviteGame = typeof games[number];
 export type InviteTable = { game: InviteGame; tableId: string };
 

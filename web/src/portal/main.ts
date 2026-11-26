@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import "./styles.css";
 import { icon } from "../dom";
 import type { Guest } from "../protocol";
@@ -13,7 +14,7 @@ import { onlineLobby } from "./social-entry";
 const app = document.querySelector<HTMLElement>("#app")!;
 const mount = app.dataset.base ?? "/";
 const route = location.pathname.startsWith(mount) ? location.pathname.slice(mount.length).replace(/\/$/, "") : "";
-const localPuzzle = route === "mahjong-solitaire" || route === "daily-court";
+const localPuzzle = route === "mahjong-solitaire" || route === "daily-court" || route === "nonograms";
 const api = portalApi(mount);
 let guest: Guest | undefined;
 let opening: Promise<Guest> | undefined;
@@ -100,11 +101,15 @@ const expansions = {
   farkle: () => import("./games/farkle"),
   backgammon: () => import("./games/backgammon"),
   "big-two": () => import("./games/big-two"),
+  "koi-koi": () => import("./games/koi-koi"),
 };
 if (route === "daily-court") {
   void openGame("Daily Court", async () => (await import("./daily-court")).mountDailyCourt(main, mount));
 } else if (route === "mahjong-solitaire") {
   void openGame(catalog[route].name, async () => (await import("./games/mahjong-solitaire")).mount({ main, mount }));
+} else if (route === "nonograms") {
+  const puzzles = import.meta.glob<{ mount: (host: Pick<PortalHost, "main" | "mount">) => void }>("./games/nonograms.ts");
+  void openGame(catalog[route].name, async () => (await puzzles["./games/nonograms.ts"]()).mount({ main, mount }));
 } else if (music) {
   const onlineGame = isInviteGame(route);
   const localOnly = !onlineGame && route !== "solitaire" && route !== "sudoku";

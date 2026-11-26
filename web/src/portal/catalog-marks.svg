@@ -277,6 +277,32 @@
       <path d="m36 13 1 14m16 10v5h-5" fill="none" stroke="#d7bb93"/>
     </g>
   </symbol>
+  <symbol id="koi-koi" viewBox="0 0 72 60">
+    <path fill="#694739" d="M0 0h72v60H0z"/>
+    <path fill="#ad7a5f" d="M4 3h64v54H4z"/>
+    <path fill="#51434a" d="M7 6h58v48H7z"/>
+    <path d="M9 12q12 11 24 0 12 11 30 0M9 48q12-11 24 0 12-11 30 0" fill="none" stroke="#9b776d"/>
+    <g transform="rotate(-15 26 31)">
+      <rect x="15" y="12" width="20" height="36" rx="2" fill="#eaddb9" stroke="#392c2b"/>
+      <path fill="#aa5c52" d="M18 19h14v10l-4-2-4 1-6-3z"/>
+      <path d="M18 41l13-6m-7 3v-5m4 4 4 4" fill="none" stroke="#5c4840"/>
+      <path d="m20 35 3-6 5 2-2 6zm6 5 4-2 3 4-5 2z" fill="#c58081"/>
+    </g>
+    <g transform="rotate(13 48 28)">
+      <rect x="36" y="10" width="21" height="37" rx="2" fill="#eedcba" stroke="#392c2b"/>
+      <circle cx="47" cy="26" r="7" fill="#d6a767" stroke="#846454"/>
+      <path d="M38 37q9-7 17 0v7H38z" fill="#4d5e52"/>
+      <path d="m41 44 1-10m4 10-1-7m6 7 2-10" stroke="#c5a274"/>
+    </g>
+  </symbol>
+  <symbol id="nonograms" viewBox="0 0 72 60">
+    <path fill="#674a3b" d="M0 0h72v60H0z"/>
+    <path d="m8 9 57-2v46H8z" fill="#bd8e68"/>
+    <path d="M12 9h49v41H12z" fill="#ecdbb4" stroke="#7f6551"/>
+    <path d="M25 19h30v25H25zM31 19v25m6-25v25m6-25v25m6-25v25M25 24h30m-30 5h30m-30 5h30m-30 5h30m-13-25h3m-10 0h3m-23 11h4m-4 10h4m-4 5h4" fill="none" stroke="#8c765f" stroke-width=".9"/>
+    <path d="M31 24h6v5h-6zm12 0h6v5h-6zm-18 5h30v5H25zm6 5h18v5H31zm6 5h6v5h-6z" fill="#435d54"/>
+    <path d="m55 46 11-14 3 2-11 14-4 2z" fill="#9d5549" stroke="#684039"/>
+  </symbol>
   <symbol id="daily-court" viewBox="0 0 72 60">
     <path d="M5 15 64 4l5 47-60 7Z" fill="#684434"/>
     <path d="M7 15 64 6l2 42-55 7Z" fill="#a56f50" stroke="#c58d63"/>

@@ -137,6 +137,27 @@ clock is controlled for repeatable test dates, but the puzzles, art, and play
 paths are not fixtures. The catalog browser spec checks the complete cold
 portal byte budget, including the sheet that carries the Daily Court stamp.
 
+## Flower cards and Ink Grids
+
+The [expansion spec](../web/e2e/expansion.spec.ts) opens a real two-guest Koi-Koi
+table, selects a same-month match, compares the two recipient hands and public
+captures, and reopens the same seat through Continue. A bot-table case banks a
+real scoring set and checks the new dealer and carried points after **Next round**.
+The [social spec](../web/e2e/social.spec.ts) separately accepts an inbox invite
+without a link credential. Keep `SOCIAL_FIXTURES` unset for that integration check.
+
+The expansion spec retains opening captures at 320 px portrait, 1366×900 and
+740×320. It checks 44 px minimum targets without horizontal scrolling; on a short
+viewport players can scroll to the capture trays. Its separately named projected
+fixture checks keyboard focus between the hand and field, exact two-target hand
+and draw requests, and the display of stacked round multipliers. Those fixture
+snapshots do not qualify the scoring engine or server admission.
+
+The [catalog spec](../web/e2e/catalog.spec.ts) asserts the order and painted marks
+of all nineteen destinations. It also opens `nonograms/` as **Ink Grids** with a
+remembered music preference and verifies no music controls, guest or social
+requests.
+
 ## Asset and feedback budget
 
 The frozen Lantern Hall package measures **32,613 gzip bytes** cold, including the favicon, 155 bytes below the **32 KiB** budget. Full play is **58,214 bytes**, plus **638 bytes** for the optional Settings Fullscreen chunk (**58,852 bytes** for all static assets). The Hall and cast load as deferred JS and CSS when entering the table or its waiting room, and the suited-face SVG loads at the first marked face. These are same-origin assets; no font files, audio recordings or video are fetched. The earlier depth and seat-actor build measured **32,682 bytes** cold (86 bytes below budget) and **50,087 bytes** for the full table. The **30,634-byte** cold and **42,429-byte** full-table estimates are historical, from the desktop, tile-art and motion pass before depth and actors. See [asset provenance and the budget breakdown](assets.md#static-asset-budget) for these per-file gzip estimates, not HTTP transfer measurements.

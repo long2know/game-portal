@@ -1,8 +1,8 @@
 export const boardIds = ["chess", "go", "reversi", "checkers", "chinese-checkers", "xiangqi", "gomoku"] as const;
-export const expansionIds = ["holdem", "solitaire", "sudoku", "word-tiles", "farkle", "backgammon", "big-two"] as const;
+export const expansionIds = ["holdem", "solitaire", "sudoku", "word-tiles", "farkle", "backgammon", "big-two", "koi-koi"] as const;
 export type BoardId = typeof boardIds[number];
 export type ExpansionId = typeof expansionIds[number];
-export type GameId = BoardId | ExpansionId | "mahjong" | "lantern-run" | "mahjong-solitaire";
+export type GameId = BoardId | ExpansionId | "mahjong" | "lantern-run" | "mahjong-solitaire" | "nonograms";
 
 const jadeLettersName = "Jade Letters";
 
@@ -91,6 +91,16 @@ export const catalog: Record<GameId, { name: string; seats: string; description:
     name: "Big Two", seats: "4 players · Card shedding",
     description: "Open with the three of diamonds, beat the play, and be first to empty your hand.",
     invitation: "Set up Big Two",
+  },
+  "koi-koi": {
+    name: "Koi-Koi", seats: "2 players · Flower cards",
+    description: "Match cards by month, collect scoring sets, and bank your points or call Koi-Koi.",
+    invitation: "Set up Koi-Koi",
+  },
+  nonograms: {
+    name: "Ink Grids", seats: "Solo · Picture logic",
+    description: "Read the row and column clues to uncover a picture. Play and save in this browser.",
+    invitation: "Play Ink Grids",
   },
 };
 

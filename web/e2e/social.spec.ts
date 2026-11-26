@@ -411,6 +411,38 @@ test("a Hold’em handoff reads the Poker member view and keeps the other cards 
   } finally { await guest.context().close(); }
 });
 
+test("a Koi-Koi player invite opens the exact flower table without a link credential", async ({ page, browser, baseURL }, info) => {
+  const url = urls(baseURL!);
+  const guest = await phone(browser);
+  let share = "";
+  const hostName = `Peony ${info.project.name}`, guestName = `Clover ${info.project.name}`;
+  const mock = fixture((_, visitor) => joinByLink(visitor, url, "koi-koi", share));
+  try {
+    await Promise.all([mock(page, hostName), mock(guest, guestName)]);
+    await Promise.all([page.goto(url("koi-koi/")), guest.goto(url())]);
+    await optIn(page, hostName);
+    await optIn(guest, guestName);
+    const created = receive(page, url("api/koi-koi/tables"), "POST");
+    await tap(page, "Invite a friend");
+    const response = await created;
+    expect(response.ok()).toBe(true);
+    const { id } = await response.json() as { id: string };
+    share = await page.getByRole("textbox", { name: "Invite link" }).inputValue();
+    await send(page, guestName, { game: "koi-koi", tableId: id });
+    const member = receive(guest, url(`api/koi-koi/tables/${id}`), "GET");
+    await accept(guest, url("koi-koi/"), hostName);
+    const opened = await member;
+    expect(opened.ok()).toBe(true);
+    const view = await opened.json() as { id: string; seat: number; position: { ownCards: { id: number }[] } };
+    expect(view).toMatchObject({ id, seat: 1 });
+    const hand = guest.getByRole("group", { name: "Your cards", exact: true });
+    await expect(hand.getByRole("button")).toHaveCount(view.position.ownCards.length);
+    expect(await hand.locator("[data-card-id]").evaluateAll(cards => cards.map(card => Number(card.getAttribute("data-card-id")))))
+      .toEqual(view.position.ownCards.map(card => card.id));
+    expect(new URL(guest.url()).search + new URL(guest.url()).hash).toBe("");
+  } finally { await guest.context().close(); }
+});
+
 for (const visibility of ["invite", "public"] as const) {
   const kind = visibility === "invite" ? "private" : "public";
   test(`a ${kind} Mahjong invite opens the exact saved seat without browsing taking it over`, async ({ page, browser, baseURL }, info) => {

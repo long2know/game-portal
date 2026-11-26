@@ -8,7 +8,7 @@ import { button, el, link, text } from "./dom";
 import { isInviteTable, openAcceptedTable } from "./invite-handoff";
 import type { InviteTable } from "./invite-handoff";
 
-const seated = { holdem: "poker", "word-tiles": "words", farkle: "farkle", backgammon: "backgammon", "big-two": "big-two" } as const;
+const seated = { holdem: "poker", "word-tiles": "words", farkle: "farkle", backgammon: "backgammon", "big-two": "big-two", "koi-koi": "koi-koi" } as const;
 type Target = InviteTable | { game: "solitaire" | "sudoku"; tableId: null };
 type Save = Target & { variant: string | null; players: number | null; botDifficulty?: BotDifficulty; canStartFresh: boolean };
 type FreshTable = Pick<Table, "id" | "status" | "seat" | "seats">;

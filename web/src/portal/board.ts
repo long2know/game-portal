@@ -1,3 +1,4 @@
+import "./board-grid.css";
 import "./east-court-boards.css";
 import type { Cell, MotionStep, Move, Position } from "./api";
 import { sideName, token } from "./art";
