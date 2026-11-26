@@ -1,4 +1,3 @@
-/// <reference types="vite/client" />
 import "./styles.css";
 import { icon } from "../dom";
 import type { Guest } from "../protocol";
@@ -105,11 +104,9 @@ const expansions = {
 };
 if (route === "daily-court") {
   void openGame("Daily Court", async () => (await import("./daily-court")).mountDailyCourt(main, mount));
-} else if (route === "mahjong-solitaire") {
-  void openGame(catalog[route].name, async () => (await import("./games/mahjong-solitaire")).mount({ main, mount }));
-} else if (route === "nonograms") {
-  const puzzles = import.meta.glob<{ mount: (host: Pick<PortalHost, "main" | "mount">) => void }>("./games/nonograms.ts");
-  void openGame(catalog[route].name, async () => (await puzzles["./games/nonograms.ts"]()).mount({ main, mount }));
+} else if (route === "mahjong-solitaire" || route === "nonograms") {
+  const load = route === "nonograms" ? () => import("./games/nonograms") : () => import("./games/mahjong-solitaire");
+  void openGame(catalog[route].name, async () => (await load()).mount({ main, mount }));
 } else if (music) {
   const onlineGame = isInviteGame(route);
   const localOnly = !onlineGame && route !== "solitaire" && route !== "sudoku";

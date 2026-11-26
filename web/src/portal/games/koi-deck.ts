@@ -7,7 +7,6 @@ const months = ["January", "February", "March", "April", "May", "June", "July", 
   "September", "October", "November", "December"];
 const kinds = { bright: "Bright", animal: "Animal", ribbon: "Ribbon", plain: "Plain" } as const;
 const seals = { bright: "✦", animal: "◆", ribbon: "⚑", plain: "•" } as const;
-const editions = ["I", "II", "III", "IV"];
 const variants = ["", "translate(64 0) scale(-1 1)", "translate(-9 -6) scale(1.23)", "translate(55 -2) scale(-.87 1.05)"];
 const features: Partial<Record<number, string>> = {
   0: "crane", 4: "warbler", 8: "curtain", 12: "cuckoo", 16: "bridge", 20: "butterflies",
@@ -15,9 +14,12 @@ const features: Partial<Record<number, string>> = {
   43: "lightning", 44: "phoenix",
 };
 
+const category = ({ id, month, kind }: FlowerCard) =>
+  kind === "plain" && month !== 11 ? `Plain ${id % 4 - Number(month !== 12)}` : kinds[kind];
+
 export function flowerName(card: FlowerCard): string {
-  const edition = card.kind === "plain" ? ` ${editions[card.id % 4]}` : "";
-  return `${months[card.month - 1]} · ${card.name} · ${kinds[card.kind]}${edition}`;
+  const kind = category(card);
+  return `${months[card.month - 1]} · ${card.name}${card.name.endsWith(kind) ? "" : ` · ${kind}`}`;
 }
 
 export function flowerFace(card: FlowerCard): HTMLElement {
@@ -31,7 +33,7 @@ export function flowerFace(card: FlowerCard): HTMLElement {
   if (kind === "ribbon") paint(month < 4 ? "poem" : [6, 9, 10].includes(month) ? "blue-ribbon" : "red-ribbon");
   const face = el("span", "koi-face",
     el("span", "koi-face-top", months[month - 1].slice(0, 3), el("span", "", seals[kind])),
-    mark, el("span", "koi-face-kind", `${kinds[kind]}${kind === "plain" ? ` ${editions[id % 4]}` : ""}`));
+    mark, el("span", "koi-face-kind", category(card)));
   face.dataset.kind = kind;
   face.setAttribute("aria-hidden", "true");
   return face;

@@ -35,7 +35,7 @@ function guide(): HTMLElement {
     el("ol", "",
       el("li", "", el("strong", "", "Match the month. "), "Pick a card from your hand. With no match it stays on the field; with one match or three, capture them all. With two matches, pick one."),
       el("li", "", el("strong", "", "Then flip. "), "The stock flips one card on your turn. The same rule applies: if it has two matches, choose one from the field."),
-      el("li", "", el("strong", "", "Bank or call Koi-Koi. "), "Gather scoring sets (yaku) in your captures. Bank to end the round and add points to your total. Call Koi-Koi to keep playing once per round. The next player to make or improve a scoring set ends the round; if your opponent wins after your call, their award doubles."),
+      el("li", "", el("strong", "", "Bank or call Koi-Koi. "), "Gather scoring sets (yaku) in your captures. Bank to end the round and add points to your total. You can call Koi-Koi once per round instead. After your call, you must improve your total to bank. Your opponent can bank if they make a set, and their award doubles."),
       el("li", "", el("strong", "", "Read a card. "), "The month is at the top and the category at the bottom. Artwork and numerals distinguish the plain cards. Use Tab to move between groups, arrow keys to browse cards, Enter to select, and Escape to clear a selection.")));
 }
 
@@ -279,7 +279,7 @@ function view(send: (action: Action) => void, next: () => void): MatchView<Posit
     decision.hidden = position.phase !== "decision" || position.turnSeat !== table.seat;
     decision.replaceChildren(...(decision.hidden ? [] : [sets(position.seats.find(seat => seat.seat === table.seat)?.yaku ?? [])]));
     text(decisionNote, position.legalActions.canContinue ?
-      "Bank to end the round, or call Koi-Koi. The next scoring improvement can win the round for either player." :
+      "Bank to end the round, or call Koi-Koi and give up these points for a chance to score more." :
       "Bank these points to close the round.");
     const outcome = position.result;
     result.hidden = !outcome;

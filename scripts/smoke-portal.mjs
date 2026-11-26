@@ -16,7 +16,7 @@ const { origin, pathname } = app;
 const mount = pathname.slice(0, -1);
 const extraClientRoutes = [
   'holdem', 'solitaire', 'sudoku', 'word-tiles', 'farkle', 'backgammon', 'lantern-run', 'mahjong-solitaire', 'big-two',
-  'daily-court',
+  'daily-court', 'koi-koi', 'nonograms',
 ];
 const newBoards = { xiangqi: 'standard', gomoku: 'freestyle' };
 assert(['http:', 'https:'].includes(app.protocol) && ['/portal', '/game-portal'].includes(mount)

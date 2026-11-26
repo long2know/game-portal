@@ -482,7 +482,7 @@ test.describe("mounted Jade Court expansion", () => {
     await expect(chosen).toBeFocused();
     await expect(chosen).toHaveAttribute("aria-pressed", "false");
     await page.keyboard.press("Enter");
-    await expect(plain).toHaveAccessibleName("January · Pine · Plain III");
+    await expect(plain).toHaveAccessibleName("January · Pine · Plain 1");
     await expect(field.locator("button[aria-disabled=false]")).toHaveCount(2);
     await fits(page);
     await page.screenshot({ path: info.outputPath("koi-fixture-phone.png"), fullPage: true });
