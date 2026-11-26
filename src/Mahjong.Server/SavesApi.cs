@@ -16,7 +16,8 @@ internal static class SavesApi
         [WordsRules.Game.Game] = "word-tiles",
         [FarkleRules.Game.Game] = "farkle",
         [BackgammonRules.Game.Game] = "backgammon",
-        [BigTwoRules.Game.Game] = "big-two"
+        [BigTwoRules.Game.Game] = "big-two",
+        [KoiKoiRules.Game.Game] = "koi-koi"
     };
     private static readonly string[] SeatedGames = [.. SeatedSlugs.Keys];
 

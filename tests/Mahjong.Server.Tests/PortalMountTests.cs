@@ -27,7 +27,7 @@ public sealed class PortalMountTests
         Assert.Equal(mahjong, await ReadShell(mount + "/mahjong/play/reconnect"));
         foreach (var game in new[] { "", "mahjong", "chess", "go", "reversi", "checkers", "chinese-checkers",
             "holdem", "solitaire", "sudoku", "word-tiles", "farkle", "backgammon", "lantern-run", "xiangqi", "gomoku",
-            "mahjong-solitaire", "big-two", "daily-court" })
+            "mahjong-solitaire", "big-two", "daily-court", "koi-koi", "nonograms" })
         {
             var bare = game.Length == 0 ? mount : mount + "/" + game;
             const string query = "?next=invite%2Ftoken&keep=1";
@@ -50,7 +50,7 @@ public sealed class PortalMountTests
                 Assert.NotEmpty(await response.Content.ReadAsByteArrayAsync());
             }
         }
-        foreach (var path in new[] { "/big-two/", "/daily-court/" })
+        foreach (var path in new[] { "/big-two/", "/daily-court/", "/koi-koi/", "/nonograms/" })
         {
             using var head = await http.SendAsync(new HttpRequestMessage(HttpMethod.Head, mount + path));
             Assert.Equal("text/html", head.Content.Headers.ContentType?.MediaType);
@@ -59,7 +59,8 @@ public sealed class PortalMountTests
 
         foreach (var path in new[] { "/", "/mahjong/", mount + "-extra/chess/", mount + "/portal.html", mount + "/index.html",
             mount + "/Chess/", mount + "/chess/unknown", mount + "/chess-extra/", mount + "/unknown", mount + "/mahjong-extra/",
-            mount + "/big-two/unknown", mount + "/big-two-extra/", mount + "/daily-court/unknown", mount + "/api/daily-court" })
+            mount + "/big-two/unknown", mount + "/big-two-extra/", mount + "/daily-court/unknown", mount + "/api/daily-court",
+            mount + "/koi-koi/unknown", mount + "/nonograms/unknown", mount + "/api/nonograms" })
         {
             using var missing = await http.GetAsync(path);
             Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);

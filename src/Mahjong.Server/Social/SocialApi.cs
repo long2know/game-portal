@@ -16,6 +16,7 @@ internal sealed record SocialTarget(string Game, string TableId)
         "farkle" => FarkleRules.Game,
         "backgammon" => BackgammonRules.Game,
         "big-two" => BigTwoRules.Game,
+        "koi-koi" => KoiKoiRules.Game,
         _ => null
     };
     public bool Supported => Mahjong || Board || Seated is not null;

@@ -6,6 +6,7 @@ Set `Portal__Enabled=true` to enable the game APIs and portal shell (the default
 `/portal/chinese-checkers/`, `/portal/holdem/`, `/portal/solitaire/`, `/portal/sudoku/`,
 `/portal/word-tiles/`, `/portal/farkle/`, `/portal/backgammon/`, `/portal/lantern-run/`,
 `/portal/xiangqi/`, `/portal/gomoku/`, `/portal/mahjong-solitaire/`, `/portal/big-two/`,
+`/portal/koi-koi/`, `/portal/nonograms/`,
 and the Daily Court feature at `/portal/daily-court/`. `/portal/mahjong/` and
 its nested SPA routes serve the existing Changsha Mahjong client. The bare routes return
 a 308 with the query intact. Browsers retain the original fragment because the redirect
@@ -17,6 +18,8 @@ Lantern Run has no game API, multiplayer rooms, or invite links. It runs in the 
 and stores only the local best finished score, separately for each mount such as `/portal/`
 or `/game-portal/`. If local storage is unavailable the best lasts until the page is closed
 or reloaded.
+
+Ink Grids (`nonograms/`) also runs in the browser, with no game API, rooms, or invites.
 
 Use a dedicated data volume for the portal (`GamePortal__DataDirectory`, `/data` in the
 image). Its EF migrations preserve existing board, guest/profile and Mahjong data and add
@@ -49,7 +52,7 @@ WebSocket `sync`; the list does not authorize a new membership or any write.
 | Game | Target and setup fields | When `canStartFresh` is true |
 | --- | --- | --- |
 | Shared boards | Catalog game ID, `tableId`, `variant`, `players`, and `botDifficulty` only for bot Chess (`standard` by default). | The guest owns the bot table. Creating another with those options preserves the prior table. |
-| Seated games | Catalog slug (`holdem`, `word-tiles`, `farkle`, `backgammon`, or `big-two`), `tableId` and `players`. | The guest owns the bot table. Create another for the same player count; the prior table is unchanged. |
+| Seated games | Catalog slug (`holdem`, `word-tiles`, `farkle`, `backgammon`, `big-two`, or `koi-koi`), `tableId` and `players`. | The guest owns the bot table. Create another for the same player count; the prior table is unchanged. |
 | Solitaire and Sudoku | `solitaire` or `sudoku` and the saved `variant`; `tableId` is `null`. | The guest has a save. Dealing that variant through the existing endpoint replaces it. |
 | Changsha Mahjong | `mahjong` and the durable member's `tableId` (room ID); other setup fields are `null`. | The member is the room host with exactly three bots, and the room is `playing`, `betweenHands`, or `complete`. Restart in place only after normal WebSocket attachment, using `restartMatch` with the current room revision. |
 
@@ -59,7 +62,7 @@ game's resume endpoint. Expired and explicitly ended board tables are skipped;
 naturally finished board tables remain when resumable. Seated games only include
 unexpired waiting and playing tables. A shared seat, including a disconnected
 Mahjong reservation, can be listed without offering a fresh start. Mahjong waiting
-rooms never offer a fresh start. Browser-local Mahjong Solitaire and Lantern Run
+rooms never offer a fresh start. Browser-local Mahjong Solitaire, Lantern Run, and Ink Grids
 have no server saves.
 
 The lobby's **Continue playing** shelf opens the listed seat, not whichever table
@@ -125,8 +128,8 @@ other guest's current profile name, and expiry is UTC ISO 8601. These responses 
 guest identities, current games, table IDs, or link credentials.
 
 `game` is one of `mahjong`, `chess`, `go`, `reversi`, `checkers`, `chinese-checkers`,
-`xiangqi`, `gomoku`, `holdem`, `word-tiles`, `farkle`, `backgammon`, or `big-two` (the existing HTTP paths for Hold'em
-and Word Tiles are still `/api/poker` and `/api/words`). Send uses the sender's own
+`xiangqi`, `gomoku`, `holdem`, `word-tiles`, `farkle`, `backgammon`, `big-two`, or `koi-koi`
+(the existing HTTP paths for Hold'em and Word Tiles are still `/api/poker` and `/api/words`). Send uses the sender's own
 waiting table ID: the sender must be seated, or be the current host for Mahjong, and
 there must be an open human seat. Sending does not reserve a seat. An identical pending
 send returns the original ID and does not extend its two-minute lifetime. The pending
@@ -337,6 +340,79 @@ For a dealt table, `position` is exactly:
   closed and finished tables, have `legalMasks: []` and `canPass: false`.
 
 No recipient receives other hands, a shuffle seed, or the private checkpoint.
+
+## Koi-Koi
+
+[Koi-Koi](koi-koi-rules.md) is a two-seat, six-round Hanafuda game for points only.
+It uses the shared seated cookie, origin, invite, quotas, and outer revision contract.
+The page is `koi-koi/` and the private invite and saves slug is `koi-koi`, under either
+configured mount.
+
+| Method and path | Body and result |
+| --- | --- |
+| `POST /api/koi-koi/tables` | `{players: 2, bots}`. With `bots: true`, one guest and one bot start immediately; otherwise joining the open seat by link or private invite starts the match. |
+| `POST /api/koi-koi/join` | `{invite}` seats the guest. A member reusing the invite receives the current table without a new deal. |
+| `GET /api/koi-koi/tables/{id}` | Current committed table for a member. |
+| `GET /api/koi-koi/resume` | `{tableId}` for the caller's newest unexpired waiting or playing table, or `null`. |
+| `POST /api/koi-koi/tables/{id}/actions` | `{revision, action}`; see actions below. |
+| `POST /api/koi-koi/tables/{id}/next` | `{revision}`. Either seated guest can start the next round when `canNextRound` is true. |
+| `POST /api/koi-koi/tables/{id}/leave` | `{revision}` closes a waiting or playing table without awarding points or creating a new result. |
+
+The envelope is `{id, revision, status, seat, seats, invite, position, endReason?}`.
+Waiting tables have an invite and `position: null`; once play starts, `invite` is `null`.
+Each accepted write and any bot reply commit as one revision. On `stale_room` (409),
+reload the exact table before retrying. Wrong-turn actions return `not_your_turn`;
+invalid shapes (including a supplied seed or `targetId: null`) return `invalid_request`;
+legal-shaped moves outside the advertised options return `illegal_action`. At the
+break, actions return `round_finished`; `/next` during a live round returns
+`round_in_progress`. After settlement of round six the table is `finished`, even if
+tied, and cannot be changed (`game_finished`). An explicit `closed` table preserves
+the last position, if any, with `turnSeat: null` and no available actions.
+
+```ts
+type Card = {id: number; month: number; kind: "bright" | "animal" | "ribbon" | "plain"; name: string};
+type Position = {
+    phase: "hand" | "draw" | "decision" | "roundEnd" | "finished";
+    turnSeat: number | null;
+    dealerSeat: number;
+    round: number;
+    totalRounds: number;
+    field: Card[];
+    stockCount: number;
+    drawnCard: Card | null;
+    ownCards: Card[];
+    seats: {seat: number; handCount: number; captured: Card[]; score: number;
+        yaku: {name: string; points: number}[]; continued: boolean}[];
+    result: null | {winnerSeat: number | null; points: number; basePoints: number;
+        sevenPointBonus: boolean; opponentContinued: boolean; nextDealerSeat: number};
+    matchWinnerSeat: number | null;
+    legalActions: {plays: {cardId: number; targetIds: number[]}[]; drawTargets: number[];
+        canScore: boolean; canContinue: boolean; canNextRound: boolean};
+};
+```
+
+Seats are zero-based, rounds are 1–6, and `totalRounds` is 6. `score` is a seat's
+cumulative banked score; its `yaku` is the current round's unmultiplied breakdown.
+Card IDs are 0–47 and `month` is `floor(id / 4) + 1`. Other hands are represented only
+by their counts. Stock order, private future deals, seeds, and guest IDs are never
+returned. `turnSeat` is `null` at `roundEnd` and `finished`; only the latter sets the
+table's finished status. `result` reports the settled round; a draw has a null
+`winnerSeat`, zero points, and both bonus flags false. `nextDealerSeat` shows who would
+deal next even in the final result. `matchWinnerSeat` is null before settlement of the
+sixth round and also null for a tie.
+
+- A `hand` turn accepts `{kind: "play", cardId, targetId?}`. Each `targetIds` array
+  lists **all** same-month field IDs. Supply one of them when there are exactly two;
+  **omit** `targetId` with zero, one, or three matches.
+- The stock flips automatically after the hand play. `phase: "draw"` is only a pending
+  two-way capture: `drawnCard` is public to both seats, but only `turnSeat` receives
+  two `drawTargets` and may send `{kind: "takeDraw", targetId}`. Otherwise `drawnCard`
+  is null; a resolved card is part of the field or a capture pile.
+- `decision` follows a completed turn with a qualifying subtotal. The active guest can
+  send `{kind: "score"}` to bank points or `{kind: "continue"}` when `canContinue` is
+  true. A yaku may already be visible during a pending draw; no scoring choice is
+  available until both parts of the turn finish. `canNextRound` is independent of
+  turn and available to both members only at `roundEnd`.
 
 ## Solitaire and Sudoku
 

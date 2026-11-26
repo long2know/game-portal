@@ -125,6 +125,7 @@ if (portalEnabled)
     FarkleRules.Map(app);
     BackgammonRules.Map(app);
     BigTwoRules.Map(app);
+    KoiKoiRules.Map(app);
     SoloApi.Map(app);
     SavesApi.Map(app);
     SocialApi.Map(app);
