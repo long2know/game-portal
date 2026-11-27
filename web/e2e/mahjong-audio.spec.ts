@@ -388,7 +388,8 @@ test("a real published Mahjong game speaks a committed call", async ({ page, bas
   await setVoice(page, selected);
   await button(page, "Play with bots").tap();
   await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
-  await expect(page.getByText("One bird (classic)", { exact: true })).toBeVisible();
+  await expect(page.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
+  expect(current?.room.rulesVersion).toBe("changsha-two-bird-v1");
   const ready = button(page, "Mark ready");
   if (await ready.isVisible()) await ready.tap();
   await button(page, "Start match").tap();
