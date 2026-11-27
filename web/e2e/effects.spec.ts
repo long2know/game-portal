@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Locator, Page, WebSocketRoute } from "@playwright/test";
-import type { ClientMessage, Command, Face, Meld, Seat, Snapshot, Tile } from "../src/protocol";
+import type { ClientMessage, Command, Face, Meld, OptionKind, Seat, Snapshot, Tile } from "../src/protocol";
 
 const origin = `http://127.0.0.1:${process.env.MAHJONG_GEOMETRY_PORT ?? 4179}`;
 const players = ["River", "Willow", "Ink", "Jade"];
@@ -90,8 +90,8 @@ async function open(page: Page, initial: Snapshot, savedMotion = false, freezeAc
   let state = initial;
   const links: WebSocketRoute[] = [];
   const commands: Command[] = [];
-  const ack = (socket: WebSocketRoute, requestId: string) => socket.send(JSON.stringify({
-    v: 1, type: "ack", requestId, status: "ok", error: null, roomId: state.roomId,
+  const ack = (socket: WebSocketRoute, requestId: string, code?: string) => socket.send(JSON.stringify({
+    v: 1, type: "ack", requestId, status: code ? "error" : "ok", error: code ? { code } : null, roomId: state.roomId,
     roomRevision: state.roomRevision, gameRevision: state.gameRevision,
   }));
   const send = (socket: WebSocketRoute) =>
@@ -133,6 +133,10 @@ async function open(page: Page, initial: Snapshot, savedMotion = false, freezeAc
       const socket = links.at(-1)!;
       if (command) ack(socket, command.requestId);
       send(socket);
+    },
+    reject(snapshot: Snapshot, command: Command, code: string) {
+      state = snapshot;
+      ack(links.at(-1)!, command.requestId, code);
     },
     reconnect(snapshot: Snapshot) {
       state = snapshot;
@@ -188,6 +192,300 @@ function discardFrom(prior: Snapshot, seat: Seat, face: Face): Snapshot {
   state.self.legalOptions = [];
   return state;
 }
+
+function phoneClaimTurn(rev: number): Snapshot {
+  const state = frame(rev, 1, false);
+  state.game!.seats[3].concealedCount = 14;
+  state.self.hand = (["b3", "b4", "b4", "b5", "b5", "b6", "b6", "b7", "c2", "c2", "d5", "d5", "d5"] as Face[])
+    .map((face, i) => ({ tileId: `claim-held-${i}`, face }));
+  return state;
+}
+
+function phoneClaim(prior: Snapshot): Snapshot {
+  const state = discardFrom(prior, 3, "b5");
+  state.game!.window!.deadlineUtc = new Date(Date.now() + 8000).toISOString();
+  const options: { kind: OptionKind; faces: Face[]; tiles: number[] }[] = [
+    { kind: "hu", faces: ["b5"], tiles: [] },
+    { kind: "peng", faces: ["b5", "b5", "b5"], tiles: [3, 4] },
+    { kind: "chi", faces: ["b3", "b4", "b5"], tiles: [0, 1] },
+    { kind: "chi", faces: ["b4", "b5", "b6"], tiles: [1, 5] },
+    { kind: "chi", faces: ["b5", "b6", "b7"], tiles: [5, 7] },
+    { kind: "pass", faces: [], tiles: [] },
+  ];
+  state.self.legalOptions = options.map(({ kind, faces, tiles }, i) => ({
+    kind, faces, optionId: `claim-${state.gameRevision}-${i}`, tileIds: tiles.map(at => state.self.hand[at].tileId),
+  }));
+  return state;
+}
+
+function phoneHuResponse(prior: Snapshot, reason: "kong" | "lastTile"): Snapshot {
+  const state = discardFrom(prior, 3, "c3");
+  const game = state.game!;
+  game.window!.reason = reason;
+  game.window!.deadlineUtc = new Date(Date.now() + 8000).toISOString();
+  if (reason === "kong") {
+    game.seats[3].discards.pop();
+    game.seats[3].concealedCount = 11;
+    game.seats[3].melds = [{ kind: "peng", fromSeat: 2, tiles: ["c3", "c3", "c3"] }];
+  } else game.wallCount = 0;
+  state.self.hand = (["b1", "b2", "b3", "b4", "b5", "b6", "c1", "c2", "d2", "d2", "d3", "d4", "d5"] as Face[])
+    .map((face, i) => ({ tileId: `win-held-${i}`, face }));
+  state.self.legalOptions = [
+    { kind: "hu", faces: ["c3"], tileIds: [], optionId: `${reason}-win` },
+    { kind: "pass", faces: [], tileIds: [], optionId: `${reason}-pass` },
+  ];
+  return state;
+}
+
+const claimLabels = [
+  "Hu · Win: 5 bamboo", "Peng: 5 bamboo, 5 bamboo, 5 bamboo",
+  "Cha: 3 bamboo, 4 bamboo, 5 bamboo", "Cha: 4 bamboo, 5 bamboo, 6 bamboo", "Cha: 5 bamboo, 6 bamboo, 7 bamboo", "Pass",
+];
+
+for (const [width, height, picked] of [[320, 700, 3], [740, 320, 4], [667, 320, 1], [430, 844, 2]] as const) {
+  test(`compact phone claim options are legible and submit the exact tap at ${width}×${height}`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height });
+    const turn = phoneClaimTurn(30);
+    const wire = await open(page, turn);
+    const rack = page.locator(".rack");
+    const board = page.locator(".board-stage");
+    const choices = page.locator(".choice-list");
+    const settings = page.getByRole("button", { name: "Settings" });
+    await expect(rack).toBeVisible();
+    await expect(choices).toBeHidden();
+    if (width === 740) {
+      await page.evaluate(() => {
+        ["t", "r", "b", "l"].forEach((edge, i) => document.documentElement.style
+          .setProperty(`--safe-${edge}`, `${[10, 22, 13, 25][i]}px`));
+      });
+    }
+    const before = await rack.boundingBox();
+    await settings.focus();
+    const offer = phoneClaim(turn);
+    wire.publish(offer);
+    await expect(choices.getByRole("button")).toHaveCount(6);
+    await expect(page.locator(".seat-cast .seat-actor")).toHaveCount(4);
+    if (width === 320 || width === 740) {
+      await page.screenshot({ path: info.outputPath(`phone-claim-${width}.png`), fullPage: true });
+    }
+    await expect(settings).toBeFocused();
+    await expect(page.locator(".table-actions .choice-list")).toHaveCount(0);
+    const controls = choices.getByRole("button");
+    for (const [i, label] of claimLabels.entries()) {
+      await expect(controls.nth(i)).toHaveAccessibleName(label);
+      const { width, height } = (await controls.nth(i).boundingBox())!;
+      expect(Math.min(width, height), label).toBeGreaterThanOrEqual(44);
+      const previews = controls.nth(i).locator(".tile-art");
+      const faces = offer.self.legalOptions[i].faces;
+      await expect(previews).toHaveCount(faces.length);
+      for (const [j, face] of faces.entries()) {
+        const artUse = previews.nth(j).locator("use");
+        await expect(artUse).toHaveAttribute("href", new RegExp(`#lt-${face}$`));
+        await expect.poll(() => artUse.evaluate(use => (use as SVGGraphicsElement).getBBox().width)).toBeGreaterThan(0);
+        const art = (await previews.nth(j).boundingBox())!;
+        expect(art.width).toBeGreaterThanOrEqual(23);
+        expect(art.height).toBeGreaterThanOrEqual(29);
+      }
+    }
+    const box = (await choices.boundingBox())!;
+    const stage = (await board.boundingBox())!;
+    expect(await rack.boundingBox()).toEqual(before);
+    expect(box.x + box.width / 2).toBeCloseTo(stage.x + stage.width / 2, 0);
+    expect(box.y + box.height / 2).toBeCloseTo(stage.y + stage.height / 2, 0);
+    expect(box.y + box.height).toBeLessThan(before!.y);
+    expect(await page.evaluate(() => [document.documentElement.scrollWidth, scrollY])).toEqual([width, 0]);
+    await expect(choices.locator(".claim-time")).toHaveText(/^[1-8]s$/);
+    await expect(choices.getByRole("button", { name: "Pass" })).toBeInViewport({ ratio: 1 });
+    const tile = rack.locator(".hand-tile").first();
+    const tilePoint = await midpoint(tile);
+    expect(await tile.evaluate((node, { x, y }) => node.contains(document.elementFromPoint(x, y)), tilePoint)).toBe(true);
+
+    if (width === 320) {
+      const onBoard = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      await settings.tap();
+      const dialog = page.getByRole("dialog", { name: "Settings" });
+      await expect(dialog).toBeVisible();
+      expect(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest("dialog[open]"), onBoard)).toBe(true);
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+      await expect(choices).toBeVisible();
+      expect(wire.commands).toHaveLength(0);
+    }
+
+    const pass = controls.last();
+    const passBeforeScroll = await pass.boundingBox();
+    const option = controls.nth(picked);
+    await option.scrollIntoViewIfNeeded();
+    expect(await pass.boundingBox()).toEqual(passBeforeScroll);
+    expect(await page.evaluate(() => scrollY)).toBe(0);
+    expect(await option.evaluate(node => {
+      const { x, y, width, height } = node.getBoundingClientRect();
+      return node.contains(document.elementFromPoint(x + width / 2, y + height / 2));
+    })).toBe(true);
+    const point = await midpoint(option);
+    const original = choices.locator("button").nth(picked);
+    await page.touchscreen.tap(point.x, point.y);
+    await expect(choices).toBeHidden();
+    await expect.poll(() => wire.commands.map(command => command.payload)).toEqual([{
+      roomId: offer.roomId, windowId: offer.game!.window!.windowId,
+      anchorGameRevision: offer.game!.window!.anchorGameRevision, optionId: offer.self.legalOptions[picked].optionId,
+    }]);
+    await original.dispatchEvent("click");
+    const committed = advance(offer);
+    committed.self.legalOptions = [];
+    wire.publish(committed, wire.commands[0]);
+    await expect(choices.locator("button")).toHaveCount(0);
+    expect(wire.commands).toHaveLength(1);
+    expect(await rack.boundingBox()).toEqual(before);
+  });
+}
+
+test("short landscape phone claim choices scroll without moving Pass or the rack", async ({ page }) => {
+  await page.setViewportSize({ width: 667, height: 320 });
+  const turn = phoneClaimTurn(30);
+  turn.self.hand = turn.self.hand.filter(tile => ["b3", "b4", "b6", "b7"].includes(tile.face))
+    .filter((tile, i, tiles) => tiles.findIndex(other => other.face === tile.face) === i);
+  turn.game!.seats[0].concealedCount = turn.self.hand.length;
+  turn.game!.seats[0].melds = [
+    { kind: "chi", fromSeat: 3, tiles: ["c1", "c2", "c3"] },
+    { kind: "peng", fromSeat: 1, tiles: ["d1", "d1", "d1"] },
+    { kind: "peng", fromSeat: 2, tiles: ["d5", "d5", "d5"] },
+  ];
+  const wire = await open(page, turn);
+  const state = discardFrom(turn, 3, "b5");
+  const patterns: Face[][] = [["b3", "b4", "b5"], ["b4", "b5", "b6"], ["b5", "b6", "b7"]];
+  state.self.legalOptions = patterns.map((faces, i) => ({
+    kind: "chi", optionId: `scroll-chi-${i}`, faces,
+    tileIds: turn.self.hand.filter(tile => faces.includes(tile.face)).map(tile => tile.tileId),
+  }));
+  state.self.legalOptions.push({ kind: "pass", faces: [], tileIds: [], optionId: "scroll-pass" });
+  const rack = page.locator(".rack");
+  await expect(rack).toBeVisible();
+  const before = await rack.boundingBox();
+  wire.publish(state);
+  const choices = page.locator(".choice-list");
+  const scrolling = choices.locator(".choice-options");
+  const pass = choices.getByRole("button", { name: "Pass" });
+  await expect(pass).toBeInViewport({ ratio: 1 });
+  const pinned = await pass.boundingBox();
+  expect(await scrolling.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
+  const last = choices.getByRole("button", { name: claimLabels[4] });
+  await last.scrollIntoViewIfNeeded();
+  expect(await scrolling.evaluate(node => node.scrollTop)).toBeGreaterThan(0);
+  expect(await pass.boundingBox()).toEqual(pinned);
+  expect(await rack.boundingBox()).toEqual(before);
+  expect(await page.evaluate(() => scrollY)).toBe(0);
+  const point = await midpoint(pass);
+  await page.touchscreen.tap(point.x, point.y);
+  await expect.poll(() => wire.commands.map(command => command.payload)).toEqual([{
+    roomId: state.roomId, windowId: state.game!.window!.windowId,
+    anchorGameRevision: state.game!.window!.anchorGameRevision, optionId: "scroll-pass",
+  }]);
+});
+
+test("compact phone claim options track the current deadline, pause, re-sync and disconnect", async ({ page }) => {
+  const turn = phoneClaimTurn(30);
+  const wire = await open(page, turn);
+  await page.clock.install();
+  const first = phoneClaim(turn);
+  wire.publish(first);
+  const pane = page.locator(".choice-list");
+  const pass = pane.getByRole("button", { name: "Pass" });
+  await expect(pass).toBeVisible();
+  await pass.focus();
+  await page.keyboard.press("Escape");
+  await expect(pass).toBeFocused();
+  const peerResponse = advance(first);
+  wire.publish(peerResponse);
+  await expect(pass).toBeFocused();
+  const oldPass = (await pass.elementHandle())!;
+
+  const paused = structuredClone(peerResponse);
+  paused.roomRevision++;
+  paused.room.paused = true;
+  paused.room.autoResumeAtUtc = new Date(Date.now() + 60000).toISOString();
+  paused.game!.window!.deadlineUtc = null;
+  wire.publish(paused);
+  await expect(pane).toBeHidden();
+  await oldPass.dispatchEvent("click");
+  expect(wire.commands).toHaveLength(0);
+  const resumed = structuredClone(peerResponse);
+  resumed.roomRevision = paused.roomRevision + 1;
+  resumed.game!.window!.deadlineUtc = new Date(Date.now() + 8000).toISOString();
+  wire.publish(resumed);
+  await expect(pass).toBeVisible();
+  await page.clock.fastForward(9000);
+  await expect(page.getByRole("timer")).toHaveText("0s");
+  await expect(pane).toBeHidden();
+  await oldPass.dispatchEvent("click");
+
+  const kong = phoneHuResponse(resumed, "kong");
+  wire.publish(kong);
+  const hu = pane.getByRole("button", { name: "Hu · Win: 3 characters" });
+  await expect(hu).toBeVisible();
+  await expect(pane).toContainText("Kong response");
+  await oldPass.dispatchEvent("click");
+  await hu.press("Enter");
+  await expect(pane).toBeHidden();
+  await expect.poll(() => wire.commands.map(command => command.payload)).toEqual([{
+    roomId: kong.roomId, windowId: kong.game!.window!.windowId,
+    anchorGameRevision: kong.game!.window!.anchorGameRevision, optionId: "kong-win",
+  }]);
+  const drawOffer = phoneClaimTurn(kong.gameRevision + 1);
+  drawOffer.roomRevision = kong.roomRevision;
+  drawOffer.game!.turnSeat = 0;
+  drawOffer.game!.wallCount = 1;
+  drawOffer.game!.window!.reason = "lastTile";
+  drawOffer.self.legalOptions = [
+    { kind: "draw", faces: [], tileIds: [], optionId: "last-tile-draw" },
+    { kind: "pass", faces: [], tileIds: [], optionId: "last-tile-skip" },
+  ];
+  wire.reject(drawOffer, wire.commands[0], "stale_window");
+  await expect(page.getByText("That decision window has closed.", { exact: false })).toBeVisible();
+  await expect(page.locator(".table-actions").getByRole("button", { name: "Draw" })).toBeEnabled();
+
+  const last = phoneHuResponse(drawOffer, "lastTile");
+  wire.publish(last);
+  await expect(pane).toContainText("Last tile");
+  await expect(hu).toBeVisible();
+  const later = phoneClaimTurn(last.gameRevision + 1);
+  wire.reconnect(later);
+  await expect(pane).toBeHidden();
+  await expect(page.locator('.connection[data-status="online"]')).toBeVisible();
+  await page.reload();
+  await expect(page.locator(".rack")).toBeVisible();
+  await expect(pane).toBeHidden();
+  expect(wire.commands).toHaveLength(1);
+});
+
+test("claim choices stay docked on desktop, narrow mouse windows and full-screen or split-view tablets", async ({ browser }) => {
+  const layouts = [
+    { viewport: { width: 1440, height: 900 }, screen: { width: 1440, height: 900 }, touch: false, preview: 19 },
+    { viewport: { width: 400, height: 780 }, screen: { width: 430, height: 844 }, touch: false, preview: 14 },
+    { viewport: { width: 1024, height: 800 }, screen: { width: 1024, height: 1366 }, touch: true, preview: 19 },
+    { viewport: { width: 410, height: 800 }, screen: { width: 1024, height: 1366 }, touch: true, preview: 14 },
+  ];
+  for (const { viewport, screen, touch, preview } of layouts) {
+    const context = await browser.newContext({ viewport, screen, deviceScaleFactor: 1, isMobile: touch, hasTouch: touch });
+    try {
+      const page = await context.newPage();
+      const turn = phoneClaimTurn(30);
+      await open(page, phoneClaim(turn));
+      expect(await page.evaluate(() => ({
+        screen: { width: window.screen.width, height: window.screen.height },
+        touch: matchMedia("(pointer: coarse) and (hover: none)").matches,
+      }))).toEqual({ screen, touch });
+      const choices = page.locator(".table-actions .choice-list");
+      const first = choices.getByRole("button", { name: claimLabels[0] });
+      await expect(first).toBeEnabled();
+      expect((await first.locator(".tile-target").boundingBox())!.width).toBe(preview);
+      await first.focus();
+      await page.keyboard.press("Tab");
+      await expect(choices.getByRole("button", { name: claimLabels[1] })).toBeFocused();
+      await expect(choices.locator(".claim-context")).toBeHidden();
+    } finally { await context.close(); }
+  }
+});
 
 test("short landscape actors wind up, articulate toward their rivers and settle without moving a tap target", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 740, height: 320 });

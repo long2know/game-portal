@@ -1,3 +1,4 @@
+import "./phone-claims.css";
 import type { ActorMoment, SeatCast } from "./actors";
 import { button, el, places, reconcile, text, wind } from "./dom";
 import { center, seatSpot, TableEffects } from "./effects";
@@ -16,6 +17,7 @@ const windowNames = {
   turn: "Turn", opening: "Opening reveal", discard: "Claim window", kong: "Kong response", lastTile: "Last tile",
 } as const;
 const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
+const phoneShortSide = 500;
 
 export type TableCue = "draw" | "discard" | "call" | "chi" | "peng" | "turn" | "win" | "exhausted";
 
@@ -133,12 +135,20 @@ export class TableView {
   private readonly gameInfo = el("span", "game-info");
   private readonly timer = el("strong", "timer");
   private readonly hint = el("p", "action-hint");
-  private readonly choices = el("div", "choice-list");
+  private readonly choiceOptions = el("div", "choice-options");
+  private readonly choicePass = el("div", "choice-pass");
+  private readonly claimTitle = el("strong");
+  private readonly claimTime = el("span", "claim-time");
+  private readonly claimContext = el("div", "claim-context", this.claimTitle, this.claimTime);
+  private readonly choices = el("div", "choice-list", this.choiceOptions,
+    el("div", "choice-footer", this.claimContext, this.choicePass));
   private readonly discard = button("Discard tile", "btn primary discard-confirm", () => this.confirm());
   private readonly resultButton: HTMLButtonElement;
   private readonly pauseButton: HTMLButtonElement;
   readonly optionsButton: HTMLButtonElement;
+  private readonly actions: HTMLDivElement;
   private readonly reduceMotion = matchMedia(reducedMotionQuery);
+  private readonly primaryTouch = matchMedia("(pointer: coarse) and (hover: none)");
   private readonly effects = new TableEffects();
   #cast?: SeatCast;
   #castLoad?: Promise<void>;
@@ -178,14 +188,16 @@ export class TableView {
     this.timer.setAttribute("role", "timer");
     this.timer.setAttribute("aria-live", "off");
     this.phase.setAttribute("role", "status");
+    this.choices.setAttribute("role", "group");
     this.choices.setAttribute("aria-label", "Available table actions");
+    this.claimContext.setAttribute("aria-hidden", "true");
     const rack = el("section", "rack", this.handTitle, this.melds, this.hand);
     rack.setAttribute("aria-label", "Your tiles");
     this.hand.setAttribute("aria-label", "Concealed hand");
     this.melds.setAttribute("aria-label", "Your melds");
-    const actions = el("div", "table-actions", this.hint, this.choices, this.discard, this.resultButton);
+    this.actions = el("div", "table-actions", this.hint, this.choices, this.discard, this.resultButton);
     this.hint.setAttribute("aria-live", "polite");
-    this.root.append(status, this.stage, rack, actions, this.exposed.root, this.effects.root);
+    this.root.append(status, this.stage, rack, this.actions, this.exposed.root, this.effects.root);
     const stopMotion = () => {
       this.effects.clear();
       this.#clearCast();
@@ -210,7 +222,11 @@ export class TableView {
         this.#clearCast();
       }
     };
-    window.addEventListener("resize", resizeCast);
+    this.primaryTouch.addEventListener("change", () => this.paintActions());
+    window.addEventListener("resize", () => {
+      resizeCast();
+      this.paintActions();
+    });
     viewport?.addEventListener("resize", resizeCast);
     rack.addEventListener("keydown", event => {
       if (event.key === "Escape" && this.selection) {
@@ -315,7 +331,8 @@ export class TableView {
         }
       }
     }
-    if (!sameTable || previous.game?.window?.windowId !== game.window?.windowId) this.selection = null;
+    const newWindow = !sameTable || previous.game?.window?.windowId !== game.window?.windowId;
+    if (newWindow) this.selection = null;
     this.canAct = canAct;
     this.options = self.legalOptions;
     this.discardOptions = new Map(self.legalOptions.filter(option => option.kind === "discard" && option.tileIds.length === 1)
@@ -391,7 +408,15 @@ export class TableView {
     });
     const nonDiscards = self.legalOptions.filter(option => option.kind !== "discard")
       .sort((a, b) => choiceOrder.indexOf(a.kind) - choiceOrder.indexOf(b.kind));
-    reconcile(this.choices, nonDiscards, option => option.optionId, option => optionButton(option, id => this.choose(id)));
+    const roomId = state.roomId;
+    const windowId = game.window?.windowId;
+    const key = (option: Option) => `${roomId}:${windowId}:${option.optionId}`;
+    const control = (option: Option) => optionButton(option, id => {
+      if (this.state?.roomId === roomId && this.state.game?.window?.windowId === windowId) this.choose(id);
+    });
+    reconcile(this.choiceOptions, nonDiscards.filter(option => option.kind !== "pass"), key, control);
+    reconcile(this.choicePass, nonDiscards.filter(option => option.kind === "pass"), key, control);
+    if (newWindow) this.choiceOptions.scrollTop = 0;
     this.resultButton.hidden = !game.settlement;
     text(this.resultButton, room.status === "complete" ? "Match results" : "Hand results");
     this.tick(now, true);
@@ -480,6 +505,7 @@ export class TableView {
     const timerLabel = room.paused ? `Auto-resume in ${seconds} seconds` : `${seconds} seconds remaining`;
     if (this.timer.getAttribute("aria-label") !== timerLabel) this.timer.setAttribute("aria-label", timerLabel);
     text(this.timer, `${seconds}s`);
+    if (this.choices.classList.contains("phone-claim")) text(this.claimTime, `${seconds}s`);
     const open = this.canAct && !room.paused && !!game?.window && left > 0;
     if (force || open !== this.open) {
       this.open = open;
@@ -505,7 +531,28 @@ export class TableView {
       tile.setAttribute("aria-disabled", String(!this.open || !this.discardOptions.has(id)));
     }
     for (const option of this.choices.querySelectorAll("button")) option.disabled = !this.open;
-    this.choices.hidden = this.choices.childElementCount === 0;
+    const reason = game?.window?.reason;
+    // The last-tile draw offer and the player's resulting turn also use "lastTile".
+    const response = (reason === "discard" || reason === "kong" || reason === "lastTile") && this.options.length > 0 &&
+      !this.options.some(option => option.kind === "draw" || option.kind === "discard");
+    // A tablet's split viewport can be phone-width without the screen itself being phone-sized.
+    const screenShortSide = Math.min(screen.width, screen.height);
+    const phoneResponse = response && this.primaryTouch.matches && screenShortSide > 0 && screenShortSide <= phoneShortSide &&
+      Math.min(innerWidth, innerHeight) <= phoneShortSide;
+    const centered = phoneResponse && this.open;
+    this.choices.hidden = (!this.choiceOptions.childElementCount && !this.choicePass.childElementCount) ||
+      (phoneResponse && !centered);
+    if (centered !== this.choices.classList.contains("phone-claim")) {
+      const focused = document.activeElement;
+      this.choices.classList.toggle("phone-claim", centered);
+      if (centered) this.root.insertBefore(this.choices, this.exposed.root);
+      else this.actions.insertBefore(this.choices, this.discard);
+      if (this.open && focused instanceof HTMLElement && this.choices.contains(focused)) focused.focus({ preventScroll: true });
+    }
+    if (centered && reason) {
+      text(this.claimTitle, windowNames[reason]);
+      text(this.claimTime, this.timer.textContent ?? "");
+    }
     const selected = self?.hand.find(tile => tile.tileId === this.selection);
     this.discard.hidden = this.discardOptions.size === 0;
     this.discard.disabled = !this.open || !selected;
@@ -514,7 +561,7 @@ export class TableView {
     if (game?.settlement) message = room?.status === "complete" ? "Match finished. See the final scores." : "Review the scores, then start the next hand.";
     else if (room?.paused) message = "Decisions are frozen until the timer ends or you resume.";
     else if (this.discardOptions.size) message = selected ? "Confirm your discard." : "Select a tile, then confirm.";
-    else if (this.options.length) message = "Choose one of the available actions.";
+    else if (this.options.length && (!phoneResponse || centered)) message = "Choose one of the available actions.";
     else message = game?.phase === "claim" ? "Waiting for eligible players to respond." : "Waiting for the next turn.";
     text(this.hint, message);
   }
