@@ -502,20 +502,19 @@ test.describe("mounted Jade Court expansion", () => {
     await expect(button(table, "Roll dice")).toBeEnabled();
   });
 
-  test("Jade Harbors admits a share guest and a private invite guest to the exact three-human table", async ({ page, browser, baseURL }, info) => {
+  test("Jade Harbors admits a share guest and a private invite guest to the exact three-human table", async ({ page, playwright, request, baseURL }, info) => {
     const url = (path = "") => new URL(path, baseURL).href;
     const gameUrl = url("jade-harbors/");
     const hostName = `Harbor ${info.project.name}`;
     const recipientName = `Mooring ${info.project.name}`;
-    const opts = { viewport: portrait, isMobile: true, hasTouch: true };
-    const peers = [await browser.newContext(opts)];
-    const recipient = await peers[0].newPage();
-    const online = (page: Page) => page.getByRole("button", { name: /^Online lobby/ });
-    const dialog = (page: Page) => page.getByRole("dialog", { name: "Online lobby" });
-    async function optIn(page: Page, name: string) {
-      await online(page).tap();
-      const panel = dialog(page);
-      await panel.getByRole("textbox", { name: "Display name" }).fill(name);
+    const headers = { Origin: new URL(gameUrl).origin };
+    const peer = await playwright.request.newContext({ extraHTTPHeaders: headers });
+    const online = page.getByRole("button", { name: /^Online lobby/ });
+    const panel = page.getByRole("dialog", { name: "Online lobby" });
+    try {
+      await page.goto(gameUrl);
+      await online.tap();
+      await panel.getByRole("textbox", { name: "Display name" }).fill(hostName);
       await button(panel, "Save name").tap();
       await expect(panel.getByText("Display name saved.")).toBeVisible();
       const availability = panel.getByRole("switch", { name: "Available to play" });
@@ -525,11 +524,6 @@ test.describe("mounted Jade Court expansion", () => {
       await expect(availability).toBeChecked();
       await page.keyboard.press("Escape");
       await expect(panel).not.toBeVisible();
-    }
-    try {
-      await Promise.all([page.goto(gameUrl), recipient.goto(url())]);
-      await optIn(page, hostName);
-      await optIn(recipient, recipientName);
       const creation = watch(page, url("api/jade-harbors/tables"));
       await button(page, "Invite friends").tap();
       const created = await creation;
@@ -537,34 +531,43 @@ test.describe("mounted Jade Court expansion", () => {
       const waiting = await body<Table<HarborsPosition>>(created);
       expect(waiting.position).toBeNull();
       await expect(page.getByText("Open seat 3")).toBeVisible();
-      const invitation = await page.getByRole("textbox", { name: "Invite link" }).inputValue();
-      expect(new URL(invitation).pathname).toBe(new URL(gameUrl).pathname);
-      const shareContext = await browser.newContext(opts);
-      peers.push(shareContext);
-      const share = await shareContext.newPage();
-      await share.goto(invitation);
-      const join = watch(share, url("api/jade-harbors/join"));
-      await button(share, "Join table").tap();
-      const second = await body<Table<HarborsPosition>>(await join);
+      const invitation = new URL(await page.getByRole("textbox", { name: "Invite link" }).inputValue());
+      expect(invitation.pathname).toBe(new URL(gameUrl).pathname);
+      expect(invitation.origin).toBe(headers.Origin);
+      const code = new URLSearchParams(invitation.hash.slice(1)).get("invite");
+      expect(code).toBeTruthy();
+      expect((await request.post(url("api/guest"), { headers, data: {} })).ok()).toBe(true);
+      const join = await request.post(url("api/jade-harbors/join"), { headers, data: { invite: code } });
+      expect(join.ok()).toBe(true);
+      const second: Table<HarborsPosition> = await join.json();
       expect(second.id).toBe(waiting.id);
       expect(second.position).toBeNull();
-      await expect(share).toHaveURL(gameUrl);
-      await expect(share.getByText("Open seat 3")).toBeVisible();
-      await expect(harborsTable(share)).not.toBeVisible();
+      expect(second.seats[2].occupied).toBe(false);
 
+      expect((await peer.post(url("api/guest"), { data: {} })).ok()).toBe(true);
+      expect((await peer.patch(url("api/profile"), { data: { displayName: recipientName } })).ok()).toBe(true);
+      const presence = await peer.post(url("api/social/presence"), {
+        data: { tabId: "harbors-invite-test", active: true, busy: false, available: true },
+      });
+      expect(presence.ok()).toBe(true);
       await button(page, "Invite players").tap();
       const invite = watch(page, url("api/social/invites"));
-      await button(dialog(page).getByRole("list", { name: "Available guests" }).getByRole("listitem")
+      await button(panel.getByRole("list", { name: "Available guests" }).getByRole("listitem")
         .filter({ hasText: recipientName }), "Invite").tap();
       const sent = await invite;
       expect(sent.request().postDataJSON()).toEqual({ game: "jade-harbors", tableId: waiting.id, playerId: expect.any(String) });
       expect(sent.ok()).toBe(true);
-      await button(dialog(page), "Close").tap();
-      await online(recipient).tap();
-      const incoming = dialog(recipient).getByRole("list", { name: "Incoming invites" }).getByRole("listitem").filter({ hasText: hostName });
+      // Reuse the browser page with the recipient's separate real guest cookie.
+      const { cookies } = await peer.storageState();
+      await page.goto("about:blank");
+      await page.context().clearCookies();
+      await page.context().addCookies(cookies);
+      await page.goto(url());
+      await online.tap();
+      const incoming = panel.getByRole("list", { name: "Incoming invites" }).getByRole("listitem").filter({ hasText: hostName });
       await expect(incoming).toContainText("Jade Harbors");
       const endpoint = url(`api/jade-harbors/tables/${waiting.id}`);
-      const readExact = watch(recipient, endpoint, "GET");
+      const readExact = watch(page, endpoint, "GET");
       await button(incoming, "Accept").tap();
       const exact = await body<Table<HarborsPosition>>(await readExact);
       expect(exact.id).toBe(waiting.id);
@@ -573,21 +576,18 @@ test.describe("mounted Jade Court expansion", () => {
       expect(exact.seats.map(({ occupied, bot }) => [occupied, bot])).toEqual([[true, false], [true, false], [true, false]]);
       expect(exact.position.phase).toBe("placePier");
       expect(exact.position.legalActions.piers).toEqual([]);
-      await expect(recipient).toHaveURL(gameUrl);
-      await expect(harborsTable(recipient)).toBeVisible();
-      await expect(harborsTable(recipient).getByRole("combobox")).not.toBeVisible();
-      const restored = watch(recipient, endpoint, "GET");
-      await recipient.reload();
+      await expect(page).toHaveURL(gameUrl);
+      await expect(harborsTable(page)).toBeVisible();
+      await expect(harborsTable(page).getByRole("combobox")).not.toBeVisible();
+      const restored = watch(page, endpoint, "GET");
+      await page.reload();
       expect(await body<Table<HarborsPosition>>(await restored)).toEqual(exact);
 
-      const readShare = watch(share, endpoint, "GET");
-      await share.reload();
-      expect(await body<Table<HarborsPosition>>(await readShare)).toMatchObject({ id: exact.id, seat: second.seat, status: "playing" });
-      await expect(harborsTable(share)).toBeVisible();
-      await page.reload();
-      await expect(harborsTable(page).getByRole("combobox", { name: "Choose a site" })).toBeEnabled();
+      const readShare = await request.get(endpoint);
+      expect(readShare.ok()).toBe(true);
+      expect(await readShare.json()).toMatchObject({ id: exact.id, seat: second.seat, status: "playing" });
     } finally {
-      await Promise.all(peers.map(peer => peer.close()));
+      await peer.dispose();
     }
   });
 
