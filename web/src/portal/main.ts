@@ -101,6 +101,7 @@ const expansions = {
   backgammon: () => import("./games/backgammon"),
   "big-two": () => import("./games/big-two"),
   "koi-koi": () => import("./games/koi-koi"),
+  "jade-harbors": () => import("./games/jade-harbors"),
 };
 if (route === "daily-court") {
   void openGame("Daily Court", async () => (await import("./daily-court")).mountDailyCourt(main, mount));

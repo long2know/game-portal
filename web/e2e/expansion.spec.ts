@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Locator, Page, Response } from "@playwright/test";
+import type { HarborsAction, HarborsPosition } from "../src/portal/games/jade-harbors";
 
 type Table<P> = {
   id: string; seat: number; revision: number; status: string; position: P; invite: string | null;
@@ -56,6 +57,7 @@ const routes = [
   ["backgammon", "Backgammon", "Set up Backgammon", "backgammon/resume", "backgammon", "Play a bot"],
   ["big-two", "Big Two", "Set up Big Two", "big-two/resume", "big-two", "Play with bots"],
   ["koi-koi", "Koi-Koi", "Set up Koi-Koi", "koi-koi/resume", "koi-koi", "Play a bot"],
+  ["jade-harbors", "Jade Harbors", "Set up Jade Harbors", "jade-harbors/resume", "jade-harbors", "Play with bots"],
 ] as const;
 const button = (page: Page | Locator, name: string | RegExp) => page.getByRole("button", { name, exact: true });
 const watch = (page: Page, url: string, method = "POST", timeout?: number) =>
@@ -158,6 +160,42 @@ const emptyFlowerActions = { plays: [], drawTargets: [], canScore: false, canCon
 const flowerAction = (play: KoiPlay, target = play.targetIds[0]): KoiAction => ({
   kind: "play", cardId: play.cardId, ...(play.targetIds.length === 2 ? { targetId: target } : {}),
 });
+const harborsTable = (page: Page) => page.getByRole("region", { name: "Jade Harbors playing area" });
+const noHarborsActions: HarborsPosition["legalActions"] = {
+  canRoll: false, canEndTurn: false, piers: [], routes: [], upgrades: [], trades: [],
+};
+const harborsFixture = (): HarborsPosition => {
+  const contents = [
+    { x: 0, y: 0, resource: null, number: null }, { x: -1, y: -3, resource: 0, number: 6 },
+    { x: 1, y: -3, resource: 1, number: 8 }, { x: 2, y: 0, resource: 2, number: 5 },
+    { x: 1, y: 3, resource: 3, number: 9 }, { x: -1, y: 3, resource: 0, number: 4 },
+    { x: -2, y: 0, resource: 1, number: 10 },
+  ];
+  const corners = [[0, -2], [1, -1], [1, 1], [0, 2], [-1, 1], [-1, -1]];
+  const nodes: HarborsPosition["nodes"] = [];
+  const routes: HarborsPosition["routes"] = [];
+  const tiles = contents.map((tile, index) => {
+    const nodeIds = corners.map(([dx, dy]) => {
+      const point = { x: tile.x + dx, y: tile.y + dy };
+      const existing = nodes.find(node => node.x === point.x && node.y === point.y);
+      if (existing) return existing.id;
+      const id = 20 + nodes.length;
+      nodes.push({ ...point, id, seat: null, level: 0 });
+      return id;
+    });
+    for (const [i, a] of nodeIds.entries()) {
+      const b = nodeIds[(i + 1) % nodeIds.length];
+      if (!routes.some(route => route.a === a && route.b === b || route.a === b && route.b === a)) {
+        routes.push({ id: 100 + routes.length, a, b, seat: null });
+      }
+    }
+    return { ...tile, id: 12 + index, nodeIds };
+  });
+  return {
+    phase: "placePier", turn: 0, turnSeat: 0, winnerSeat: null, lastRoll: null, ownResources: [0, 0, 0, 0],
+    tiles, nodes, routes, seats: [0, 1, 2].map(seat => ({ seat, points: 0, resourceCount: 0 })), legalActions: noHarborsActions,
+  };
+};
 
 async function showsFlowerTurn(page: Page, turn: KoiTurn) {
   const receipt = recentKoi(page).locator(`[data-seat="${turn.seat}"]`);
@@ -229,7 +267,7 @@ test.describe("mounted Jade Court expansion", () => {
     await page.goto(url());
     await expect(page.getByRole("heading", { name: "Find your next move." })).toBeVisible();
     const featureAssets = () => [...seen].filter(path =>
-      /\/assets\/(?:holdem|solitaire|sudoku|words|farkle|backgammon|big-two|koi-koi|koi-deck|koi-felt|nonograms|multiplayer|solo|cards|shared|room)-/.test(path));
+      /\/assets\/(?:holdem|solitaire|sudoku|words|farkle|backgammon|big-two|koi-koi|koi-deck|koi-felt|nonograms|jade-harbors|multiplayer|solo|cards|shared|room)-/.test(path));
     expect(featureAssets()).toEqual([]);
     for (const [route, name, linkName, api, chunk, entry] of routes) {
       const bare = await request.get(url(`${route}?from=bookmark`), { maxRedirects: 0 });
@@ -255,6 +293,282 @@ test.describe("mounted Jade Court expansion", () => {
       await expect(page).toHaveURL(url());
     }
     expect(errors).toEqual([]);
+  });
+
+  test("Jade Harbors projected fixture distinguishes supplies and dice and confirms exact legal targets", async ({ page, baseURL }, info) => {
+    const url = (path = "") => new URL(path, baseURL).href;
+    const id = "b".repeat(32);
+    const endpoint = url(`api/jade-harbors/tables/${id}`);
+    const opening = harborsFixture();
+    const [first, site] = opening.tiles[1].nodeIds;
+    const routes = opening.routes.filter(({ a, b }) => a === site || b === site);
+    const route = routes.at(-1)!;
+    const pier = opening.nodes.map(node => node.id === site ? { ...node, seat: 0, level: 1 } : node);
+    const withRoute = opening.routes.map(edge => edge.id === route.id ? { ...edge, seat: 0 } : edge);
+    const phases: HarborsPosition[] = [
+      { ...opening, legalActions: { ...noHarborsActions, piers: [first, site] } },
+      { ...opening, phase: "placeRoute", nodes: pier, legalActions: { ...noHarborsActions, routes: routes.map(({ id }) => id) } },
+      { ...opening, phase: "roll", turn: 1, nodes: pier, routes: withRoute, legalActions: { ...noHarborsActions, canRoll: true } },
+      { ...opening, phase: "build", turn: 1, nodes: pier, routes: withRoute, lastRoll: [3, 4], ownResources: [3, 1, 1, 2],
+        seats: [{ seat: 0, points: 1, resourceCount: 7 }, { seat: 1, points: 2, resourceCount: 2 }, { seat: 2, points: 2, resourceCount: 4 }],
+        legalActions: { ...noHarborsActions, piers: [first], routes: [routes[0].id], upgrades: [site],
+          canEndTurn: true, trades: [{ give: 0, take: 3, cost: 2 }] } },
+    ];
+    const raised: HarborsPosition = {
+      ...phases[3], nodes: pier.map(node => node.id === site ? { ...node, level: 2 } : node), ownResources: [3, 1, 0, 0],
+      seats: [{ seat: 0, points: 2, resourceCount: 4 }, ...phases[3].seats.slice(1)],
+      legalActions: { ...noHarborsActions, canEndTurn: true, trades: [{ give: 0, take: 3, cost: 2 }] },
+    };
+    phases.push(raised, { ...raised, phase: "roll", turnSeat: 1, turn: 2, legalActions: noHarborsActions });
+    const submitted: unknown[] = [];
+    const snapshot = () => ({
+      id, revision: 6 + submitted.length, status: "playing", seat: 0, invite: null, position: phases[submitted.length],
+      seats: [{ seat: 0, name: "Guest", occupied: true }, { seat: 1, name: "Cedar", occupied: true, bot: true },
+        { seat: 2, name: "Reed", occupied: true, bot: true }],
+    });
+    // The projected snapshots are controlled; the mounted shell, art, guest session and inputs are the real UI.
+    await page.route(url("jade-harbors/"), async request => request.fulfill({ response: await request.fetch({ url: url() }) }));
+    await page.route(url("api/jade-harbors/resume"), request => request.fulfill({ json: { tableId: id } }));
+    await page.route(endpoint, request => request.fulfill({ json: snapshot() }));
+    await page.route(`${endpoint}/actions`, request => {
+      submitted.push(request.request().postDataJSON());
+      return submitted.length === 5 ? request.fulfill({ status: 409, json: { error: { code: "stale_room" } } }) :
+        request.fulfill({ json: snapshot() });
+    });
+    await page.goto(url("jade-harbors/"));
+    const table = harborsTable(page);
+    const chart = table.locator(".jh-chart");
+    const picker = table.getByRole("combobox");
+    const boardChoice = (kind: string, value: number) => chart.locator(`[data-kind="${kind}"][data-target="${value}"] ellipse`);
+    const status = table.locator(".jh-phase");
+    await expect(status).toHaveText("Your turn · place a free pier");
+    await expect(table.getByRole("group", { name: "No roll yet" })).toBeVisible();
+    const viewBox = await chart.getAttribute("viewBox");
+    await expect(chart.locator(".jh-terrain")).toHaveCount(opening.tiles.length);
+    await expect(chart.locator(".jh-terrain-name")).toHaveText(["Basin", "Timber", "Clay", "Grain", "Stone", "Timber", "Clay"]);
+    await expect(chart.locator(".jh-terrain-number")).toHaveText(["6", "8", "5", "9", "4", "10"]);
+    const ledger = table.getByText("Read the map", { exact: true });
+    await targets(ledger, picker, button(table, "Build pier"));
+    await ledger.focus();
+    await page.keyboard.press("Enter");
+    await expect(table.getByText(`Timber 6 · Sites ${opening.tiles[1].nodeIds.join(", ")}`, { exact: true })).toBeVisible();
+    await expect(table.getByText("Nothing built yet.", { exact: true })).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(chart.locator("[data-kind=buildPier]")).toHaveCount(2);
+    await expect(picker.locator("option")).toHaveCount(3);
+    await expect(button(table, "Build pier")).toBeDisabled();
+    await boardChoice("buildPier", site).tap();
+    await expect(picker).toHaveValue(String(site));
+    await expect(chart.locator(`[data-target="${site}"][data-picked]`)).toBeVisible();
+    expect(submitted).toEqual([]);
+    await button(table, "Build pier").press("Enter");
+    await expect(status).toHaveText("Your turn · connect a free route");
+    await expect(picker).toHaveAccessibleName("Choose a route");
+    await expect(picker).toBeFocused();
+    await expect(picker).toHaveValue("");
+    await expect(chart.locator(`[data-site="${site}"][data-level="1"][data-owner="0"]`)).toBeVisible();
+    await picker.selectOption(String(route.id));
+    await expect(chart.locator(`[data-target="${route.id}"][data-picked]`)).toBeVisible();
+    await page.keyboard.press("Tab");
+    await expect(button(table, "Build route")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(status).toHaveText("Your turn · roll the dice");
+    await expect(chart.locator(`[data-route="${route.id}"][data-owner="0"]`)).toBeVisible();
+    await expect(button(table, "Roll dice")).toBeFocused();
+    await button(table, "Roll dice").tap();
+    await expect(status).toHaveText("Your turn · build, trade, or end turn");
+    await expect(table.getByRole("group", { name: "Last roll: 3 plus 4 equals 7" })).toBeVisible();
+    await expect(table.locator(".jh-die")).toHaveText(["3", "4"]);
+    await expect(table.getByText("Market rate this turn: 2 for 1.")).toBeVisible();
+    const scores = table.getByRole("list", { name: "Seats, points and supply totals" });
+    await expect(scores.getByRole("listitem").filter({ hasText: "Cedar" })).toHaveText(/2 points.*2 supplies/);
+    await expect(scores.locator("[data-acting]")).toContainText("You");
+    const hand = table.getByRole("list", { name: "Your supplies" }).getByRole("listitem");
+    await expect(hand).toHaveText([/Timber\s*3/, /Clay\s*1/, /Grain\s*1/, /Stone\s*2/]);
+    await expect(hand.locator("svg path")).toHaveCount(4);
+    await button(table, "Warehouse").tap();
+    await expect(picker).toHaveAccessibleName("Choose a pier to upgrade");
+    await picker.selectOption(String(site));
+    await picker.press("Escape");
+    await expect(picker).toBeFocused();
+    await expect(picker).toHaveValue("");
+    await expect(button(table, "Raise warehouse")).toBeDisabled();
+    await boardChoice("upgrade", site).tap();
+    for (const viewport of [portrait, { width: 740, height: 320 }, { width: 820, height: 900 }, { width: 1366, height: 900 }]) {
+      await page.setViewportSize(viewport);
+      await fits(page);
+      await targets(picker, button(table, "Raise warehouse"), button(table, "End turn"));
+      await expect(chart).toHaveAttribute("viewBox", viewBox!);
+    }
+    await table.screenshot({ path: info.outputPath("harbors-fixture-desktop.png") });
+    await page.setViewportSize(portrait);
+    await table.screenshot({ path: info.outputPath("harbors-fixture-320.png") });
+    await button(table, "Raise warehouse").tap();
+    await expect(chart.locator(`[data-site="${site}"][data-level="2"][data-owner="0"]`)).toBeVisible();
+    await expect(hand).toHaveText([/Timber\s*3/, /Clay\s*1/, /Grain\s*0/, /Stone\s*0/]);
+    await button(table, "Market").tap();
+    await expect(picker.locator("option")).toHaveText(["Select an option…", "2 Timber → 1 Stone"]);
+    await picker.selectOption("0:3");
+    await button(table, "Make trade").press("Enter");
+    await expect(status).toHaveText("Cedar’s turn · roll the dice");
+    await expect(status).toBeFocused();
+    await expect(page.getByText("The table is up to date. Check the latest play before trying again.")).toBeVisible();
+    await expect(table.getByRole("group", { name: "Last roll: 3 plus 4 equals 7" })).toBeVisible();
+    await expect(table.getByText("Market rate this turn: 2 for 1.")).not.toBeVisible();
+    await expect(picker).not.toBeVisible();
+    expect(submitted).toEqual([
+      { revision: 6, action: { kind: "buildPier", target: site } },
+      { revision: 7, action: { kind: "buildRoute", target: route.id } },
+      { revision: 8, action: { kind: "roll" } },
+      { revision: 9, action: { kind: "upgrade", target: site } },
+      { revision: 10, action: { kind: "trade", give: 0, take: 3 } },
+    ]);
+  });
+
+  test("Jade Harbors starts three seats with bots, commits setup and a roll, then opens the exact save", async ({ page, baseURL }, info) => {
+    const url = (path = "") => new URL(path, baseURL).href;
+    await page.goto(url());
+    await page.getByRole("link", { name: "Set up Jade Harbors", exact: true }).tap();
+    await expect(page).toHaveURL(url("jade-harbors/"));
+    const creation = watch(page, url("api/jade-harbors/tables"));
+    await button(page, "Play with bots").tap();
+    const created = await creation;
+    expect(created.request().postDataJSON()).toEqual({ players: 3, bots: true });
+    let game = await body<Table<HarborsPosition>>(created);
+    expect(game.seats.map(({ bot, occupied }) => [bot, occupied])).toEqual([[false, true], [true, true], [true, true]]);
+    expect(game.position.lastRoll).toBeNull();
+    const table = harborsTable(page);
+    const endpoint = url(`api/jade-harbors/tables/${game.id}`);
+    const played: string[] = [];
+    async function move(action: HarborsAction, label: string) {
+      const revision = game.revision;
+      const attempt = watch(page, `${endpoint}/actions`);
+      await button(table, label).tap();
+      const response = await attempt;
+      expect(response.request().postDataJSON()).toEqual({ revision, action });
+      game = await body<Table<HarborsPosition>>(response);
+      expect(game.revision).toBeGreaterThan(revision);
+      played.push(action.kind);
+    }
+    for (let i = 0; i < 4; i++) {
+      const { phase, turnSeat, legalActions } = game.position;
+      expect(turnSeat).toBe(game.seat);
+      const pier = phase === "placePier";
+      expect(phase).toBe(i % 2 === 0 ? "placePier" : "placeRoute");
+      const target = (pier ? legalActions.piers : legalActions.routes)[0];
+      expect(target).toBeDefined();
+      await table.getByRole("combobox").selectOption(String(target));
+      await move({ kind: pier ? "buildPier" : "buildRoute", target }, pier ? "Build pier" : "Build route");
+      const owned = pier ? game.position.nodes : game.position.routes;
+      expect(owned.find(piece => piece.id === target)?.seat).toBe(game.seat);
+    }
+    expect(played).toEqual(["buildPier", "buildRoute", "buildPier", "buildRoute"]);
+    expect(game.position.phase).toBe("roll");
+    expect(game.position.ownResources.reduce((sum, count) => sum + count, 0)).toBeGreaterThan(0);
+    await move({ kind: "roll" }, "Roll dice");
+    expect(game.position.phase).toBe("build");
+    const dice = game.position.lastRoll!;
+    expect(dice).toHaveLength(2);
+    expect(dice.every(face => Number.isInteger(face) && face >= 1 && face <= 6)).toBe(true);
+    await expect(table.locator(".jh-die")).toHaveText(dice.map(String));
+    await expect(table.locator(".jh-terrain")).toHaveCount(game.position.tiles.length);
+    await expect(table.locator(".jh-site[data-level='1'][data-owner]")).toHaveCount(6);
+    await expect(table.locator(".jh-link[data-owner]")).toHaveCount(6);
+    const hand = table.getByRole("list", { name: "Your supplies" });
+    await expect(hand.locator("strong")).toHaveText(game.position.ownResources.map(String));
+    await fits(page);
+    await table.screenshot({ path: info.outputPath("harbors-live-320.png") });
+    await desktopCrop(page, table, info.outputPath("harbors-live-desktop.png"));
+    await page.setViewportSize({ width: 740, height: 320 });
+    await fits(page);
+    await targets(button(table, "End turn"), table.getByText("Read the map", { exact: true }));
+    await table.screenshot({ path: info.outputPath("harbors-live-740x320.png") });
+    const resumed = watch(page, endpoint, "GET");
+    await page.reload();
+    expect(await body<Table<HarborsPosition>>(await resumed)).toEqual(game);
+    await expect(table.locator(".jh-die")).toHaveText(dice.map(String));
+    await page.getByRole("link", { name: "‹ All games", exact: true }).tap();
+    const save = watch(page, endpoint, "GET");
+    await button(page, "Continue Jade Harbors").tap();
+    expect(await body<Table<HarborsPosition>>(await save)).toEqual(game);
+    await expect(page).toHaveURL(url("jade-harbors/"));
+    await expect(hand.locator("strong")).toHaveText(game.position.ownResources.map(String));
+  });
+
+  test("Jade Harbors admits a share guest and a private invite guest to the exact three-human table", async ({ page, browser, baseURL }, info) => {
+    const url = (path = "") => new URL(path, baseURL).href;
+    const gameUrl = url("jade-harbors/");
+    const hostName = `Harbor ${info.project.name}`;
+    const recipientName = `Mooring ${info.project.name}`;
+    const opts = { viewport: portrait, isMobile: true, hasTouch: true };
+    const peers = await Promise.all([browser.newContext(opts), browser.newContext(opts)]);
+    const [share, recipient] = await Promise.all(peers.map(peer => peer.newPage()));
+    const online = (page: Page) => page.getByRole("button", { name: /^Online lobby/ });
+    const dialog = (page: Page) => page.getByRole("dialog", { name: "Online lobby" });
+    async function optIn(page: Page, name: string) {
+      await online(page).tap();
+      const panel = dialog(page);
+      await panel.getByRole("textbox", { name: "Display name" }).fill(name);
+      await button(panel, "Save name").tap();
+      await expect(panel.getByText("Display name saved.")).toBeVisible();
+      const availability = panel.getByRole("switch", { name: "Available to play" });
+      await availability.tap();
+      await expect(availability).toBeChecked();
+      await button(panel, "Close").tap();
+    }
+    try {
+      await Promise.all([page.goto(gameUrl), recipient.goto(url())]);
+      await Promise.all([optIn(page, hostName), optIn(recipient, recipientName)]);
+      const creation = watch(page, url("api/jade-harbors/tables"));
+      await button(page, "Invite friends").tap();
+      const created = await creation;
+      expect(created.request().postDataJSON()).toEqual({ players: 3, bots: false });
+      const waiting = await body<Table<HarborsPosition>>(created);
+      expect(waiting.position).toBeNull();
+      await expect(page.getByText("Open seat 3")).toBeVisible();
+      const invitation = await page.getByRole("textbox", { name: "Invite link" }).inputValue();
+      expect(new URL(invitation).pathname).toBe(new URL(gameUrl).pathname);
+      await share.goto(invitation);
+      const join = watch(share, url("api/jade-harbors/join"));
+      await button(share, "Join table").tap();
+      const second = await body<Table<HarborsPosition>>(await join);
+      expect(second.id).toBe(waiting.id);
+      expect(second.position).toBeNull();
+      await expect(share).toHaveURL(gameUrl);
+      await expect(share.getByText("Open seat 3")).toBeVisible();
+      await expect(harborsTable(share)).not.toBeVisible();
+
+      await button(page, "Invite players").tap();
+      const invite = watch(page, url("api/social/invites"));
+      await button(dialog(page).getByRole("list", { name: "Available guests" }).getByRole("listitem")
+        .filter({ hasText: recipientName }), "Invite").tap();
+      const sent = await invite;
+      expect(sent.request().postDataJSON()).toEqual({ game: "jade-harbors", tableId: waiting.id, playerId: expect.any(String) });
+      expect(sent.ok()).toBe(true);
+      await button(dialog(page), "Close").tap();
+      await online(recipient).tap();
+      const incoming = dialog(recipient).getByRole("list", { name: "Incoming invites" }).getByRole("listitem").filter({ hasText: hostName });
+      await expect(incoming).toContainText("Jade Harbors");
+      const endpoint = url(`api/jade-harbors/tables/${waiting.id}`);
+      const readExact = watch(recipient, endpoint, "GET");
+      await button(incoming, "Accept").tap();
+      const exact = await body<Table<HarborsPosition>>(await readExact);
+      expect(exact.id).toBe(waiting.id);
+      expect(exact.seat).not.toBe(waiting.seat);
+      expect(exact.seat).not.toBe(second.seat);
+      expect(exact.seats.map(({ occupied, bot }) => [occupied, bot])).toEqual([[true, false], [true, false], [true, false]]);
+      expect(exact.position.phase).toBe("placePier");
+      expect(exact.position.legalActions.piers).toEqual([]);
+      await expect(recipient).toHaveURL(gameUrl);
+      await expect(harborsTable(recipient).getByRole("combobox")).not.toBeVisible();
+      await expect(harborsTable(share)).toBeVisible();
+      await expect(harborsTable(page).getByRole("combobox", { name: "Choose a site" })).toBeEnabled();
+      const restored = watch(recipient, endpoint, "GET");
+      await recipient.reload();
+      expect(await body<Table<HarborsPosition>>(await restored)).toEqual(exact);
+    } finally {
+      await Promise.all(peers.map(peer => peer.close()));
+    }
   });
 
   test("Koi-Koi invites a second guest, matches a real month, and resumes only that guest’s hand", async ({ page, browser, baseURL }, info) => {

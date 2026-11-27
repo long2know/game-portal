@@ -22,6 +22,7 @@
 | Big Two | Original [ink-and-linen table](../web/src/portal/assets/big-two-baize.svg), [timber card rail](../web/src/portal/games/big-two.css) and [painted catalog vignette](../web/src/portal/catalog-marks.svg#big-two). The route reuses the portal's native card marks and attributed Bellot court faces above; the preview does not load the game or card artwork. |
 | Koi-Koi | Original [48-face flower deck](../web/src/portal/games/koi-deck.svg), [month and category indices](../web/src/portal/games/koi-deck.ts), [woven felt](../web/src/portal/games/koi-felt.svg), and [linen stock and copper rail](../web/src/portal/games/koi-koi.css). The setup shows cards from the playable deck; only the compact [table vignette](../web/src/portal/catalog-marks.svg#koi-koi) ships in the cold catalog sheet. |
 | Ink Grids | The original [paper-and-ink clue-grid vignette](../web/src/portal/catalog-marks.svg#nonograms) uses the existing catalog sheet. The puzzle is a separate, lazy browser-local route. |
+| Jade Harbors | Original [ink-and-gouache canal chart, supply seals, and seat flags](../web/src/portal/games/jade-harbors.ts) and [painted paper and timber swatches](../web/src/portal/games/jade-harbors.css). The route draws the board from the server’s site and terrain geometry. Only the small [canal vignette](../web/src/portal/catalog-marks.svg#jade-harbors) is in the existing cold catalog sheet; no third-party art, fonts or game audio ship with the table. |
 
 The flower deck uses twelve seasonal plants, with original muted ink-and-gouache shapes for the Bright and Animal subjects, ribbon silhouettes, and numbered plain variants. The [Edo-Tokyo Museum collection record](https://museumcollection.tokyo/works/6479282/) provided historical context for small-format flower cards. [Pagat](https://www.pagat.com/class/flower.html) and [Yamato’s deck guide](https://yamato.com/en/hanafuda/how-to-play/) were consulted for the traditional months and card subjects, and [Nintendo’s published explanation](https://www.nintendo.com/jp/others/hanafuda_kabufuda/howtoplay/koikoi/index.html) for how to introduce matching and the Bank/Koi-Koi choice. The [Playdate accessibility checklist](https://help.play.date/developer/user-experience-checklist/) informed the readable card indexes, visible start cue and previews from the running game. None of these references supplied shipped artwork, branding, or code.
 
@@ -79,12 +80,12 @@ Use Vite's production `web/dist` and Node 26.13.1 `gzipSync` on each file, then 
 
 The two HTML entries share only the small emblem asset at startup; there is no shared preload or board-game bundle in the Mahjong shell. The published lobby includes the CSS-loaded Go study and the small catalog sheet, not the gameplay material sheets. Chess requests a separate **1,848 gzip-byte** sprite; the lobby does not fetch it. The portal Mahjong repaint is inlined in the lazy Hall styles and inline character art; it adds no cold asset requests. Settings, the table cue synthesizer, scores, and the speech player remain deferred. The Mahjong child fetches bundled clips only for the selected voice once an opted-in, audible table has Web Audio unlocked. The optional Changsha editor loads with Settings; the selected Changsha voice reads its clips from browser storage, not the network. The portal lobby never fetches the alternative score or speech.
 
-With Flower Cards and Ink Grids, the portal still fetches five cold assets:
+The portal cold asset inventory is five files:
 its entry JS and CSS, the shared emblem, the Go study, and the catalog sheet.
 The Mahjong child still fetches three: its entry JS and CSS and the emblem.
 The budgets below include the served HTML at each mount. Board-lattice,
 square and move-mark styles load with the board renderer (including Daily
-Xiangqi), not on the lobby. The two new catalog marks use the existing sheet;
+Xiangqi), not on the lobby. The catalog marks use the existing sheet;
 the game modules and playable art are not requested there.
 
 | Combined native build, including served HTML | Gzip bytes | Limit |

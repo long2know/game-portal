@@ -303,6 +303,16 @@
     <path d="M31 24h6v5h-6zm12 0h6v5h-6zm-18 5h30v5H25zm6 5h18v5H31zm6 5h6v5h-6z" fill="#435d54"/>
     <path d="m55 46 11-14 3 2-11 14-4 2z" fill="#9d5549" stroke="#684039"/>
   </symbol>
+  <symbol id="jade-harbors" viewBox="0 0 72 60">
+    <path d="M0 0h72v60H0z" fill="#75513d"/>
+    <path d="m5 7 61-3 2 47-61 5Z" fill="#47766e" stroke="#e0b588" stroke-width="2"/>
+    <path d="m11 18 13-9 12 7v15l-12 8-13-7z" fill="#b1b47d" stroke="#233d38"/>
+    <path d="m40 17 12-9 12 7v14l-11 9-13-6z" fill="#d2a56d" stroke="#233d38"/>
+    <path d="m26 42 13-9 12 7v9l-25 3z" fill="#cd8d71" stroke="#233d38"/>
+    <path d="m24 37 14-7 14 8" fill="none" stroke="#f6dab1" stroke-width="2"/>
+    <path d="M34 32v-9l6-3 5 4v8z" fill="#b35c43" stroke="#382a26"/>
+    <path d="m10 46 12-2m33 1 10-2M14 13l5-3" stroke="#a8c1a8"/>
+  </symbol>
   <symbol id="daily-court" viewBox="0 0 72 60">
     <path d="M5 15 64 4l5 47-60 7Z" fill="#684434"/>
     <path d="M7 15 64 6l2 42-55 7Z" fill="#a56f50" stroke="#c58d63"/>

@@ -121,7 +121,7 @@ test.describe("published Daily Court", () => {
     await expect(start).toHaveAttribute("href", `${mount}daily-court/`);
     await paintedUses(shelf, ".daily-stamp use", 1);
     expect((await start.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-    await expect(page.getByText("19 games · No account required")).toBeVisible();
+    await expect(page.getByText("20 games · No account required")).toBeVisible();
     await fitsPhone(page);
     expect(coldRequests.filter(path => /daily-court|daily-xiangqi|xiangqi-board|solitaire-well/.test(path))).toEqual([]);
     await page.screenshot({ path: info.outputPath("daily-shelf-320.png") });

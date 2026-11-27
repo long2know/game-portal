@@ -92,7 +92,7 @@ test.describe("published Lantern Run", () => {
     const card = page.getByRole("link", { name: "Play Lantern Run" });
     await expect(card).toHaveAttribute("href", `${mount}lantern-run/`);
     await expect(card.locator("svg")).toBeVisible();
-    await expect(page.getByText("19 games · No account required")).toBeVisible();
+    await expect(page.getByText("20 games · No account required")).toBeVisible();
     const assets = () => [...paths].filter(path => /\/assets\/lantern-run-/.test(path));
     expect(assets()).toEqual([]);
     await card.click();
