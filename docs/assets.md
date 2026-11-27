@@ -88,7 +88,7 @@ square and move-mark styles load with the board renderer (including Daily
 Xiangqi), not on the lobby. The catalog marks use the existing sheet;
 the game modules and playable art are not requested there.
 
-| Combined native build, including served HTML | Gzip bytes | Limit |
+| Earlier Flower Cards and Ink Grids native build, including served HTML | Gzip bytes | Limit |
 |---|---:|---:|
 | `/portal/` | 23,877 | 24,576 |
 | `/game-portal/` | 23,881 | 24,576 |

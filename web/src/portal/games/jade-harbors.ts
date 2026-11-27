@@ -366,11 +366,12 @@ function view(send: (action: HarborsAction) => void): MatchView<HarborsPosition>
         }
         dice.setAttribute("aria-label", a === undefined || b === undefined ? "No roll yet" : `Last roll: ${a} plus ${b} equals ${a + b}`);
         scores.replaceChildren(...position.seats.map(({ seat, points, resourceCount }) => {
-          const label = table.seats.find(item => item.seat === seat)?.bot ? `${who(seat)} · Bot` : who(seat);
+          const name = who(seat);
+          const namedBot = table.seats.find(item => item.seat === seat)?.bot && !/^Bot \d+$/.test(name);
           const flag = el("span", "jh-flag", String(seat + 1));
           flag.setAttribute("role", "img");
           flag.setAttribute("aria-label", `Seat ${seat + 1}`);
-          const card = el("li", "", el("span", "jh-seat-name", flag, el("strong", "", label)),
+          const card = el("li", "", el("span", "jh-seat-name", flag, el("strong", "", namedBot ? `${name} · Bot` : name)),
             el("b", "jh-points", `${points} ${points === 1 ? "point" : "points"}`),
             el("small", "", `${resourceCount} ${resourceCount === 1 ? "supply" : "supplies"}`),
             ...(seat === turnSeat ? [el("span", "jh-seat-turn", "Turn")] : []));

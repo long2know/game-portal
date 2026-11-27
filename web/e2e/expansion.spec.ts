@@ -482,6 +482,9 @@ test.describe("mounted Jade Court expansion", () => {
     await page.setViewportSize({ width: 740, height: 320 });
     await fits(page);
     await targets(button(table, "End turn"), table.getByText("Read the map", { exact: true }));
+    await table.locator(".jh-board").evaluate(node => node.scrollIntoView({ block: "start" }));
+    await expect(button(table, "End turn")).toBeInViewport({ ratio: 1 });
+    await expect(table.locator(".jh-chart")).toBeInViewport({ ratio: .75 });
     await table.screenshot({ path: info.outputPath("harbors-live-740x320.png") });
     const resumed = watch(page, endpoint, "GET");
     await page.reload();
@@ -493,6 +496,10 @@ test.describe("mounted Jade Court expansion", () => {
     expect(await body<Table<HarborsPosition>>(await save)).toEqual(game);
     await expect(page).toHaveURL(url("jade-harbors/"));
     await expect(hand.locator("strong")).toHaveText(game.position.ownResources.map(String));
+    await move({ kind: "endTurn" }, "End turn");
+    expect(game.position.turnSeat).toBe(game.seat);
+    expect(game.position.turn).toBe(4);
+    await expect(button(table, "Roll dice")).toBeEnabled();
   });
 
   test("Jade Harbors admits a share guest and a private invite guest to the exact three-human table", async ({ page, browser, baseURL }, info) => {
@@ -501,8 +508,8 @@ test.describe("mounted Jade Court expansion", () => {
     const hostName = `Harbor ${info.project.name}`;
     const recipientName = `Mooring ${info.project.name}`;
     const opts = { viewport: portrait, isMobile: true, hasTouch: true };
-    const peers = await Promise.all([browser.newContext(opts), browser.newContext(opts)]);
-    const [share, recipient] = await Promise.all(peers.map(peer => peer.newPage()));
+    const peers = [await browser.newContext(opts)];
+    const recipient = await peers[0].newPage();
     const online = (page: Page) => page.getByRole("button", { name: /^Online lobby/ });
     const dialog = (page: Page) => page.getByRole("dialog", { name: "Online lobby" });
     async function optIn(page: Page, name: string) {
@@ -512,13 +519,17 @@ test.describe("mounted Jade Court expansion", () => {
       await button(panel, "Save name").tap();
       await expect(panel.getByText("Display name saved.")).toBeVisible();
       const availability = panel.getByRole("switch", { name: "Available to play" });
-      await availability.tap();
+      await expect(availability).toBeEnabled();
+      await availability.focus();
+      await page.keyboard.press("Space");
       await expect(availability).toBeChecked();
-      await button(panel, "Close").tap();
+      await page.keyboard.press("Escape");
+      await expect(panel).not.toBeVisible();
     }
     try {
       await Promise.all([page.goto(gameUrl), recipient.goto(url())]);
-      await Promise.all([optIn(page, hostName), optIn(recipient, recipientName)]);
+      await optIn(page, hostName);
+      await optIn(recipient, recipientName);
       const creation = watch(page, url("api/jade-harbors/tables"));
       await button(page, "Invite friends").tap();
       const created = await creation;
@@ -528,6 +539,9 @@ test.describe("mounted Jade Court expansion", () => {
       await expect(page.getByText("Open seat 3")).toBeVisible();
       const invitation = await page.getByRole("textbox", { name: "Invite link" }).inputValue();
       expect(new URL(invitation).pathname).toBe(new URL(gameUrl).pathname);
+      const shareContext = await browser.newContext(opts);
+      peers.push(shareContext);
+      const share = await shareContext.newPage();
       await share.goto(invitation);
       const join = watch(share, url("api/jade-harbors/join"));
       await button(share, "Join table").tap();
@@ -560,12 +574,18 @@ test.describe("mounted Jade Court expansion", () => {
       expect(exact.position.phase).toBe("placePier");
       expect(exact.position.legalActions.piers).toEqual([]);
       await expect(recipient).toHaveURL(gameUrl);
+      await expect(harborsTable(recipient)).toBeVisible();
       await expect(harborsTable(recipient).getByRole("combobox")).not.toBeVisible();
-      await expect(harborsTable(share)).toBeVisible();
-      await expect(harborsTable(page).getByRole("combobox", { name: "Choose a site" })).toBeEnabled();
       const restored = watch(recipient, endpoint, "GET");
       await recipient.reload();
       expect(await body<Table<HarborsPosition>>(await restored)).toEqual(exact);
+
+      const readShare = watch(share, endpoint, "GET");
+      await share.reload();
+      expect(await body<Table<HarborsPosition>>(await readShare)).toMatchObject({ id: exact.id, seat: second.seat, status: "playing" });
+      await expect(harborsTable(share)).toBeVisible();
+      await page.reload();
+      await expect(harborsTable(page).getByRole("combobox", { name: "Choose a site" })).toBeEnabled();
     } finally {
       await Promise.all(peers.map(peer => peer.close()));
     }
