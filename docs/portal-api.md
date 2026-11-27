@@ -371,6 +371,7 @@ the last position, if any, with `turnSeat: null` and no available actions.
 
 ```ts
 type Card = {id: number; month: number; kind: "bright" | "animal" | "ribbon" | "plain"; name: string};
+type CardResolution = {card: Card; captured: Card[]};
 type Position = {
     phase: "hand" | "draw" | "decision" | "roundEnd" | "finished";
     turnSeat: number | null;
@@ -380,6 +381,7 @@ type Position = {
     field: Card[];
     stockCount: number;
     drawnCard: Card | null;
+    recentTurns: {seat: number; play: CardResolution; draw: CardResolution}[];
     ownCards: Card[];
     seats: {seat: number; handCount: number; captured: Card[]; score: number;
         yaku: {name: string; points: number}[]; continued: boolean}[];
@@ -408,6 +410,20 @@ sixth round and also null for a tie.
   two-way capture: `drawnCard` is public to both seats, but only `turnSeat` receives
   two `drawTargets` and may send `{kind: "takeDraw", targetId}`. Otherwise `drawnCard`
   is null; a resolved card is part of the field or a capture pile.
+- `recentTurns` is an array shared by both seats, with at most one row per seat
+  for its latest completed hand play and stock flip in the current round, sorted
+  by absolute seat. Each `captured` array lists only the field targets captured
+  by that part of the turn, not the played or flipped `card` itself. It is empty
+  when the card was left on the field. A pending draw leaves the recap unchanged;
+  its row updates in the same commit as the choice and its outcome. A human turn
+  and immediate bot reply can update both rows in one revision.
+- Recaps are public display references, not extra owned cards. Use `legalActions`,
+  not the recap, to choose an action.
+  An unmatched card from a recap may have been captured since. The recap survives
+  polling and restart, resets on each new deal, and may already show a bot
+  dealer's opening turn. Older responses can omit `recentTurns`; new responses
+  with no recorded turns return `[]`. A legacy pending draw can still be resolved
+  but does not produce a row without the original hand play.
 - `decision` follows a completed turn with a qualifying subtotal. The active guest can
   send `{kind: "score"}` to bank points or `{kind: "continue"}` when `canContinue` is
   true. A yaku may already be visible during a pending draw; no scoring choice is

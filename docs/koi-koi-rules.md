@@ -97,9 +97,15 @@ Drawn rounds award neither seat any points.
 
 The server privately shuffles all six deals and writes the exact orders, current
 cards, pending choice, and scores to a version-1 seated checkpoint. Restoring
-uses those same orders; a browser cannot submit a deck or seed. A bot chooses
-from its own hand, visible cards, and legal choices only. Between rounds the
-server waits for a seat to request the next deal. See the
+uses those same orders; a browser cannot submit a deck or seed. The same
+checkpoint can record public card references for each seat's latest completed
+turn and the hand play for a pending draw choice. These let both seats see the
+last plays and flips even when they resolve automatically. Recaps are for
+display only; they neither add cards nor determine play or scoring. They start
+empty each round. Older saves without a recap still play normally: a pending
+draw without a recorded hand play can be taken but contributes no recap.
+A bot chooses from its own hand, visible cards, and legal choices only.
+Between rounds the server waits for a seat to request the next deal. See the
 [mounted API](portal-api.md#koi-koi) for the guest projection and actions.
 
 References for the deck and rule variants: [Nintendo's Koi-Koi rules](https://www.nintendo.com/jp/others/hanafuda_kabufuda/howtoplay/koikoi/index.html),

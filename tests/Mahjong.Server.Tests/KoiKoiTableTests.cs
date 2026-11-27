@@ -28,6 +28,19 @@ public sealed class KoiKoiTableTests
         await Error(await host.Request(HttpMethod.Post, path + "/next", new { revision = 0 }),
             HttpStatusCode.BadRequest, "round_in_progress");
 
+        // Use an opening where the human's first play immediately passes to the bot.
+        await RestoreCheckpoint(server, table.Text("id"), KoiKoiGame.Start(seed: 1));
+        Assert.Empty(RecentTurns(AssertPosition(await Read(host, path), 0)));
+        table = await Post(host, path + "/actions", new { revision = 0, action = PlayAction(1, null) });
+        var combined = AssertPosition(table, 0);
+        Assert.Equal(1, Revision(table));
+        Assert.Equal(new[] { 7, 7 }, Counts(combined));
+        Assert.Equal(22, Number(combined, "stockCount"));
+        Assert.Collection(RecentTurns(combined),
+            turn => AssertTurn(turn, 0, 1, [], 28, []),
+            turn => AssertTurn(turn, 1, 35, [32], 43, []));
+        Assert.True(JsonElement.DeepEquals(table, await Read(host, path)));
+
         for (var step = 0; step < 18 && table.At("position", "phase").GetString() != "roundEnd"; step++)
         {
             var before = AssertPosition(table, 0);
@@ -83,6 +96,7 @@ public sealed class KoiKoiTableTests
         Assert.Equal(Scores(settled), Scores(reopened));
         Assert.Equal(8, Cards(reopened, "ownCards").Length);
         Assert.InRange(Number(reopened, "stockCount"), 23, 24);
+        Assert.Equal(nextDealer == 1 ? [1] : [], RecentTurns(reopened).Select(turn => Number(turn, "seat")));
         await Error(await host.Request(HttpMethod.Post, path + "/next", new { revision = endedRevision }),
             HttpStatusCode.Conflict, "stale_room");
         Assert.True(JsonElement.DeepEquals(next, await Read(host, path)));
@@ -137,6 +151,7 @@ public sealed class KoiKoiTableTests
         var users = new[] { host, peer };
         var views = await Task.WhenAll(users.Select(user => Read(user, path)));
         var positions = views.Select((table, seat) => AssertPosition(table, seat)).ToArray();
+        Assert.All(positions, position => Assert.Empty(RecentTurns(position)));
         Assert.All(views, table =>
         {
             Assert.Equal(1, Revision(table));
@@ -189,7 +204,9 @@ public sealed class KoiKoiTableTests
         var closed = await Post(peer, path + "/leave", new { revision = 2 });
         Assert.Equal("closed", closed.Text("status"));
         Assert.Equal("left", closed.Text("endReason"));
-        AssertPosition(closed, 1);
+        var closedPosition = AssertPosition(closed, 1);
+        Assert.True(JsonElement.DeepEquals(other.GetProperty("recentTurns"), closedPosition.GetProperty("recentTurns")));
+        Assert.True(JsonElement.DeepEquals(closed, await Read(peer, path)));
         Assert.Null((await Read(peer, Api + "/resume")).Text("tableId"));
     }
 
@@ -202,7 +219,103 @@ public sealed class KoiKoiTableTests
         var users = new[] { await Enter(server, mount, "East"), await Enter(server, mount, "West") };
         var waiting = await Post(users[0], Api + "/tables", new { players = 2, bots = false });
         var started = await Post(users[1], Api + "/join", new { invite = waiting.Text("invite") });
-        var (checkpoint, seat, target) = PendingDrawWithYaku();
+        var (checkpoint, seat, card, playTarget, target) = TurnWithDrawChoiceAndYaku();
+        await RestoreCheckpoint(server, started.Text("id"), checkpoint);
+
+        var path = Api + "/tables/" + started.Text("id");
+        var before = AssertPosition(await Read(users[seat], path), seat);
+        var play = Assert.Single(before.At("legalActions", "plays").EnumerateArray(), play => Number(play, "cardId") == card);
+        var playTargets = playTarget is int chosenTarget ? [chosenTarget] : play.GetProperty("targetIds").EnumerateArray()
+            .Select(targetId => targetId.GetInt32()).ToArray();
+        var pendingTable = await Post(users[seat], path + "/actions", new { revision = 1, action = PlayAction(card, playTarget) });
+        var pending = AssertPosition(pendingTable, seat);
+        var peerPending = await Read(users[1 - seat], path);
+        var peer = AssertPosition(peerPending, 1 - seat);
+        Assert.Equal(2, Revision(pendingTable));
+        Assert.Equal("draw", pending.Text("phase"));
+        Assert.True(JsonElement.DeepEquals(pending.GetProperty("drawnCard"), peer.GetProperty("drawnCard")));
+        Assert.Equal(2, RecentTurns(before).Length);
+        Assert.True(JsonElement.DeepEquals(before.GetProperty("recentTurns"), pending.GetProperty("recentTurns")));
+        Assert.True(JsonElement.DeepEquals(pending.GetProperty("recentTurns"), peer.GetProperty("recentTurns")));
+        await server.StopAsync();
+        await server.StartAsync();
+        Assert.True(JsonElement.DeepEquals(pendingTable, await Read(users[seat], path)));
+        Assert.True(JsonElement.DeepEquals(peerPending, await Read(users[1 - seat], path)));
+
+        var take = new { revision = 2, action = new { kind = "takeDraw", targetId = target } };
+        await Error(await users[1 - seat].Request(HttpMethod.Post, path + "/actions", take), HttpStatusCode.BadRequest, "not_your_turn");
+        await Error(await users[seat].Request(HttpMethod.Post, path + "/actions", new { revision = 2, action = new { kind = "continue" } }),
+            HttpStatusCode.BadRequest, "illegal_action");
+
+        var chosen = await Post(users[seat], path + "/actions", take);
+        var decision = AssertPosition(chosen, seat);
+        Assert.Equal(3, Revision(chosen));
+        Assert.Equal("decision", decision.Text("phase"));
+        var captured = CardIds(decision.GetProperty("seats")[seat], "captured");
+        var drawn = Number(pending.GetProperty("drawnCard"), "id");
+        Assert.Contains(target, captured);
+        Assert.Contains(drawn, captured);
+        Assert.DoesNotContain(target, CardIds(decision, "field"));
+        var decisionTurns = RecentTurns(decision);
+        Assert.Equal(2, decisionTurns.Length);
+        AssertTurn(decisionTurns[seat], seat, card, playTargets, drawn, [target]);
+        Assert.True(JsonElement.DeepEquals(RecentTurns(before)[1 - seat], decisionTurns[1 - seat]));
+        var peerDecision = await Read(users[1 - seat], path);
+        var peerView = AssertPosition(peerDecision, 1 - seat);
+        Assert.Equal(3, Revision(peerDecision));
+        Assert.True(JsonElement.DeepEquals(decision.GetProperty("recentTurns"), peerView.GetProperty("recentTurns")));
+        Assert.Empty(CardIds(decision, "ownCards").Intersect(CardIds(peerView, "ownCards")));
+        await Error(await users[seat].Request(HttpMethod.Post, path + "/actions", take), HttpStatusCode.Conflict, "stale_room");
+        await server.StopAsync();
+        await server.StartAsync();
+        Assert.True(JsonElement.DeepEquals(chosen, await Read(users[seat], path)));
+        Assert.True(JsonElement.DeepEquals(peerDecision, await Read(users[1 - seat], path)));
+
+        var pass = await Post(users[seat], path + "/actions", new { revision = 3, action = new { kind = "continue" } });
+        var continued = AssertPosition(pass, seat);
+        Assert.Equal(4, Revision(pass));
+        Assert.Equal("hand", continued.Text("phase"));
+        Assert.Equal(1 - seat, Number(continued, "turnSeat"));
+        Assert.True(Flag(continued.GetProperty("seats")[seat], "continued"));
+        Assert.Equal(new[] { 0, 0 }, Scores(continued));
+        Assert.True(JsonElement.DeepEquals(decision.GetProperty("recentTurns"), continued.GetProperty("recentTurns")));
+        Assert.True(JsonElement.DeepEquals(pass, await Read(users[seat], path)));
+    }
+
+    private static (string Checkpoint, int Seat, int Card, int? PlayTarget, int DrawTarget) TurnWithDrawChoiceAndYaku()
+    {
+        for (var seed = 0; seed < 64; seed++)
+        {
+            var checkpoint = KoiKoiGame.Start(seed);
+            for (var step = 0; step < 32 && KoiKoiGame.View(checkpoint, 0).TurnSeat is int seat; step++)
+            {
+                var view = KoiKoiGame.View(checkpoint, seat);
+                if (view.Phase == "draw")
+                    checkpoint = KoiKoiGame.Apply(checkpoint, seat, new(KoiKoiActionKind.TakeDraw, TargetId: view.LegalActions.DrawTargets[0]));
+                else if (view.Phase == "hand")
+                {
+                    var play = view.LegalActions.Plays[0];
+                    var playTarget = play.TargetIds.Length == 2 ? play.TargetIds[0] : (int?)null;
+                    var after = KoiKoiGame.Apply(checkpoint, seat, new(KoiKoiActionKind.Play, play.CardId, playTarget));
+                    if (view.Seats.All(player => player.HandCount < 8))
+                    {
+                        foreach (var target in KoiKoiGame.View(after, seat).LegalActions.DrawTargets)
+                        {
+                            var selected = KoiKoiGame.Apply(after, seat, new(KoiKoiActionKind.TakeDraw, TargetId: target));
+                            if (KoiKoiGame.View(selected, seat).LegalActions.CanContinue)
+                                return (checkpoint, seat, play.CardId, playTarget, target);
+                        }
+                    }
+                    checkpoint = after;
+                }
+                else break;
+            }
+        }
+        throw new InvalidOperationException("No seeded draw choice leading to an eligible Koi-Koi decision.");
+    }
+
+    private static async Task RestoreCheckpoint(Kestrel server, string id, string checkpoint)
+    {
         await server.StopAsync();
         await using (var db = new SqliteConnection(new SqliteConnectionStringBuilder
         {
@@ -213,68 +326,10 @@ public sealed class KoiKoiTableTests
             await using var update = db.CreateCommand();
             update.CommandText = "UPDATE SeatedTables SET Checkpoint=$checkpoint WHERE Id=$id AND Game='koi-koi'";
             update.Parameters.AddWithValue("$checkpoint", checkpoint);
-            update.Parameters.AddWithValue("$id", started.Text("id"));
+            update.Parameters.AddWithValue("$id", id);
             Assert.Equal(1, await update.ExecuteNonQueryAsync());
         }
-
         await server.StartAsync();
-        var path = Api + "/tables/" + started.Text("id");
-        var pending = AssertPosition(await Read(users[seat], path), seat);
-        var peer = AssertPosition(await Read(users[1 - seat], path), 1 - seat);
-        Assert.Equal("draw", pending.Text("phase"));
-        Assert.True(JsonElement.DeepEquals(pending.GetProperty("drawnCard"), peer.GetProperty("drawnCard")));
-        var take = new { revision = 1, action = new { kind = "takeDraw", targetId = target } };
-        await Error(await users[1 - seat].Request(HttpMethod.Post, path + "/actions", take), HttpStatusCode.BadRequest, "not_your_turn");
-        await Error(await users[seat].Request(HttpMethod.Post, path + "/actions", new { revision = 1, action = new { kind = "continue" } }),
-            HttpStatusCode.BadRequest, "illegal_action");
-
-        var chosen = await Post(users[seat], path + "/actions", take);
-        var decision = AssertPosition(chosen, seat);
-        Assert.Equal(2, Revision(chosen));
-        Assert.Equal("decision", decision.Text("phase"));
-        var captured = CardIds(decision.GetProperty("seats")[seat], "captured");
-        Assert.Contains(target, captured);
-        Assert.Contains(Number(pending.GetProperty("drawnCard"), "id"), captured);
-        Assert.DoesNotContain(target, CardIds(decision, "field"));
-
-        var pass = await Post(users[seat], path + "/actions", new { revision = 2, action = new { kind = "continue" } });
-        var continued = AssertPosition(pass, seat);
-        Assert.Equal(3, Revision(pass));
-        Assert.Equal("hand", continued.Text("phase"));
-        Assert.Equal(1 - seat, Number(continued, "turnSeat"));
-        Assert.True(Flag(continued.GetProperty("seats")[seat], "continued"));
-        Assert.Equal(new[] { 0, 0 }, Scores(continued));
-        Assert.True(JsonElement.DeepEquals(pass, await Read(users[seat], path)));
-    }
-
-    private static (string Checkpoint, int Seat, int Target) PendingDrawWithYaku()
-    {
-        for (var seed = 0; seed < 64; seed++)
-        {
-            var checkpoint = KoiKoiGame.Start(seed);
-            for (var step = 0; step < 32 && KoiKoiGame.View(checkpoint, 0).TurnSeat is int seat; step++)
-            {
-                var view = KoiKoiGame.View(checkpoint, seat);
-                if (view.Phase == "draw")
-                {
-                    var targets = view.LegalActions.DrawTargets;
-                    foreach (var target in targets)
-                    {
-                        var selected = KoiKoiGame.Apply(checkpoint, seat, new(KoiKoiActionKind.TakeDraw, TargetId: target));
-                        if (KoiKoiGame.View(selected, seat).LegalActions.CanContinue) return (checkpoint, seat, target);
-                    }
-                    checkpoint = KoiKoiGame.Apply(checkpoint, seat, new(KoiKoiActionKind.TakeDraw, TargetId: targets[0]));
-                }
-                else if (view.Phase == "hand")
-                {
-                    var play = view.LegalActions.Plays[0];
-                    checkpoint = KoiKoiGame.Apply(checkpoint, seat, new(KoiKoiActionKind.Play, play.CardId,
-                        play.TargetIds.Length == 2 ? play.TargetIds[0] : null));
-                }
-                else break;
-            }
-        }
-        throw new InvalidOperationException("No seeded draw choice leading to an eligible Koi-Koi decision.");
     }
 
     private static object LegalAction(JsonElement position)
@@ -286,9 +341,12 @@ public sealed class KoiKoiTableTests
         var play = actions.GetProperty("plays").EnumerateArray().OrderByDescending(item => item.GetProperty("targetIds").GetArrayLength() == 2).First();
         var card = Number(play, "cardId");
         var targets = play.GetProperty("targetIds");
-        return targets.GetArrayLength() == 2 ? new { kind = "play", cardId = card, targetId = targets[0].GetInt32() }
-            : new { kind = "play", cardId = card };
+        return PlayAction(card, targets.GetArrayLength() == 2 ? targets[0].GetInt32() : null);
     }
+
+    private static object PlayAction(int card, int? target) => target is int targetId
+        ? new { kind = "play", cardId = card, targetId }
+        : new { kind = "play", cardId = card };
 
     private static JsonElement AssertPosition(JsonElement table, int viewer)
     {
@@ -296,9 +354,10 @@ public sealed class KoiKoiTableTests
         Assert.Null(table.Text("invite"));
         string[] tableFields = ["id", "revision", "status", "seat", "seats", "invite", "position"];
         AssertFields(table, table.Text("status") == "closed" ? [.. tableFields, "endReason"] : tableFields);
+        Assert.All(table.GetProperty("seats").EnumerateArray(), seat => AssertFields(seat, "seat", "name", "bot", "occupied"));
         var position = Position(table);
         AssertFields(position, "phase", "turnSeat", "dealerSeat", "round", "totalRounds", "field", "stockCount",
-            "drawnCard", "ownCards", "seats", "result", "matchWinnerSeat", "legalActions");
+            "drawnCard", "recentTurns", "ownCards", "seats", "result", "matchWinnerSeat", "legalActions");
         var phase = position.Text("phase");
         var turn = NullableNumber(position, "turnSeat");
         var playing = table.Text("status") == "playing";
@@ -339,6 +398,7 @@ public sealed class KoiKoiTableTests
         }
         Assert.Equal(seen.Count, seen.Select(card => Number(card, "id")).Distinct().Count());
         Assert.Equal(48, seen.Count + Number(position, "stockCount") + counts[1 - viewer]);
+        AssertPublicRecaps(position, field, seats);
         var active = turn == viewer;
         var plays = legal.GetProperty("plays").EnumerateArray().ToArray();
         Assert.Equal(active && phase == "hand" ? CardIds(position, "ownCards") : [], plays.Select(play => Number(play, "cardId")));
@@ -365,6 +425,41 @@ public sealed class KoiKoiTableTests
             AssertFields(result, "winnerSeat", "points", "basePoints", "sevenPointBonus", "opponentContinued", "nextDealerSeat");
         else Assert.Equal(JsonValueKind.Null, result.ValueKind);
         return position;
+    }
+
+    private static void AssertPublicRecaps(JsonElement position, JsonElement[] field, JsonElement seats)
+    {
+        var turns = RecentTurns(position);
+        var actors = turns.Select(turn => Number(turn, "seat")).ToArray();
+        Assert.Equal(actors.Distinct().Order(), actors);
+        var piles = seats.EnumerateArray().Select(seat => Cards(seat, "captured")).ToArray();
+        var publicCards = field.Concat(piles.SelectMany(pile => pile)).ToDictionary(card => Number(card, "id"));
+        foreach (var turn in turns)
+        {
+            AssertFields(turn, "seat", "play", "draw");
+            var seat = Number(turn, "seat");
+            Assert.InRange(seat, 0, 1);
+            foreach (var step in new[] { turn.GetProperty("play"), turn.GetProperty("draw") })
+            {
+                AssertFields(step, "card", "captured");
+                var card = step.GetProperty("card");
+                Assert.True(publicCards.TryGetValue(Number(card, "id"), out var visible));
+                Assert.True(JsonElement.DeepEquals(card, visible));
+                var targets = Cards(step, "captured");
+                if (targets.Length == 0) continue;
+                Assert.Contains(piles[seat], captured => JsonElement.DeepEquals(captured, card));
+                Assert.All(targets, target => Assert.Contains(piles[seat], captured => JsonElement.DeepEquals(captured, target)));
+            }
+        }
+    }
+
+    private static void AssertTurn(JsonElement turn, int seat, int play, int[] playTargets, int draw, int[] drawTargets)
+    {
+        Assert.Equal(seat, Number(turn, "seat"));
+        Assert.Equal(play, Number(turn.At("play", "card"), "id"));
+        Assert.Equal(playTargets, CardIds(turn.GetProperty("play"), "captured"));
+        Assert.Equal(draw, Number(turn.At("draw", "card"), "id"));
+        Assert.Equal(drawTargets, CardIds(turn.GetProperty("draw"), "captured"));
     }
 
     private static async Task AssertSave(User user, string id, bool fresh)
@@ -401,6 +496,7 @@ public sealed class KoiKoiTableTests
     private static int? NullableNumber(JsonElement json, string key) =>
         json.GetProperty(key).ValueKind == JsonValueKind.Null ? null : Number(json, key);
     private static bool Flag(JsonElement json, string key) => json.GetProperty(key).GetBoolean();
+    private static JsonElement[] RecentTurns(JsonElement position) => position.GetProperty("recentTurns").EnumerateArray().ToArray();
     private static JsonElement[] Cards(JsonElement json, string key) => json.GetProperty(key).EnumerateArray().ToArray();
     private static int[] CardIds(JsonElement json, string key) => Cards(json, key).Select(card => Number(card, "id")).ToArray();
     private static int[] Counts(JsonElement json) => json.GetProperty("seats").EnumerateArray().Select(seat => Number(seat, "handCount")).ToArray();

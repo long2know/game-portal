@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Security.Cryptography;
+using System.Text.Json.Serialization;
 using static JadeCourt.Games.Hanafuda.HanafudaCards;
 
 namespace JadeCourt.Games.Hanafuda;
@@ -9,9 +10,14 @@ public sealed record KoiKoiLegalActions(KoiKoiPlay[] Plays, int[] DrawTargets, b
 public sealed record KoiKoiSeat(int Seat, int HandCount, KoiKoiCard[] Captured, int Score, KoiKoiYaku[] Yaku, bool Continued);
 public sealed record KoiKoiResult(int? WinnerSeat, int Points, int BasePoints, bool SevenPointBonus, bool OpponentContinued,
     int NextDealerSeat);
+public sealed record KoiKoiCardResolution(KoiKoiCard Card, KoiKoiCard[] Captured);
+public sealed record KoiKoiRecentTurn(int Seat, KoiKoiCardResolution Play, KoiKoiCardResolution Draw);
 public sealed record KoiKoiView(string Phase, int? TurnSeat, int DealerSeat, int Round, int TotalRounds, KoiKoiCard[] Field,
     int StockCount, KoiKoiCard? DrawnCard, KoiKoiCard[] OwnCards, KoiKoiSeat[] Seats, KoiKoiResult? Result,
-    int? MatchWinnerSeat, KoiKoiLegalActions LegalActions);
+    int? MatchWinnerSeat, KoiKoiLegalActions LegalActions)
+{
+    public KoiKoiRecentTurn[] RecentTurns { get; init; } = [];
+}
 
 public enum KoiKoiActionKind { Play = 1, TakeDraw, Score, Continue }
 public readonly record struct KoiKoiAction(KoiKoiActionKind Kind, int? CardId = null, int? TargetId = null);
@@ -22,10 +28,14 @@ public sealed class KoiKoiRejectedException(KoiKoiRejection reason) : Exception(
 }
 
 internal enum KoiKoiPhase { Hand = 1, Draw, Decision, RoundEnd, Finished }
-internal sealed record KoiKoiPlayer(ImmutableArray<int> Hand, ImmutableArray<int> Captured, int Score, int ContinuedAt);
+internal sealed record KoiKoiCardRef(int CardId, ImmutableArray<int> Captured);
+internal sealed record KoiKoiTurnRef(KoiKoiCardRef Play, KoiKoiCardRef Draw);
+internal sealed record KoiKoiPlayer(ImmutableArray<int> Hand, ImmutableArray<int> Captured, int Score, int ContinuedAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] KoiKoiTurnRef? RecentTurn = null);
 internal sealed record KoiKoiState(int Round, int DealerSeat, int? TurnSeat, KoiKoiPhase Phase,
     ImmutableArray<KoiKoiPlayer> Players, ImmutableArray<int> Field, ImmutableArray<int> Stock, int? DrawnCard,
-    KoiKoiResult? Result, ImmutableArray<ImmutableArray<int>> FutureDeals);
+    KoiKoiResult? Result, ImmutableArray<ImmutableArray<int>> FutureDeals,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] KoiKoiCardRef? PendingPlay = null);
 
 public static class KoiKoiGame
 {
@@ -117,14 +127,16 @@ public static class KoiKoiGame
         {
             case (KoiKoiPhase.Hand, { Kind: KoiKoiActionKind.Play, CardId: int id }) when player.Hand.Contains(id):
                 state = WithPlayer(state, seat, player with { Hand = player.Hand.Remove(id) });
-                state = ResolveCard(state, seat, id, action.TargetId);
+                state = ResolveCard(state, seat, id, action.TargetId, out var play);
                 var drawn = state.Stock[0];
                 state = state with { Stock = state.Stock.RemoveAt(0) };
-                return Matches(state, drawn).Length == 2
-                    ? state with { Phase = KoiKoiPhase.Draw, DrawnCard = drawn }
-                    : CompleteTurn(ResolveCard(state, seat, drawn, null), seat);
+                if (Matches(state, drawn).Length == 2)
+                    return state with { Phase = KoiKoiPhase.Draw, DrawnCard = drawn, PendingPlay = play };
+                state = ResolveCard(state, seat, drawn, null, out var draw);
+                return CompleteTurn(state, seat, play, draw);
             case (KoiKoiPhase.Draw, { Kind: KoiKoiActionKind.TakeDraw, CardId: null, TargetId: int target }):
-                return CompleteTurn(ResolveCard(state, seat, state.DrawnCard!.Value, target) with { DrawnCard = null }, seat);
+                state = ResolveCard(state, seat, state.DrawnCard!.Value, target, out var chosenDraw);
+                return CompleteTurn(state, seat, state.PendingPlay, chosenDraw);
             case (KoiKoiPhase.Decision, { Kind: KoiKoiActionKind.Score, CardId: null, TargetId: null }):
                 return EndRound(state, seat);
             case (KoiKoiPhase.Decision, { Kind: KoiKoiActionKind.Continue, CardId: null, TargetId: null })
@@ -135,7 +147,7 @@ public static class KoiKoiGame
         }
     }
 
-    private static KoiKoiState ResolveCard(KoiKoiState state, int seat, int id, int? target)
+    private static KoiKoiState ResolveCard(KoiKoiState state, int seat, int id, int? target, out KoiKoiCardRef resolved)
     {
         var matches = Matches(state, id);
         if (matches.Length == 2)
@@ -146,15 +158,17 @@ public static class KoiKoiGame
         }
         else if (target.HasValue) throw new KoiKoiRejectedException(KoiKoiRejection.IllegalAction);
 
+        resolved = new(id, [.. matches]);
         if (matches.Length == 0) return state with { Field = state.Field.Add(id) };
         var player = state.Players[seat];
         return WithPlayer(state, seat, player with { Captured = [.. player.Captured, id, .. matches] })
             with { Field = state.Field.RemoveRange(matches) };
     }
 
-    private static KoiKoiState CompleteTurn(KoiKoiState state, int seat)
+    private static KoiKoiState CompleteTurn(KoiKoiState state, int seat, KoiKoiCardRef? play, KoiKoiCardRef draw)
     {
-        var player = state.Players[seat];
+        var player = state.Players[seat] with { RecentTurn = play is null ? null : new(play, draw) };
+        state = WithPlayer(state, seat, player) with { DrawnCard = null, PendingPlay = null };
         return Subtotal(player) > player.ContinuedAt
             ? state with { Phase = KoiKoiPhase.Decision }
             : PassTurn(state, seat);
@@ -199,9 +213,16 @@ public static class KoiKoiGame
         var options = new KoiKoiLegalActions(
             active && state.Phase == KoiKoiPhase.Hand ? hand.Select(card => new KoiKoiPlay(card, Matches(state, card))).ToArray() : [],
             drawTargets, decision, decision && CanContinue(state, viewer), playing && state.Phase == KoiKoiPhase.RoundEnd);
-        var seats = state.Players.Select((player, seat) =>
-            new KoiKoiSeat(seat, player.Hand.Length, player.Captured.Order().Select(Card).ToArray(), player.Score,
-                Yaku(player.Captured), player.ContinuedAt > 0)).ToArray();
+        var seats = new KoiKoiSeat[SeatCount];
+        var recentTurns = new List<KoiKoiRecentTurn>(SeatCount);
+        for (var seat = 0; seat < SeatCount; seat++)
+        {
+            var player = state.Players[seat];
+            seats[seat] = new(seat, player.Hand.Length, player.Captured.Order().Select(Card).ToArray(), player.Score,
+                Yaku(player.Captured), player.ContinuedAt > 0);
+            if (player.RecentTurn is { } recent)
+                recentTurns.Add(new(seat, ProjectCardRef(recent.Play), ProjectCardRef(recent.Draw)));
+        }
         var scoreDifference = seats[0].Score.CompareTo(seats[1].Score);
         int? matchWinner = state.Phase == KoiKoiPhase.Finished && scoreDifference != 0 ? (scoreDifference > 0 ? 0 : 1) : null;
         var phase = state.Phase switch
@@ -211,8 +232,14 @@ public static class KoiKoiGame
             _ => throw new InvalidDataException("Invalid Koi-Koi phase.")
         };
         return new(phase, turn, state.DealerSeat, state.Round, TotalRounds, state.Field.Select(Card).ToArray(), state.Stock.Length,
-            state.DrawnCard is int drawn ? Card(drawn) : null, hand.Select(Card).ToArray(), seats, state.Result, matchWinner, options);
+            state.DrawnCard is int drawn ? Card(drawn) : null, hand.Select(Card).ToArray(), seats, state.Result, matchWinner, options)
+        {
+            RecentTurns = [.. recentTurns]
+        };
     }
+
+    private static KoiKoiCardResolution ProjectCardRef(KoiKoiCardRef card) =>
+        new(Card(card.CardId), card.Captured.Select(Card).ToArray());
 
     private static KoiKoiState WithPlayer(KoiKoiState state, int seat, KoiKoiPlayer player) =>
         state with { Players = state.Players.SetItem(seat, player) };
@@ -255,7 +282,8 @@ public static class KoiKoiGame
 
         var dealerHand = state.Players[state.DealerSeat].Hand.Length;
         var otherHand = state.Players[Other(state.DealerSeat)].Hand.Length;
-        if (otherHand - dealerHand is < 0 or > 1 || state.Stock.Length != StockCount - 2 * OpeningCount + dealerHand + otherHand)
+        if (otherHand - dealerHand is < 0 or > 1 || state.Stock.Length != StockCount - 2 * OpeningCount + dealerHand + otherHand
+            || !ValidRecaps(state))
             return false;
 
         var next = dealerHand == otherHand ? state.DealerSeat : Other(state.DealerSeat);
@@ -278,6 +306,37 @@ public static class KoiKoiGame
             KoiKoiPhase.Decision => state.DrawnCard is null && state.TurnSeat == last && Subtotal(state.Players[last]) > state.Players[last].ContinuedAt,
             _ => false
         };
+    }
+
+    private static bool ValidRecaps(KoiKoiState state)
+    {
+        for (var seat = 0; seat < SeatCount; seat++)
+        {
+            var player = state.Players[seat];
+            var unfinished = state.Phase == KoiKoiPhase.Draw && state.TurnSeat == seat ? 1 : 0;
+            if (player.RecentTurn is { } recent &&
+                (player.Hand.Length + unfinished >= OpeningCount
+                || !ValidCardRef(state, player, recent.Play) || !ValidCardRef(state, player, recent.Draw)
+                || recent.Play.CardId == recent.Draw.CardId || recent.Play.Captured.Contains(recent.Draw.CardId)
+                || (!recent.Play.Captured.IsEmpty && recent.Draw.Captured.Contains(recent.Play.CardId))
+                || recent.Play.Captured.Any(recent.Draw.Captured.Contains)))
+                return false;
+        }
+        if (state.PendingPlay is not { } pending) return true;
+        return state.Phase == KoiKoiPhase.Draw && state.TurnSeat is int actor && IsSeat(actor)
+            && state.Players[actor].Hand.Length < OpeningCount
+            && ValidCardRef(state, state.Players[actor], pending, pending: true);
+    }
+
+    private static bool ValidCardRef(KoiKoiState state, KoiKoiPlayer player, KoiKoiCardRef? card, bool pending = false)
+    {
+        if (card is null || card.Captured.IsDefault) return false;
+        // A completed turn's unmatched card may have since been captured by either seat.
+        if (card.Captured.IsEmpty)
+            return state.Field.Contains(card.CardId) || !pending && state.Players.Any(seat => seat.Captured.Contains(card.CardId));
+        return card.Captured.Length is 1 or 3 && player.Captured.Contains(card.CardId)
+            && card.Captured.Distinct().Count() == card.Captured.Length
+            && card.Captured.All(target => target != card.CardId && player.Captured.Contains(target) && Month(target) == Month(card.CardId));
     }
 
     private static bool FullDeck(IEnumerable<int> ids)

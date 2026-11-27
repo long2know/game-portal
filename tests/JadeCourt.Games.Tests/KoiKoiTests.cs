@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using JadeCourt.Games.Hanafuda;
 using static JadeCourt.Games.Hanafuda.KoiKoiActionKind;
 using static JadeCourt.Games.Hanafuda.KoiKoiGame;
@@ -25,6 +26,7 @@ public sealed class KoiKoiTests
         Assert.Equal(8, second.OwnCards.Length);
         Assert.Equal(8, first.Field.Length);
         Assert.Equal(24, first.StockCount);
+        Assert.Empty(first.RecentTurns);
         Assert.All(first.Field.GroupBy(card => card.Month), month => Assert.InRange(month.Count(), 1, 3));
         Assert.All(first.Seats, seat =>
         {
@@ -91,7 +93,45 @@ public sealed class KoiKoiTests
         Assert.Null(view.DrawnCard);
         Assert.Equal(1, view.TurnSeat);
         Assert.Empty(view.LegalActions.Plays);
+        AssertTurn(Assert.Single(view.RecentTurns), 0, card, collected, 33, []);
         AssertConserved(after);
+    }
+
+    [Theory]
+    [InlineData(16, 17, new int[] { }, new[] { 16 })]
+    [InlineData(4, 12, new[] { 5 }, new[] { 13, 14, 15 })]
+    public void AutomaticDrawRecordsTargetsFromTheUpdatedField(int card, int stockCard, int[] playTargets, int[] drawTargets)
+    {
+        var saved = Fixture([4, 8, 16, 24, 28, 36, 40, 44], [0, 2, 6, 11, 18, 25, 29, 37],
+            [5, 9, 10, 13, 14, 15, 20, 21], [stockCard]);
+        var completed = Apply(saved, 0, new(Play, card));
+        foreach (var viewer in new[] { 0, 1 })
+        {
+            var view = View(completed, viewer);
+            Assert.Null(view.DrawnCard);
+            AssertTurn(Assert.Single(view.RecentTurns), 0, card, playTargets, stockCard, drawTargets);
+        }
+        AssertConserved(completed);
+    }
+
+    [Fact]
+    public void OnlyTheLatestCompletedTurnIsKeptForEachAbsoluteSeat()
+    {
+        var saved = Fixture([4, 8, 12, 16, 24, 28, 36, 40], [0, 2, 6, 11, 17, 25, 29, 37],
+            [5, 9, 10, 13, 14, 15, 20, 21], [33, 43, 47]);
+        var first = Apply(saved, 0, new(Play, 16));
+        var second = Apply(first, 1, new(Play, 17));
+        var peer = View(second, 1);
+        Assert.Contains(HanafudaCards.Card(16), peer.Seats[1].Captured);
+        Assert.Collection(peer.RecentTurns,
+            turn => AssertTurn(turn, 0, 16, [], 33, []),
+            turn => AssertTurn(turn, 1, 17, [16], 43, []));
+
+        var third = Apply(second, 0, new(Play, 4));
+        Assert.Equal(third, Apply(second, 0, new(Play, 4)));
+        Assert.Collection(View(third, 0).RecentTurns,
+            turn => AssertTurn(turn, 0, 4, [5], 47, []),
+            turn => AssertTurn(turn, 1, 17, [16], 43, []));
     }
 
     [Fact]
@@ -110,6 +150,8 @@ public sealed class KoiKoiTests
         Assert.DoesNotContain(own.Field, card => card.Id == 21);
         Assert.Equal(new[] { 20, 22 }, own.LegalActions.DrawTargets);
         Assert.Empty(peer.LegalActions.DrawTargets);
+        Assert.Empty(own.RecentTurns);
+        Assert.Empty(peer.RecentTurns);
         Assert.Empty(own.LegalActions.Plays);
         Assert.False(own.LegalActions.CanScore);
         Assert.False(own.LegalActions.CanContinue);
@@ -128,7 +170,32 @@ public sealed class KoiKoiTests
         Assert.Equal(new[] { 8, 9, 20, 21, 32, 34 }, Ids(view.Seats[0].Captured));
         Assert.Contains(view.Field, card => card.Id == 22);
         Assert.Equal(own.StockCount, view.StockCount);
+        AssertTurn(Assert.Single(view.RecentTurns), 0, 8, [9], 21, [20]);
+        AssertTurn(Assert.Single(View(decision, 1).RecentTurns), 0, 8, [9], 21, [20]);
         AssertConserved(decision);
+    }
+
+    [Fact]
+    public void LegacyPendingDrawFinishesWithoutInventingItsHandPlay()
+    {
+        var saved = Fixture([8, 0, 4, 12, 16, 24, 36], [1, 5, 13, 17, 28, 38, 44],
+            [9, 20, 22, 25, 27, 37, 40, 42, 6, 47], [21], [32, 34]);
+        var pending = JsonNode.Parse(Apply(saved, 0, new(Play, 8)))!;
+        Assert.True(pending["State"]!.AsObject().Remove(nameof(KoiKoiState.PendingPlay)));
+        var legacy = pending.ToJsonString();
+        var before = View(legacy, 0);
+        Assert.Equal(new[] { 20, 22 }, before.LegalActions.DrawTargets);
+        Assert.Empty(before.RecentTurns);
+
+        var resolved = Apply(legacy, 0, new(TakeDraw, TargetId: 22));
+        var after = View(resolved, 0);
+        Assert.Equal("decision", after.Phase);
+        Assert.Null(after.DrawnCard);
+        Assert.True(after.LegalActions.CanContinue);
+        Assert.Equal(new[] { 8, 9, 21, 22, 32, 34 }, Ids(after.Seats[0].Captured));
+        Assert.Empty(after.RecentTurns);
+        Assert.Empty(View(resolved, 1).RecentTurns);
+        AssertConserved(resolved);
     }
 
     [Fact]
@@ -160,6 +227,9 @@ public sealed class KoiKoiTests
         Assert.Equal("roundEnd", end.Phase);
         Assert.Equal(new KoiKoiResult(1, 28, 7, true, true, 1), end.Result);
         Assert.Equal(new[] { 0, 28 }, end.Seats.Select(seat => seat.Score));
+        Assert.Collection(end.RecentTurns,
+            turn => AssertTurn(turn, 0, 8, [9], 43, []),
+            turn => AssertTurn(turn, 1, 28, [29], 31, []));
         Assert.Null(end.TurnSeat);
         Assert.True(end.LegalActions.CanNextRound);
         Assert.True(View(settled, 1).LegalActions.CanNextRound);
@@ -174,6 +244,8 @@ public sealed class KoiKoiTests
         Assert.Equal(1, deal.DealerSeat);
         Assert.Equal(1, deal.TurnSeat);
         Assert.Equal(new[] { 0, 28 }, deal.Seats.Select(seat => seat.Score));
+        Assert.Empty(deal.RecentTurns);
+        Assert.Empty(View(next, 1).RecentTurns);
         Assert.All(deal.Seats, seat =>
         {
             Assert.False(seat.Continued);
@@ -337,6 +409,28 @@ public sealed class KoiKoiTests
         Assert.Throws<InvalidDataException>(() => View(corrupt, 0));
     }
 
+    [Fact]
+    public void CheckpointRecapCannotReferenceHiddenCardsOrAnotherSeatsCaptureTargets()
+    {
+        var saved = Fixture([4, 8, 12, 16, 24, 28, 36], [0, 2, 11, 17, 25, 29, 37],
+            [5, 9, 10, 13, 14, 15, 20, 21, 30, 31], [33], captured1: [6, 7]);
+        var state = Read(Apply(saved, 0, new(Play, 4)));
+        var player = state.Players[0];
+        var turn = player.RecentTurn!;
+        KoiKoiTurnRef[] broken =
+        [
+            turn with { Draw = new(state.Players[1].Hand[0], []) },
+            turn with { Draw = new(state.Stock[0], []) },
+            turn with { Play = turn.Play with { Captured = [6] } },
+            turn with { Play = turn.Play with { Captured = [5, 5, 5] } }
+        ];
+        foreach (var invalid in broken)
+        {
+            var corrupt = state with { Players = state.Players.SetItem(0, player with { RecentTurn = invalid }) };
+            Assert.Throws<InvalidDataException>(() => View(CheckpointCodec.Save("koi-koi", corrupt, 4_096), 0));
+        }
+    }
+
     private static int[] FirstShuffle(int seed)
     {
         var random = new Random(seed);
@@ -376,6 +470,15 @@ public sealed class KoiKoiTests
 
     private static int[] Ids(KoiKoiCard[] cards) => cards.Select(card => card.Id).ToArray();
     private static KoiKoiState Read(string checkpoint) => CheckpointCodec.Load<KoiKoiState>("koi-koi", checkpoint, 4_096);
+
+    private static void AssertTurn(KoiKoiRecentTurn turn, int seat, int play, int[] playTargets, int draw, int[] drawTargets)
+    {
+        Assert.Equal(seat, turn.Seat);
+        Assert.Equal(HanafudaCards.Card(play), turn.Play.Card);
+        Assert.Equal(playTargets.Select(HanafudaCards.Card), turn.Play.Captured);
+        Assert.Equal(HanafudaCards.Card(draw), turn.Draw.Card);
+        Assert.Equal(drawTargets.Select(HanafudaCards.Card), turn.Draw.Captured);
+    }
 
     private static void Reject(string checkpoint, int seat, KoiKoiAction action, KoiKoiRejection reason = KoiKoiRejection.IllegalAction) =>
         Assert.Equal(reason, Assert.Throws<KoiKoiRejectedException>(() => Apply(checkpoint, seat, action)).Reason);
