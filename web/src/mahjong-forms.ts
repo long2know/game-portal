@@ -126,14 +126,40 @@ function resultRack(name: string, tiles: Face[], style = ""): HTMLElement {
   return rack;
 }
 
+function resultBirds(state: Snapshot, seatName: (seat: Seat) => string): HTMLElement {
+  const game = state.game!;
+  const settlement = game.settlement!;
+  const { birds } = settlement;
+  const section = el("section", "result-section", el("h3", "", `Birds (${birds.length})`));
+  if (birds.length) section.append(el("div", "result-birds", ...birds.map(face => {
+    const hit = ((game.dealerSeat + Number(face[1]) - 1) % 4) as Seat;
+    return resultRack(`Counts for ${seatName(hit)} (${wind(hit, game.dealerSeat)})`, [face], "bird-hit");
+  })));
+  if (settlement.reason === "draw") section.append(el("p", "note", "A draw flips no birds."));
+  else if (settlement.winners.some(winner =>
+    winner.patterns.some(({ code }) => code === "lastTileDraw" || code === "lastTileDiscard"))) {
+    section.append(el("p", "note", "The winning last tile counts as one reference bird. No extra tile is flipped."));
+  } else {
+    const availableBeforeReveal = game.wallCount + birds.length;
+    const limit = state.room.rulesVersion === "changsha-two-bird-v1" ? 2 : 1;
+    if (availableBeforeReveal < limit) section.append(el("p", "note", availableBeforeReveal === 0
+      ? "No wall tiles remained after the win." : "Only one wall tile remained after the win."));
+  }
+  return section;
+}
+
 function resultsContent(state: Snapshot, nextHand: HTMLButtonElement | null, actions: HTMLElement[], managed: boolean): HTMLElement {
   const game = state.game!;
   const settlement = game.settlement!;
   const seatName = (seat: Seat) => state.room.seats.find(item => item.seat === seat)?.displayName ?? wind(seat, game.dealerSeat);
-  const summary = settlement.reason === "draw" ? "The hand ended in a draw." : `${settlement.winners.map(item => seatName(item.seat)).join(" and ")} won this hand.`;
+  const won = settlement.reason === "win";
+  const summary = won ? `${settlement.winners.map(item => seatName(item.seat)).join(" and ")} won this hand.` : "The hand ended in a draw.";
   const nextDealer = settlement.nextDealerSeat;
+  const birds = resultBirds(state, seatName);
+  const outcome = el("p", "detail", summary);
+  const profile = el("p", "note", birdProfiles[state.room.rulesVersion]);
   const overview = el("div", "result-overview", el("p", "eyebrow", `Hand ${game.handNumber} of ${state.room.matchHands}`),
-    el("p", "detail", summary), el("p", "note", birdProfiles[state.room.rulesVersion]),
+    ...(won ? [profile, birds, outcome] : [outcome, profile]),
     el("p", "note", `Current dealer: ${seatName(game.dealerSeat)}`),
     el("p", "note", `Next dealer: ${nextDealer == null ? "Not available" : seatName(nextDealer)}`));
   const root = el("div", "form result-review");
@@ -155,7 +181,7 @@ function resultsContent(state: Snapshot, nextHand: HTMLButtonElement | null, act
   if (nextHand) summaryColumn.append(el("div", "row-actions", nextHand));
   summaryColumn.append(overview, scoreboard);
   root.append(summaryColumn);
-  if (settlement.reason === "win") {
+  if (won) {
     const hands = el("div", "form winning-hands");
     for (const winner of settlement.winners) {
       const winnerNode = el("section", "winner", el("h3", "", `${seatName(winner.seat)} · ${winNames[winner.winBy]}`));
@@ -173,23 +199,7 @@ function resultsContent(state: Snapshot, nextHand: HTMLButtonElement | null, act
     root.append(hands);
   }
   if (managed && actions.length) root.append(actionRow);
-  const { birds } = settlement;
-  const birdSection = el("section", "result-section", el("h3", "", `Birds (${birds.length})`));
-  if (settlement.reason === "draw") birdSection.append(el("p", "note", "A draw flips no birds."));
-  else if (settlement.winners.some(winner =>
-    winner.patterns.some(({ code }) => code === "lastTileDraw" || code === "lastTileDiscard"))) {
-    birdSection.append(el("p", "note", "The winning last tile counts as one reference bird. No extra tile is flipped."));
-  } else {
-    const availableBeforeReveal = game.wallCount + birds.length;
-    const limit = state.room.rulesVersion === "changsha-two-bird-v1" ? 2 : 1;
-    if (availableBeforeReveal < limit) birdSection.append(el("p", "note", availableBeforeReveal === 0
-      ? "No wall tiles remained after the win." : "Only one wall tile remained after the win."));
-  }
-  if (birds.length) birdSection.append(el("div", "result-tiles", ...birds.map(face => {
-    const hit = ((game.dealerSeat + Number(face[1]) - 1) % 4) as Seat;
-    return resultRack(`Counts for ${seatName(hit)} (${wind(hit, game.dealerSeat)})`, [face], "bird-hit");
-  })));
-  root.append(birdSection);
+  if (!won) root.append(birds);
   if (settlement.transfers?.length) root.append(el("section", "result-section", el("h3", "", "Score transfers"),
     el("ul", "inline-list", ...settlement.transfers.map(transfer =>
       el("li", "", `${seatName(transfer.fromSeat)} → ${seatName(transfer.toSeat)}: ${transfer.points} (${transfer.reason})`)))));

@@ -1051,48 +1051,67 @@ for (const [width, height] of [[320, 730], [740, 320]]) {
   });
 }
 
-test("two-bird final results separate hand, match and table points and count from the hand dealer", async ({ page }, info) => {
-  await page.setViewportSize({ width: 320, height: 730 });
-  const state = frame(130, 4);
-  state.room.rulesVersion = "changsha-two-bird-v1";
-  state.room.status = "complete";
-  state.room.tableTotals = [-11, 28, -31, 14];
-  state.self.legalOptions = [];
-  const game = state.game!;
-  game.dealerSeat = 2;
-  game.phase = "settled";
-  game.turnSeat = game.window = null;
-  game.wallCount = 0;
-  game.settlement = {
-    reason: "win", sourceSeat: 2, nextDealerSeat: 0,
-    winners: [{ seat: 0, winBy: "discard", winningTiles: ["d8"], patterns: [{ code: "plain", label: "Ordinary win (平胡)", points: 1 }] }],
-    birds: ["d5", "c3"], transfers: [{ fromSeat: 2, toSeat: 0, points: 6, reason: "win" }],
-    seatResults: [
-      { seat: 0, delta: 6, total: 10 }, { seat: 1, delta: 0, total: -12 },
-      { seat: 2, delta: -6, total: -8 }, { seat: 3, delta: 0, total: 10 },
-    ],
-  };
-  game.seats.forEach(seat => { seat.total = game.settlement!.seatResults[seat.seat].total; });
-  await open(page, state, true);
-  const results = page.getByRole("dialog", { name: "Match results" });
-  await expect(results.getByRole("columnheader")).toHaveText(["Seat", "This hand", "Match total", "Table total"]);
-  await expect(results.getByRole("table", { name: "Scores by seat" })).toBeInViewport({ ratio: 1 });
-  await expect(results.getByRole("row", { name: /River \(you\)/ }).getByRole("cell")).toHaveText(["+6", "+10", "-11"]);
-  await expect(results.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
-  await expect(results.getByText("Current dealer: Ink")).toBeVisible();
-  await expect(results.getByText("Next dealer: River")).toBeVisible();
-  await expect(results.getByRole("heading", { name: "Birds (2)", exact: true })).toBeVisible();
-  await expect(results.getByText(/wall tiles? remained after the win/)).toHaveCount(0);
-  const birds = results.getByRole("group", { name: /^Counts for / });
-  await expect(birds).toHaveCount(2);
-  await expect(birds.nth(0)).toHaveAccessibleName("Counts for Ink (East)");
-  await expect(birds.nth(0).getByRole("img")).toHaveAccessibleName("5 dots");
-  await expect(birds.nth(1)).toHaveAccessibleName("Counts for River (West)");
-  await expect(birds.nth(1).getByRole("img")).toHaveAccessibleName("3 characters");
-  await expect(results.getByText("Ink → River: 6 (win)")).toBeVisible();
-  await expect(results.getByText(/A new match keeps the table’s bird rules/)).toBeVisible();
-  await page.screenshot({ path: info.outputPath("table-ledger.png") });
-});
+for (const [width, height] of [[320, 730], [740, 320]] as const) {
+  test(`two-bird results show both faces before scrolling at ${width}×${height}`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height });
+    const complete = width === 320;
+    const state = frame(130, complete ? 4 : 2);
+    state.room.rulesVersion = "changsha-two-bird-v1";
+    state.room.status = complete ? "complete" : "betweenHands";
+    state.room.tableTotals = [-11, 28, -31, 14];
+    const winnerName = "W".repeat(24), dealerName = "M".repeat(24);
+    state.room.seats[0].displayName = winnerName;
+    state.room.seats[2].displayName = dealerName;
+    state.self.legalOptions = [];
+    const game = state.game!;
+    game.dealerSeat = 2;
+    game.phase = "settled";
+    game.turnSeat = game.window = null;
+    game.wallCount = 0;
+    game.settlement = {
+      reason: "win", sourceSeat: 2, nextDealerSeat: 0,
+      winners: [{ seat: 0, winBy: "discard", winningTiles: ["d8"], patterns: [{ code: "plain", label: "Ordinary win (平胡)", points: 1 }] }],
+      birds: ["d5", "c3"], transfers: [{ fromSeat: 2, toSeat: 0, points: 6, reason: "win" }],
+      seatResults: [
+        { seat: 0, delta: 6, total: 10 }, { seat: 1, delta: 0, total: -12 },
+        { seat: 2, delta: -6, total: -8 }, { seat: 3, delta: 0, total: 10 },
+      ],
+    };
+    game.seats.forEach(seat => { seat.total = game.settlement!.seatResults[seat.seat].total; });
+    await open(page, state, true);
+    if (!complete) await page.addStyleTag({ content: ":root { --safe-t: 10px; --safe-r: 22px; --safe-b: 13px; --safe-l: 25px; }" });
+    const results = page.getByRole("dialog", { name: complete ? "Match results" : "Hand results" });
+    const birds = results.getByRole("group", { name: /^Counts for / });
+    await expect(birds).toHaveCount(2);
+    const first = birds.nth(0).getByRole("img", { name: "5 dots", exact: true });
+    const second = birds.nth(1).getByRole("img", { name: "3 characters", exact: true });
+    await expect(first).toBeInViewport({ ratio: 1 });
+    await expect(second).toBeInViewport({ ratio: 1 });
+    if (!complete) await expect(results.getByRole("button", { name: "Next hand" })).toBeInViewport({ ratio: 1 });
+    const [left, right] = await Promise.all([first.boundingBox(), second.boundingBox()]);
+    expect(left!.y).toBe(right!.y);
+    expect(left!.x + left!.width).toBeLessThan(right!.x);
+    expect(await results.evaluate(node => node.scrollTop)).toBe(0);
+    expect(await birds.evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth))).toBe(true);
+    expect(await results.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+    await expect(birds.nth(0)).toHaveAccessibleName(`Counts for ${dealerName} (East)`);
+    await expect(birds.nth(1)).toHaveAccessibleName(`Counts for ${winnerName} (West)`);
+    await expect(first.locator("use")).toHaveAttribute("href", /#lt-d5$/);
+    await expect(second.locator("use")).toHaveAttribute("href", /#lt-c3$/);
+
+    await expect(results.getByRole("heading", { name: "Birds (2)", exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(results.getByRole("columnheader")).toHaveText(["Seat", "This hand", "Match total", "Table total"]);
+    await expect(results.getByRole("row", { name: new RegExp(`^${winnerName} \\(you\\)`) }).getByRole("cell")).toHaveText(["+6", "+10", "-11"]);
+    await expect(results.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
+    await expect(results.getByText(`Current dealer: ${dealerName}`)).toBeVisible();
+    await expect(results.getByText(`Next dealer: ${winnerName}`)).toBeVisible();
+    await expect(results.getByText(/wall tiles? remained after the win/)).toHaveCount(0);
+    await expect(results.getByRole("group", { name: "Winning tile" }).getByRole("img", { name: "8 dots" })).toBeVisible();
+    await expect(results.getByText(`${dealerName} → ${winnerName}: 6 (win)`)).toBeVisible();
+    if (complete) await expect(results.getByText(/A new match keeps the table’s bird rules/)).toBeVisible();
+    await page.screenshot({ path: info.outputPath("table-ledger.png") });
+  });
+}
 
 for (const [name, wall, birds, code, note] of [
   ["one wall tile", 0, ["d5"], "plain", "Only one wall tile remained after the win."],

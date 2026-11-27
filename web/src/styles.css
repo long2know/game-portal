@@ -451,13 +451,15 @@ a.brand::before { content: "‹"; color: var(--gold); }
 .scoreboard :is(th,td):first-child { text-align: start; overflow-wrap: anywhere; }
 .scoreboard .positive { color: #a2edc4; }
 .scoreboard .negative { color: #ffc0a7; }
+.result-overview, .result-section, .winner h3 { overflow-wrap: anywhere; }
 .result-overview { display: grid; gap: 3px; }
 .result-section { display: grid; gap: 5px; }
 .result-tiles { display: flex; flex-wrap: wrap; gap: 2px; }
 .result-tiles .tile-target { width: 24px; height: 32px; }
-.result-tiles .bird-hit { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--well); }
+.result-birds { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 9rem); gap: 4px; }
+.bird-hit { align-content: start; padding: 3px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--well); }
 .bird-hit .meld-caption { font-size: .78rem; }
-.bird-hit .tile-target { width: 40px; height: 52px; }
+.bird-hit .tile-target { width: 36px; height: 46px; }
 .winner { display: grid; gap: 4px; padding-block: 4px; }
 .inline-list { margin: 0; padding-inline-start: 17px; font-size: .9rem; color: var(--muted); }
 
