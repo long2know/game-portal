@@ -145,8 +145,9 @@ portal byte budget, including the sheet that carries the Daily Court stamp.
 
 The [expansion spec](../web/e2e/expansion.spec.ts) opens a real two-guest Koi-Koi
 table, selects a same-month match, compares the two recipient hands and public
-captures, and reopens the same seat through Continue. A bot-table case banks a
-real scoring set and checks the new dealer and carried points after **Next round**.
+captures and **Last turns** receipts, and reopens the same seat through Continue.
+A bot-table case banks a real scoring set and checks the new dealer, previous
+receipts clearing, and carried points after **Next round**.
 The [social spec](../web/e2e/social.spec.ts) separately accepts an inbox invite
 without a link credential. Keep `SOCIAL_FIXTURES` unset for that integration check.
 
@@ -154,8 +155,11 @@ The expansion spec retains opening captures at 320 px portrait, 1366×900 and
 740×320. It checks 44 px minimum targets without horizontal scrolling; on a short
 viewport players can scroll to the capture trays. Its separately named projected
 fixture checks keyboard focus between the hand and field, exact two-target hand
-and draw requests, and the display of stacked round multipliers. Those fixture
-snapshots do not qualify the scoring engine or server admission.
+and draw requests, and the display of stacked round multipliers. It also checks
+that a pending stock match leaves the last completed turn intact, that only
+taken targets are shown, and that fresh local flips are stamped without
+replaying on a poll, reload or with reduced motion. Those fixture snapshots do
+not qualify the scoring engine or server admission.
 
 The [catalog spec](../web/e2e/catalog.spec.ts) asserts the order and painted marks
 of all nineteen destinations. It also opens `nonograms/` as **Ink Grids** with a

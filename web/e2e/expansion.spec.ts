@@ -15,10 +15,12 @@ type BigTwo = {
 };
 type KoiCard = { id: number; month: number; kind: "bright" | "animal" | "ribbon" | "plain"; name: string };
 type KoiPlay = { cardId: number; targetIds: number[] };
+type KoiTurn = { seat: number; play: { card: KoiCard; captured: KoiCard[] }; draw: { card: KoiCard; captured: KoiCard[] } };
 type KoiKoi = {
   phase: "hand" | "draw" | "decision" | "roundEnd" | "finished";
   turnSeat: number | null; dealerSeat: number; round: number; totalRounds: number;
   ownCards: KoiCard[]; field: KoiCard[]; stockCount: number; drawnCard: KoiCard | null;
+  recentTurns?: KoiTurn[];
   seats: { seat: number; handCount: number; score: number; continued: boolean; yaku: { name: string; points: number }[]; captured: KoiCard[] }[];
   legalActions: { plays: KoiPlay[]; drawTargets: number[]; canScore: boolean; canContinue: boolean; canNextRound: boolean };
   result: { winnerSeat: number | null; points: number; basePoints: number; sevenPointBonus: boolean; opponentContinued: boolean; nextDealerSeat: number } | null;
@@ -150,11 +152,36 @@ const flowerHand = (page: Page) => page.getByRole("group", { name: "Your cards",
 const flowerField = (page: Page) => page.getByRole("group", { name: "Field cards", exact: true });
 const flowerCard = (area: Locator, id: number) => area.locator(`[data-card-id="${id}"]`);
 const flowerTable = (page: Page) => page.getByRole("region", { name: "Koi-Koi playing area" });
+const recentKoi = (page: Page) => flowerTable(page).getByRole("region", { name: "Last turns" });
 const flowerIds = (area: Locator) => area.locator("[data-card-id]").evaluateAll(cards => cards.map(card => Number(card.getAttribute("data-card-id"))));
 const emptyFlowerActions = { plays: [], drawTargets: [], canScore: false, canContinue: false, canNextRound: false };
 const flowerAction = (play: KoiPlay, target = play.targetIds[0]): KoiAction => ({
   kind: "play", cardId: play.cardId, ...(play.targetIds.length === 2 ? { targetId: target } : {}),
 });
+
+async function showsFlowerTurn(page: Page, turn: KoiTurn) {
+  const receipt = recentKoi(page).locator(`[data-seat="${turn.seat}"]`);
+  for (const [label, { card, captured }] of [["Hand played", turn.play], ["Stock flipped", turn.draw]] as const) {
+    const part = receipt.getByRole("group", { name: label, exact: true });
+    await expect(part).toBeVisible();
+    await expect(part).toContainText(captured.length ? `Took ${captured.length} from field` : "Left on field");
+    const targets = part.getByRole("group", { name: "Field cards taken" });
+    await expect.poll(() => flowerIds(targets)).toEqual(captured.map(item => item.id));
+    await expect.poll(() => flowerIds(part)).toEqual([card.id, ...captured.map(item => item.id)]);
+  }
+}
+
+async function watchFlowerInk(page: Page) {
+  await page.addInitScript(() => {
+    const prints: number[] = [];
+    Object.defineProperty(window, "koiPrints", { value: prints });
+    document.addEventListener("animationstart", event => {
+      if (event.animationName !== "koi-ink-dry" || !(event.target instanceof HTMLElement)) return;
+      prints.push(Number(event.target.closest<HTMLElement>("[data-card-id]")?.dataset.cardId));
+    });
+  });
+  return () => page.evaluate(() => (window as unknown as { koiPrints: number[] }).koiPrints);
+}
 
 async function flowerRead(page: Page, endpoint: string): Promise<Table<KoiKoi>> {
   const response = await page.request.get(endpoint);
@@ -281,7 +308,14 @@ test.describe("mounted Jade Court expansion", () => {
       const match = play!;
       const opened = players[table.seat];
       const opponent = players[1 - table.seat];
+      const ink = await watchFlowerInk(opened);
+      await opened.emulateMedia({ reducedMotion: "no-preference" });
+      expect((await opened.request.patch(url("api/profile"), {
+        headers: { Origin: new URL(destination).origin },
+        data: { preferences: { sound: false, music: false, volume: .7, reducedMotion: true } },
+      })).ok()).toBe(true);
       await opened.reload();
+      await expect(opened.locator("html")).toHaveAttribute("data-reduced-motion", "true");
       const other = await flowerRead(opponent, endpoint);
       const tray = flowerHand(opened);
       await expect(tray.getByRole("button")).toHaveCount(table.position.ownCards.length);
@@ -327,9 +361,31 @@ test.describe("mounted Jade Court expansion", () => {
       const reply = await send;
       expect(reply.request().postDataJSON()).toEqual({ revision: table.revision, action: flowerAction(match) });
       const moved = await body<Table<KoiKoi>>(reply);
-      const captured = moved.position.seats.find(seat => seat.seat === moved.seat)!.captured.map(card => card.id);
-      expect(captured).toEqual(expect.arrayContaining([match.cardId, ...(match.targetIds.length === 2 ? match.targetIds.slice(0, 1) : match.targetIds)]));
+      let completed = moved;
+      if (moved.position.phase === "draw") {
+        expect(moved.position.recentTurns).toEqual(table.position.recentTurns);
+        const [target] = moved.position.legalActions.drawTargets;
+        const take = watch(opened, `${endpoint}/actions`);
+        await flowerCard(flowerField(opened), target).tap();
+        completed = await body<Table<KoiKoi>>(await take);
+        const draw = completed.position.recentTurns?.find(turn => turn.seat === table.seat)?.draw;
+        expect(draw?.card).toEqual(moved.position.drawnCard);
+        expect(draw?.captured.map(card => card.id)).toEqual([target]);
+      }
+      const turn = completed.position.recentTurns?.find(turn => turn.seat === table.seat);
+      const taken = match.targetIds.length === 2 ? match.targetIds.slice(0, 1) : match.targetIds;
+      expect(turn?.play.card).toEqual(table.position.ownCards.find(card => card.id === match.cardId));
+      expect(turn?.play.captured.map(card => card.id).sort((a, b) => a - b)).toEqual([...taken].sort((a, b) => a - b));
+      const captured = completed.position.seats.find(seat => seat.seat === completed.seat)!.captured.map(card => card.id);
+      expect(captured).toEqual(expect.arrayContaining([match.cardId, ...taken]));
       await expect(chosen).toHaveCount(0);
+      await showsFlowerTurn(opened, turn!);
+      await showsFlowerTurn(opponent, turn!);
+      await expect(recentKoi(opened).getByRole("article", { name: "Your last turn" })).toContainText("You");
+      await expect(recentKoi(opponent).locator(`[data-seat="${table.seat}"]`)).not.toHaveAccessibleName("Your last turn");
+      expect(await ink()).toEqual([]);
+      await fits(opened);
+      await recentKoi(opened).screenshot({ path: info.outputPath("koi-koi-last-turns-320.png") });
       const publicTray = opponent.locator(".koi-trays summary").filter({ hasText: / · Captures/ });
       await expect(publicTray).toContainText(`· ${captured.length}`);
       await publicTray.tap();
@@ -345,6 +401,7 @@ test.describe("mounted Jade Court expansion", () => {
       await expect(opponent).toHaveURL(destination);
       await expect(flowerHand(opponent).getByRole("button")).toHaveCount(resumed.position.ownCards.length);
       expect(await flowerIds(flowerHand(opponent))).toEqual(resumed.position.ownCards.map(card => card.id));
+      await showsFlowerTurn(opponent, turn!);
     } finally { await peer.close(); }
   });
 
@@ -397,6 +454,9 @@ test.describe("mounted Jade Court expansion", () => {
     expect(newRound.position.seats.find(item => item.seat === table.seat)!.score).toBe(seat.score + points);
     await expect(page.getByText(`Round ${newRound.position.round} / ${newRound.position.totalRounds}`, { exact: true })).toBeVisible();
     await expect(page.locator(".koi-card[aria-pressed=true]")).toHaveCount(0);
+    expect(newRound.position.recentTurns).toEqual([]);
+    await expect(recentKoi(page).getByText("No completed turn this round.")).toBeVisible();
+    await expect(recentKoi(page).getByRole("img")).toHaveCount(0);
   });
 
   test("Koi-Koi projected fixture exercises exact targets, focus, and a stacked Koi-Koi award", async ({ page, baseURL }, info) => {
@@ -412,14 +472,22 @@ test.describe("mounted Jade Court expansion", () => {
     const moon = sample(28, "bright", "Moon");
     const cup = sample(32, "animal", "Cup");
     const pampas = sample(31, "plain", "Pampas grass");
+    const boar = sample(24, "animal", "Boar");
+    const clover = sample(25, "ribbon", "Bush Clover ribbon");
+    const prior: KoiTurn = { seat: 1, play: { card: cherry, captured: [] }, draw: { card: boar, captured: [clover] } };
+    const matched: KoiTurn = { seat: 0, play: { card: crane, captured: [pinePlain] }, draw: { card: geese, captured: [moon] } };
+    const cherryPlain = sample(10, "plain", "Cherry");
+    const phoenix = sample(44, "bright", "Phoenix");
+    const reply: KoiTurn = { seat: 1, play: { card: cherryPlain, captured: [cherry] }, draw: { card: phoenix, captured: [] } };
     const otherField = [cherry, sample(12, "animal", "Cuckoo"), sample(13, "ribbon", "Wisteria ribbon"), sample(14, "plain", "Wisteria")];
     const ownCards = [crane, sample(4, "animal", "Warbler"), sample(9, "ribbon", "Cherry poem"), sample(15, "plain", "Wisteria"),
       sample(36, "animal", "Deer")];
     const seat = { seat: 0, handCount: ownCards.length, score: 0, continued: false, yaku: [], captured: [cup] };
-    const other = { ...seat, seat: 1, handCount: 4, captured: [] };
+    const other = { ...seat, seat: 1, handCount: 4, captured: [boar, clover] };
     const opening: KoiKoi = {
       phase: "hand", turnSeat: 0, dealerSeat: 0, round: 1, totalRounds: 4, result: null, matchWinnerSeat: null,
       ownCards, field: [pineRibbon, pinePlain, ...otherField, moon, pampas], drawnCard: null, stockCount: 14, seats: [seat, other],
+      recentTurns: [prior],
       legalActions: { ...emptyFlowerActions, plays: [{ cardId: 0, targetIds: [1, 2] }, { cardId: 4, targetIds: [] },
         { cardId: 9, targetIds: [8] }, { cardId: 15, targetIds: [12, 13, 14] }, { cardId: 36, targetIds: [] }] },
     };
@@ -431,18 +499,23 @@ test.describe("mounted Jade Court expansion", () => {
     const decision: KoiKoi = {
       ...draw, phase: "decision", drawnCard: null, field: draw.field.filter(card => card.id !== 28),
       seats: [{ ...draw.seats[0], captured: [...draw.seats[0].captured, geese, moon], yaku: [{ name: "Moon Viewing", points: 5 }] }, other],
+      recentTurns: [matched, prior],
       legalActions: { ...emptyFlowerActions, canScore: true, canContinue: true },
     };
     const result: KoiKoi = {
-      ...decision, phase: "roundEnd", turnSeat: null,
-      seats: [{ ...decision.seats[0], continued: true }, { ...other, score: 28 }],
+      ...decision, phase: "roundEnd", turnSeat: null, stockCount: 12,
+      seats: [{ ...decision.seats[0], continued: true },
+        { ...other, handCount: 3, score: 28, captured: [...other.captured, cherryPlain, cherry] }],
+      field: [...decision.field.filter(card => card.id !== cherry.id), phoenix],
+      recentTurns: [matched, reply],
       result: { winnerSeat: 1, points: 28, basePoints: 7, sevenPointBonus: true, opponentContinued: true, nextDealerSeat: 1 },
       legalActions: { ...emptyFlowerActions, canNextRound: true },
     };
     const id = "d".repeat(32);
     const endpoint = url(`api/koi-koi/tables/${id}`);
     const submitted: unknown[] = [];
-    let position = opening, revision = 3;
+    let position: KoiKoi = { ...opening, recentTurns: undefined };
+    let revision = 2;
     const table = () => ({
       id, seat: 0, revision, status: "playing", invite: null, position,
       seats: [{ seat: 0, name: "Guest", occupied: true }, { seat: 1, name: "Willow", bot: true, occupied: true }],
@@ -455,16 +528,27 @@ test.describe("mounted Jade Court expansion", () => {
       revision++;
       return route.fulfill({ json: table() });
     });
-    await page.emulateMedia({ reducedMotion: "reduce" });
+    const ink = await watchFlowerInk(page);
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     const artwork = page.waitForResponse(response => /\/assets\/koi-deck-[\w-]+\.svg$/.test(response.url()));
     await page.goto(url("koi-koi/"));
     const hand = flowerHand(page);
     const field = flowerField(page);
     const arena = flowerTable(page);
     await expect(hand.getByRole("button")).toHaveCount(ownCards.length);
+    await expect(recentKoi(page)).toHaveCount(0);
     expect((await artwork).ok()).toBe(true);
     await expect.poll(() => arena.locator(".koi-card-art use").evaluateAll(uses =>
       uses.every(use => (use as SVGGraphicsElement).getBBox().width > 0))).toBe(true);
+    const chosen = flowerCard(hand, 0);
+    await chosen.focus();
+    const scrollBefore = await page.evaluate(() => scrollY);
+    position = opening;
+    revision = 3;
+    await showsFlowerTurn(page, prior);
+    await expect(chosen).toBeFocused();
+    expect(await page.evaluate(() => scrollY)).toBeCloseTo(scrollBefore, 0);
+    expect(await ink()).toEqual([]);
     for (const [cardId, count, action] of [[4, 0, "Leave on field"], [9, 1, "Capture match"], [15, 3, "Capture all three"]] as const) {
       const card = flowerCard(hand, cardId);
       await card.tap();
@@ -473,7 +557,6 @@ test.describe("mounted Jade Court expansion", () => {
       await targets(button(page, action));
     }
     expect(submitted).toEqual([]);
-    const chosen = flowerCard(hand, 0);
     const ribbon = flowerCard(field, 1);
     const plain = flowerCard(field, 2);
     await chosen.focus();
@@ -495,8 +578,10 @@ test.describe("mounted Jade Court expansion", () => {
     await targets(chosen, ribbon, plain);
     await arena.screenshot({ path: info.outputPath("koi-fixture-landscape.png") });
     await plain.tap();
-    await expect(arena.getByRole("img", { name: "August · Geese · Animal", exact: true })).toBeVisible();
-    await expect(arena.getByText("You captured 2 cards.", { exact: true })).toBeVisible();
+    await expect(arena.locator(".koi-draw").getByRole("img", { name: "August · Geese · Animal", exact: true })).toBeVisible();
+    await showsFlowerTurn(page, prior);
+    await expect(recentKoi(page).getByRole("article", { name: "Your last turn" })).toHaveCount(0);
+    expect(await ink()).toEqual([]);
     await expect(flowerCard(field, 28)).toBeFocused();
     await expect(field.locator("button[aria-disabled=false]")).toHaveCount(2);
     await page.keyboard.press("Enter");
@@ -505,15 +590,36 @@ test.describe("mounted Jade Court expansion", () => {
     await targets(bank, koi);
     await expect(bank).toBeFocused();
     await expect(arena.locator(".koi-decision")).toContainText("Moon Viewing · 5 points");
+    await showsFlowerTurn(page, matched);
+    await showsFlowerTurn(page, prior);
+    await fits(page);
+    const recap = (await recentKoi(page).boundingBox())!;
+    const mats = (await arena.locator(".koi-mats").boundingBox())!;
+    expect(recap.y).toBeGreaterThanOrEqual(mats.y + mats.height);
+    await expect(recentKoi(page).getByRole("img", { name: "January · Pine · Plain 1", exact: true })).toBeVisible();
+    await expect(recentKoi(page).getByRole("img", { name: "August · Geese · Animal", exact: true })).toBeVisible();
+    await expect(recentKoi(page).getByRole("img", { name: "January · Pine poem · Ribbon", exact: true })).toHaveCount(0);
+    await expect.poll(ink).toEqual([29]);
+    await recentKoi(page).screenshot({ path: info.outputPath("koi-last-turns-fixture-740.png") });
+    await desktopCrop(page, recentKoi(page), info.outputPath("koi-last-turns-fixture-desktop.png"));
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect.poll(() => page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
     await koi.tap();
     await expect(arena.getByText("Willow banked 28 points")).toBeVisible();
     await expect(arena.getByText("7 from sets · 7+ points ×2 · Opponent called Koi-Koi ×2")).toBeVisible();
     await expect(arena.getByText("Next dealer: Willow")).toBeVisible();
+    await showsFlowerTurn(page, reply);
+    expect(await ink()).toEqual([29]);
     expect(submitted).toEqual([
       { revision: 3, action: { kind: "play", cardId: 0, targetId: 2 } },
       { revision: 4, action: { kind: "takeDraw", targetId: 28 } },
       { revision: 5, action: { kind: "continue" } },
     ]);
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.reload();
+    await showsFlowerTurn(page, matched);
+    await showsFlowerTurn(page, reply);
+    expect(await ink()).toEqual([]);
   });
 
   test("Big Two plays the exact opening card and rotates back to a real free lead", async ({ page, browser, baseURL }, info) => {

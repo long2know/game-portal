@@ -88,6 +88,37 @@
 .koi-hand > .button, .koi-actions > .button { justify-self: start; }
 .koi-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .koi-result { align-items: center; background: #302825; }
+.koi-recent {
+  min-inline-size: 0; display: grid; gap: 6px; padding: 7px 8px;
+  border: 1px solid #ac8b6e; border-radius: 8px; background: #302825; box-shadow: inset 0 1px #e1b48138;
+}
+.koi-recent header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 9px; }
+.koi-recent header p { color: var(--koi-quiet); font-size: .82rem; }
+.koi-receipts { display: grid; gap: 6px; min-inline-size: 0; }
+.koi-receipt {
+  min-inline-size: 0; display: grid; gap: 6px; align-content: start; padding: 5px 8px 8px;
+  border: 1px solid #8b7964; border-radius: 5px; background: #2b312b; box-shadow: inset 0 1px #d3bb8242;
+}
+.koi-receipt h3 { color: #ffe1aa; font-size: .94rem; overflow-wrap: anywhere; }
+.koi-receipt-part { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; }
+.koi-receipt-part + .koi-receipt-part { border-block-start: 1px dashed #9a8b72; padding-block-start: 6px; }
+.koi-receipt-part .koi-public-card { inline-size: 46px; }
+.koi-receipt-part .koi-face { font-size: .65rem; }
+.koi-receipt-source { position: relative; }
+.koi-receipt-info { display: grid; gap: 3px; }
+.koi-receipt-cue { display: flex; flex-wrap: wrap; gap: 1px 6px; font-size: .82rem; color: var(--koi-quiet); }
+.koi-receipt-cue strong { color: var(--koi-light); }
+.koi-receipt-matches {
+  display: flex; flex-wrap: wrap; gap: 4px; padding-inline-start: 4px; border-inline-start: 3px double #bca584;
+}
+.koi-receipt-ink {
+  position: absolute; inset: -2px; border: 2px solid #f1c17d; border-radius: 6px;
+  box-shadow: inset 0 0 0 2px #8e5839; opacity: 0; pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion="true"]) .koi-receipt-ink { animation: koi-ink-dry 390ms ease-out; }
+}
+@keyframes koi-ink-dry { from { opacity: .9; } to { opacity: 0; } }
 .koi-captures { display: grid; gap: 5px; }
 .koi-trays { align-items: start; }
 .koi-trays details, .koi-guide { min-inline-size: 0; border: 1px solid #9f8971; border-radius: 8px; }
@@ -104,7 +135,7 @@
 .koi-guide ol { display: grid; gap: 6px; margin: 0; padding: 0 14px 14px 2rem; color: var(--muted); font-size: .89rem; }
 .koi-guide strong { color: var(--ivory); }
 @media (min-width: 600px) {
-  .koi-mats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .koi-mats, .koi-receipts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-height: 440px) and (orientation: landscape) {
   body:has(.feature-stack:not([hidden]) .koi-table:not([hidden])) .shell { padding-block-start: max(3px, env(safe-area-inset-top)); }

@@ -9,6 +9,8 @@ import type { MatchView, MultiplayerTable } from "./multiplayer";
 type Yaku = { name: string; points: number };
 type Seat = { seat: number; handCount: number; captured: FlowerCard[]; score: number; yaku: Yaku[]; continued: boolean };
 type Play = { cardId: number; targetIds: number[] };
+type TurnPart = { card: FlowerCard; captured: FlowerCard[] };
+type RecentTurn = { seat: number; play: TurnPart; draw: TurnPart };
 type Result = { winnerSeat: number | null; points: number; basePoints: number; sevenPointBonus: boolean;
   opponentContinued: boolean; nextDealerSeat: number };
 type Position = {
@@ -22,6 +24,7 @@ type Position = {
   drawnCard: FlowerCard | null;
   ownCards: FlowerCard[];
   seats: Seat[];
+  recentTurns?: RecentTurn[];
   result: Result | null;
   matchWinnerSeat: number | null;
   legalActions: { plays: Play[]; drawTargets: number[]; canScore: boolean; canContinue: boolean; canNextRound: boolean };
@@ -73,6 +76,28 @@ function sets(yaku: Yaku[]): HTMLElement {
     : el("p", "koi-empty", "No scoring sets yet.");
 }
 
+function receiptPart(label: string, { card, captured }: TurnPart, stamped = false): HTMLElement {
+  const source = publicFlower(card);
+  source.classList.add("koi-receipt-source");
+  if (stamped) {
+    const ink = el("span", "koi-receipt-ink");
+    ink.setAttribute("aria-hidden", "true");
+    ink.addEventListener("animationend", () => ink.remove(), { once: true });
+    source.append(ink);
+  }
+  const info = el("div", "koi-receipt-info",
+    el("div", "koi-receipt-cue", el("strong", "", label),
+      el("span", "", captured.length ? `Took ${captured.length} from field` : "Left on field")));
+  if (captured.length) {
+    const matches = group("Field cards taken", "koi-receipt-matches");
+    matches.append(...captured.map(publicFlower));
+    info.append(matches);
+  }
+  const part = group(label, "koi-receipt-part");
+  part.append(source, info);
+  return part;
+}
+
 function view(send: (action: Action) => void, next: () => void): MatchView<Position> {
   const round = el("p", "koi-round");
   const status = el("p", "koi-status");
@@ -110,6 +135,12 @@ function view(send: (action: Action) => void, next: () => void): MatchView<Posit
   const settlement = el("div", "koi-settlement");
   const result = el("section", "koi-result", settlement, advance);
   result.setAttribute("aria-label", "Round result");
+  const receipts = el("div", "koi-receipts");
+  const noReceipts = el("p", "koi-empty", "No completed turn this round.");
+  const recent = el("section", "koi-recent",
+    el("header", "", el("h2", "", "Last turns"), el("p", "", "What just happened?")),
+    noReceipts, receipts);
+  recent.setAttribute("aria-label", "Last turns");
   const captures = el("section", "koi-captures", el("h2", "", "Scoring sets & captures"));
   const trays = el("div", "koi-trays");
   captures.append(trays);
@@ -118,18 +149,28 @@ function view(send: (action: Action) => void, next: () => void): MatchView<Posit
     el("div", "koi-mats",
       el("section", "koi-mat koi-field", el("header", "", el("h2", "", "Field"), stock), draw, field),
       el("section", "koi-mat koi-hand", el("h2", "", "Your hand"), hand, hint, apply, decision, decisionBar)),
-    result, captures);
+    result, recent, captures);
   arena.setAttribute("aria-label", "Koi-Koi playing area");
   let position: Position;
   let tableId = "";
   let renderedRevision: number | undefined;
   let active = false;
   let committing = false;
+  let inkForCommit = false;
   let picked: number | undefined;
   let handCards: HTMLButtonElement[] = [];
   let fieldCards: HTMLButtonElement[] = [];
   let handStop = -1;
   const openTrays = new Map<number, HTMLDetailsElement>();
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+
+  function clearInk() {
+    inkForCommit = false;
+    for (const mark of receipts.querySelectorAll(".koi-receipt-ink")) mark.remove();
+  }
+  reducedMotion.addEventListener("change", clearInk);
+  document.addEventListener("court-motion-preference", clearInk);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) clearInk(); });
 
   const selectedPlay = () => position?.legalActions.plays.find(play => play.cardId === picked);
   const selectedTargets = () => position.phase === "draw" ? position.legalActions.drawTargets : selectedPlay()?.targetIds ?? [];
@@ -141,6 +182,7 @@ function view(send: (action: Action) => void, next: () => void): MatchView<Posit
 
   function commit(action: Action) {
     committing = true;
+    inkForCommit = !document.hidden;
     send(action);
   }
 
@@ -201,6 +243,29 @@ function view(send: (action: Action) => void, next: () => void): MatchView<Posit
         destination.focus();
       }
     });
+  }
+
+  function paintRecent(table: MultiplayerTable<Position>, prior?: RecentTurn[]) {
+    const turns = position.recentTurns;
+    recent.hidden = turns === undefined;
+    if (turns === undefined) {
+      receipts.replaceChildren();
+      return;
+    }
+    noReceipts.hidden = turns.length > 0;
+    receipts.hidden = !turns.length;
+    const ink = inkForCommit && !document.hidden && !reducedMotion.matches &&
+      document.documentElement.dataset.reducedMotion !== "true";
+    const ordered = [...turns].sort((a, b) => Number(b.seat === table.seat) - Number(a.seat === table.seat));
+    receipts.replaceChildren(...ordered.map(turn => {
+      const who = nameAt(table, turn.seat);
+      const stamped = ink && prior !== undefined && !prior.some(previous => previous.draw.card.id === turn.draw.card.id);
+      const receipt = el("article", "koi-receipt", el("h3", "", who),
+        receiptPart("Hand played", turn.play), receiptPart("Stock flipped", turn.draw, stamped));
+      receipt.setAttribute("aria-label", turn.seat === table.seat ? "Your last turn" : `${who} · Last turn`);
+      receipt.dataset.seat = String(turn.seat);
+      return receipt;
+    }));
   }
 
   function paintRevision(table: MultiplayerTable<Position>) {
@@ -305,7 +370,7 @@ function view(send: (action: Action) => void, next: () => void): MatchView<Posit
       const sameTable = table.id === tableId;
       if (sameTable && renderedRevision === table.revision) {
         paintSelection();
-        if (enabled) committing = false;
+        if (enabled) committing = inkForCommit = false;
         return;
       }
       const previous = document.activeElement;
@@ -317,7 +382,8 @@ function view(send: (action: Action) => void, next: () => void): MatchView<Posit
         openTrays.clear();
         trays.replaceChildren();
       }
-      const captured = sameTable && renderedRevision === table.revision - 1 && before.round === position.round
+      const adjacent = sameTable && renderedRevision === table.revision - 1 && before.round === position.round;
+      const captured = adjacent && position.recentTurns === undefined
         ? position.seats.flatMap(seat => {
           const gained = seat.captured.length - (before.seats.find(prior => prior.seat === seat.seat)?.captured.length ?? 0);
           return gained > 0 ? [`${nameAt(table, seat.seat)} captured ${gained} cards.`] : [];
@@ -326,6 +392,7 @@ function view(send: (action: Action) => void, next: () => void): MatchView<Posit
       renderedRevision = table.revision;
       picked = undefined;
       paintRevision(table);
+      paintRecent(table, adjacent ? before.recentTurns : undefined);
       paintSelection();
       if (restore || committing && (previous === document.body || previous === status)) {
         const old = (focusCard?.zone === "field" ? targets() : handCards).find(card => card.dataset.cardId === focusCard?.cardId);
@@ -333,7 +400,7 @@ function view(send: (action: Action) => void, next: () => void): MatchView<Posit
           !advance.hidden ? advance : position.legalActions.plays.length ? handCards.find(card => card.tabIndex === 0) : undefined));
         (updated || status).focus({ preventScroll: !committing });
       }
-      committing = false;
+      committing = inkForCommit = false;
     },
   };
 }
