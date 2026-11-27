@@ -88,11 +88,19 @@ Daily play fetches only the same-origin shell and static assets. There is no
 `/api/daily-court`, guest session, room, leaderboard, sync, or server-side
 progress. A loaded challenge is playable without a connection; reopening
 while offline depends on the browser cache. Browser storage keeps at most
-one dated record per challenge under `${mount}court-daily-xiangqi-v1` and
+one dated attempt per challenge under `${mount}court-daily-xiangqi-v1` and
 `${mount}court-daily-mahjong-solitaire-v1`. Records from other dates are
 ignored and replaced on play. Records stay separate across mounts and from
 the practice save; a server backup contains none of them. If storage is
 blocked or full, progress lasts for the current page only.
+
+The picker also shows the last 14 UTC days and streaks within the last 30.
+A full clear takes both challenges on that date; a streak ending yesterday
+still counts as current until today ends. `${mount}court-daily-record-v1`
+stores just dates and completion bits, updated on a new clear or when
+archiving a known completion from an existing attempt. The view drops
+expired dates at UTC rollover; the next write leaves out dates past the
+30-day window. This record never leaves the browser.
 
 ## Private player invites
 

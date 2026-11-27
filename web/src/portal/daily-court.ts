@@ -8,6 +8,42 @@ const games = {
   "mahjong-solitaire": { title: "Mahjong Solitaire", goal: "Clear today’s four-tier stack by matching all 78 tiles." },
 };
 const isChallenge = (hash: string): hash is Challenge => hash === "xiangqi" || hash === "mahjong-solitaire";
+const shortDate = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });
+
+function recordPanel({ current, best, days }: ReturnType<DailyProgress["playRecord"]>, available: boolean): HTMLElement {
+  const streak = (label: string, count: number) => el("div", "",
+    el("dt", "", label), el("dd", "", `${count} ${count === 1 ? "day" : "days"}`));
+  const stamp = (cleared: boolean) => {
+    const mark = el("span", "daily-mark", cleared ? "✓" : "–");
+    mark.toggleAttribute("data-cleared", cleared);
+    return mark;
+  };
+  const activity = el("ol", "daily-activity", ...days.map(({ date, xiangqi, solitaire }, index) => {
+    const time = el("time", "", shortDate.format(new Date(`${date}T00:00:00Z`)));
+    time.dateTime = date;
+    time.setAttribute("aria-hidden", "true");
+    const marks = el("div", "daily-marks", stamp(xiangqi), stamp(solitaire));
+    marks.setAttribute("aria-hidden", "true");
+    const status = (done: boolean) => done ? "cleared" : "not cleared";
+    const day = el("li", "daily-record-day", time, marks,
+      el("span", "daily-record-sr", `${date} UTC. Xiangqi ${status(xiangqi)}. Mahjong Solitaire ${status(solitaire)}.`));
+    if (index === 0) day.setAttribute("aria-current", "date");
+    return day;
+  }));
+  activity.setAttribute("role", "list");
+  activity.setAttribute("aria-label", "Last 14 UTC days, newest first");
+  const heading = el("h2", "", "Your play record");
+  heading.id = "daily-record-heading";
+  const panel = el("section", "daily-record", heading,
+    el("p", "muted", available ? "This browser only. Not a leaderboard." :
+      "Browser storage is unavailable. This record lasts until you leave or reload. Not a leaderboard."),
+    el("dl", "daily-streaks", streak("Current streak", current), streak("Best in 30 UTC days", best)),
+    el("p", "muted", "Clear both challenges to count a day. Yesterday’s streak stays active until today ends."),
+    el("p", "daily-legend", el("strong", "", "Last 14 UTC days"), el("span", "", "Xiangqi / Solitaire · ✓ cleared · – not cleared")),
+    activity);
+  panel.setAttribute("aria-labelledby", heading.id);
+  return panel;
+}
 
 export function mountDailyCourt(main: HTMLElement, mount: string): void {
   const progress = new DailyProgress(mount);
@@ -37,6 +73,7 @@ export function mountDailyCourt(main: HTMLElement, mount: string): void {
   async function render(focus: boolean, rolledOver = false): Promise<void> {
     const revision = ++rendered;
     const { date, seed } = edition;
+    const record = progress.playRecord(edition);
     const current = () => revision === rendered && checkDate();
     const hash = location.hash.slice(1);
     const challenge = isChallenge(hash) ? hash : null;
@@ -63,7 +100,7 @@ export function mountDailyCourt(main: HTMLElement, mount: string): void {
       }
       content.append(el("header", "daily-heading", title,
         el("p", "intro", "Two challenges for everyone. A new edition starts at 00:00 UTC.")), deck,
-      el("p", "daily-local muted", "Progress stays in this browser. No account needed."));
+      recordPanel(record, progress.recordAvailable));
     } else {
       const loading = el("p", "muted", `Opening ${games[challenge].title}…`);
       loading.setAttribute("role", "status");
@@ -74,7 +111,7 @@ export function mountDailyCourt(main: HTMLElement, mount: string): void {
           const { mountDailyXiangqi } = await import("./games/daily-xiangqi");
           if (!current()) return;
           mountDailyXiangqi(content, edition, saved?.value, current, move => {
-            progress.save(challenge, date, move, true);
+            progress.save(challenge, edition, move, true);
             return progress.available;
           }, progress.available);
         } else {
@@ -83,7 +120,7 @@ export function mountDailyCourt(main: HTMLElement, mount: string): void {
           mountStack({ main: content, mount }, {
             seed, saved: saved?.value ?? null, current, storageAvailable: progress.available,
             save: (snapshot, won) => {
-              progress.save(challenge, date, snapshot, won);
+              progress.save(challenge, edition, snapshot, won);
               return progress.available;
             },
           });

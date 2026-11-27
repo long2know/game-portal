@@ -20,6 +20,18 @@ const tally = (page: Page) => page.locator(".stack-count");
 const stackFaces = (page: Page) => stackBoard(page).locator(".tile-art use").evaluateAll(uses =>
   uses.map(use => use.getAttribute("href")!.split("#")[1]));
 const dailySave = (mount: string, slug: string) => `${mount}court-daily-${slug}-v1`;
+const playRecord = (page: Page) => page.getByRole("region", { name: "Your play record" });
+const recordDay = (page: Page, date: string) => playRecord(page).getByRole("listitem")
+  .filter({ has: page.locator(`time[datetime="${date}"]`) });
+const savedRecord = (page: Page, key: string) => page.evaluate(key => JSON.parse(localStorage.getItem(key) ?? "null"), key);
+
+async function streaks(page: Page, current: number, best: number) {
+  const record = playRecord(page);
+  for (const [label, count] of [["Current streak", current], ["Best in 30 UTC days", best]] as const) {
+    await expect(record.locator(".daily-streaks div").filter({ hasText: label }).locator("dd"))
+      .toHaveText(`${count} ${count === 1 ? "day" : "days"}`);
+  }
+}
 
 async function tryMove(page: Page, from: string, to: string) {
   await point(page, from).tap();
@@ -118,9 +130,13 @@ test.describe("published Daily Court", () => {
     await start.tap();
     await expect(page.locator("time.daily-date")).toHaveText("2026-11-25 UTC");
     const play = page.getByRole("link", { name: "Play Xiangqi" });
+    const record = dailySave(mount, "record");
     await expect(play).toHaveAttribute("href", "#xiangqi");
     await expect(page.getByRole("link", { name: "Play Mahjong Solitaire" })).toHaveAttribute("href", "#mahjong-solitaire");
     await expect(page.getByText("Ready to play")).toHaveCount(2);
+    await expect(playRecord(page).getByText("This browser only. Not a leaderboard.")).toBeVisible();
+    await expect(playRecord(page).getByRole("listitem")).toHaveCount(14);
+    expect(await savedRecord(page, record)).toBeNull();
     await play.tap();
     await expect(page).toHaveURL(dailyUrl(base, "#xiangqi"));
     await expect(tactic(page)).toHaveAttribute("data-puzzle", "rank-and-file");
@@ -140,9 +156,11 @@ test.describe("published Daily Court", () => {
     await expect(tactic(page).getByRole("status")).toHaveText("Legal move, but not checkmate. Try again from the same position.");
     await expect(point(page, "b9")).toHaveAccessibleName("b9, red chariot");
     expect(await page.evaluate(key => localStorage.getItem(key), dailySave(mount, "xiangqi"))).toBeNull();
+    expect(await savedRecord(page, record)).toBeNull();
 
     await tryMove(page, "b9", "b10");
     await expect(tactic(page).getByRole("status")).toHaveText("Checkmate! You completed today’s tactic.");
+    expect(await savedRecord(page, record)).toEqual({ "2026-11-25": 1 });
     await expect(page.getByText("Black is in check and has no legal move.")).toBeVisible();
     await expect(point(page, "b10")).toHaveAccessibleName("b10, red chariot");
     await expect(point(page, "e10")).toHaveAccessibleName("e10, black general");
@@ -157,6 +175,9 @@ test.describe("published Daily Court", () => {
     await page.getByRole("link", { name: "‹ Daily Court" }).tap();
     await expect(page.getByText("Completed today")).toHaveCount(1);
     await expect(page.getByText("Ready to play")).toHaveCount(1);
+    await expect(recordDay(page, "2026-11-25")).toContainText("Xiangqi cleared. Mahjong Solitaire not cleared.");
+    await streaks(page, 0, 0);
+    expect(await savedRecord(page, record)).toEqual({ "2026-11-25": 1 });
     await verifyLocal();
   });
 
@@ -164,13 +185,17 @@ test.describe("published Daily Court", () => {
     const base = baseURL!;
     const mount = new URL(base).pathname;
     const practiceKey = mahjongSolitaireProgressKey(mount);
-    const otherKey = dailySave(mount === "/portal/" ? "/game-portal/" : "/portal/", "mahjong-solitaire");
+    const otherMount = mount === "/portal/" ? "/game-portal/" : "/portal/";
+    const otherKey = dailySave(otherMount, "mahjong-solitaire");
+    const otherRecord = dailySave(otherMount, "record");
+    const record = dailySave(mount, "record");
     const practice = new MahjongStack(328603);
     practice.match(...practice.witness[0]);
-    await page.addInitScript(({ practiceKey, practice, otherKey }) => {
+    await page.addInitScript(({ practiceKey, practice, otherKey, otherRecord }) => {
       if (localStorage.getItem(practiceKey) === null) localStorage.setItem(practiceKey, practice);
       if (localStorage.getItem(otherKey) === null) localStorage.setItem(otherKey, "other mount");
-    }, { practiceKey, practice: practice.save(), otherKey });
+      if (localStorage.getItem(otherRecord) === null) localStorage.setItem(otherRecord, '{"2026-11-25":3}');
+    }, { practiceKey, practice: practice.save(), otherKey, otherRecord });
     await page.clock.setFixedTime(firstDate);
     await page.setViewportSize({ width: 320, height: 730 });
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -202,6 +227,7 @@ test.describe("published Daily Court", () => {
     await tile(page, first).tap();
     await tile(page, partner).tap();
     await expect(tally(page)).toHaveText("76 / 78 tiles left");
+    expect(await savedRecord(page, record)).toBeNull();
     await page.reload();
     await expect(tally(page)).toHaveText("76 / 78 tiles left");
     const restart = "Restart today’s deal";
@@ -227,6 +253,30 @@ test.describe("published Daily Court", () => {
     await page.getByRole("link", { name: "‹ Daily Court" }).tap();
     await expect(page.getByText("Completed today")).toHaveCount(1);
     await expect(page.getByText("Ready to play")).toHaveCount(1);
+    await expect(recordDay(page, "2026-11-25")).toContainText("Xiangqi not cleared. Mahjong Solitaire cleared.");
+    expect(await savedRecord(page, record)).toEqual({ "2026-11-25": 2 });
+    await page.getByRole("link", { name: "Play Xiangqi" }).tap();
+    await tryMove(page, "b9", "b10");
+    await page.getByRole("link", { name: "‹ Daily Court" }).tap();
+    await expect(page.getByText("Completed today")).toHaveCount(2);
+    await expect(recordDay(page, "2026-11-25")).toContainText("Xiangqi cleared. Mahjong Solitaire cleared.");
+    await streaks(page, 1, 1);
+    expect(await savedRecord(page, record)).toEqual({ "2026-11-25": 3 });
+    for (const [width, height] of [[320, 730], [740, 320], [1366, 900]]) {
+      await page.setViewportSize({ width, height });
+      await fitsPhone(page);
+      expect(await playRecord(page).locator(".daily-record-day").evaluateAll(days =>
+        days.every(day => day.clientWidth >= day.scrollWidth))).toBe(true);
+      const box = (await playRecord(page).boundingBox())!;
+      const deck = (await page.locator(".daily-deck").boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(deck.y + deck.height);
+      await playRecord(page).screenshot({ path: info.outputPath(`daily-play-record-${width}.png`) });
+    }
+    await page.setViewportSize({ width: 320, height: 730 });
+    await page.reload();
+    await expect(recordDay(page, "2026-11-25")).toContainText("Xiangqi cleared. Mahjong Solitaire cleared.");
+    await streaks(page, 1, 1);
+    expect(await savedRecord(page, otherRecord)).toEqual({ "2026-11-25": 3 });
     const stored = await page.evaluate(({ practiceKey, otherKey }) => [localStorage.getItem(practiceKey), localStorage.getItem(otherKey)],
       { practiceKey, otherKey });
     expect(stored).toEqual([practice.save(), "other mount"]);
@@ -234,6 +284,8 @@ test.describe("published Daily Court", () => {
     await page.clock.setFixedTime(new Date("2026-11-26T00:00:00Z"));
     await page.reload();
     await expect(page.getByText("Ready to play")).toHaveCount(2);
+    await expect(recordDay(page, "2026-11-26")).toHaveAttribute("aria-current", "date");
+    await streaks(page, 1, 1);
     await page.getByRole("link", { name: "Play Mahjong Solitaire" }).tap();
     await expect(tally(page)).toHaveText("78 / 78 tiles left");
     const tomorrow = new MahjongStack(utcEdition(new Date("2026-11-26T00:00:00Z")).seed);
@@ -247,6 +299,37 @@ test.describe("published Daily Court", () => {
     await expect(openPractice).toHaveAttribute("href", `${mount}mahjong-solitaire/`);
     await openPractice.click();
     await expect(tally(page)).toHaveText("76 / 78 tiles left");
+  });
+
+  test("the Daily record validates migrated completions and rolls its 30 UTC days without idle writes", async ({ page, baseURL }) => {
+    const base = baseURL!;
+    const mount = new URL(base).pathname;
+    const record = dailySave(mount, "record");
+    await page.addInitScript(({ record, xiangqi }) => {
+      localStorage.setItem(record, JSON.stringify({
+        "2026-11-24": 3, "2026-11-25": 3, "2026-11-26": 3, "2026-11-27": 3, "2026-11-28": 3,
+        "2026-12-18": 4, "2026-12-21": 3, "2026-12-22": 3, "2026-12-23": 2, "2026-12-24": "3",
+        "2026-12-25": 3, "2026-12-99": 3,
+      }));
+      localStorage.setItem(xiangqi, JSON.stringify({ date: "2026-12-23", completed: true, value: "b9-b10" }));
+    }, { record, xiangqi: dailySave(mount, "xiangqi") });
+    await page.clock.install({ time: new Date("2026-12-24T23:59:50Z") });
+    const verifyLocal = noRemotePlay(page, base);
+    await page.goto(dailyUrl(base));
+    await expect(recordDay(page, "2026-12-23")).toContainText("Xiangqi cleared. Mahjong Solitaire cleared.");
+    await expect(recordDay(page, "2026-12-18")).toContainText("Xiangqi not cleared. Mahjong Solitaire not cleared.");
+    await expect(recordDay(page, "2026-12-24")).toContainText("Xiangqi not cleared. Mahjong Solitaire not cleared.");
+    await streaks(page, 3, 4);
+    const saved = await savedRecord(page, record);
+    expect(saved).toEqual({ "2026-11-25": 3, "2026-11-26": 3, "2026-11-27": 3, "2026-11-28": 3,
+      "2026-12-21": 3, "2026-12-22": 3, "2026-12-23": 3 });
+
+    await page.clock.fastForward(10_010);
+    await expect(page.locator("time.daily-date")).toHaveText("2026-12-25 UTC");
+    await expect(recordDay(page, "2026-12-25")).toHaveAttribute("aria-current", "date");
+    await streaks(page, 0, 3);
+    expect(await savedRecord(page, record)).toEqual(saved);
+    await verifyLocal();
   });
 
   test("desktop stays playable offline after load with storage blocked, then rolls over at UTC midnight", async ({ page, baseURL }, info) => {
@@ -270,6 +353,8 @@ test.describe("published Daily Court", () => {
     await expect(tactic(page)).toHaveAttribute("data-state", "won");
     await page.getByRole("link", { name: "‹ Daily Court" }).tap();
     await expect(page.getByText("Completed today")).toHaveCount(1);
+    await expect(playRecord(page).getByText(/Browser storage is unavailable/)).toBeVisible();
+    await expect(recordDay(page, "2026-11-25")).toContainText("Xiangqi cleared. Mahjong Solitaire not cleared.");
     await page.getByRole("link", { name: "Play Xiangqi" }).tap();
     await expect(tactic(page)).toHaveAttribute("data-state", "won");
     await page.getByRole("button", { name: "Replay today’s tactic" }).tap();
@@ -285,6 +370,7 @@ test.describe("published Daily Court", () => {
     await page.context().setOffline(false);
     await page.getByRole("link", { name: "‹ Daily Court" }).tap();
     await expect(page.getByText("Ready to play")).toHaveCount(2);
+    await expect(recordDay(page, "2026-11-25")).toContainText("Xiangqi cleared. Mahjong Solitaire not cleared.");
     await page.getByRole("link", { name: "Play Mahjong Solitaire" }).tap();
     await expect(tally(page)).toHaveText("78 / 78 tiles left");
     await expect(page.getByText(/Browser storage is unavailable/)).toBeVisible();
@@ -296,6 +382,8 @@ test.describe("published Daily Court", () => {
     await expect(tally(page)).toHaveText("76 / 78 tiles left");
     await page.reload();
     await expect(tally(page)).toHaveText("78 / 78 tiles left");
+    await page.getByRole("link", { name: "‹ Daily Court" }).tap();
+    await expect(recordDay(page, "2026-11-25")).toContainText("Xiangqi not cleared. Mahjong Solitaire not cleared.");
     await verifyLocal();
   });
 });

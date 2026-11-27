@@ -122,7 +122,11 @@ stalemate and a mismatched tile pair, verifies both mates in one edition,
 and follows a stack’s legal removal sequence through all 78 tiles. It
 checks canonical URLs, painted local artwork, keyboard and touch input,
 320 px portrait and desktop geometry, browser-only progress, blocked storage,
-play after loading offline, and UTC rollover in a non-UTC time zone.
+play after loading offline, and UTC rollover in a non-UTC time zone. The
+picker's personal record is checked after completing both challenges, after a
+replay and reload, at 320 px, 740×320 and desktop, and when yesterday's full
+clear streak expires. It verifies mount-local storage and that malformed,
+future and expired dates do not contribute.
 
 With the [built publish](operations.md#release-gates-and-local-verification)
 already listening at a portal mount, run just this spec with:

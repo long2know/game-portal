@@ -20,6 +20,39 @@
 .daily-status { color: var(--brass); font-size: .85rem; }
 .daily-status[data-completed] { color: var(--jade); }
 .daily-local { margin-block-start: 12px; font-size: .85rem; }
+.daily-record {
+  display: grid; gap: 8px; margin-block-start: 13px; padding: clamp(9px, 2.4vw, 18px);
+  border: 1px solid #9a7957; border-radius: 7px; background: #232f29; box-shadow: inset 0 1px #b38a584d;
+}
+.daily-record p { font-size: .83rem; }
+.daily-streaks, .daily-activity { display: grid; gap: clamp(3px, .75vw, 7px); margin: 0; padding: 0; }
+.daily-streaks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.daily-streaks div {
+  padding: 5px 8px; border-inline-start: 3px double #c49164; background: #304036;
+  font-variant-numeric: tabular-nums;
+}
+.daily-streaks dt { color: #e4d7bc; font-size: .81rem; }
+.daily-streaks dd { margin: 0; color: #ffdda6; font: 600 1.24rem/1.2 var(--serif); }
+.daily-legend { display: flex; flex-wrap: wrap; gap: 2px 12px; color: #e4d7bc; }
+.daily-activity { grid-template-columns: repeat(7, minmax(0, 1fr)); list-style: none; }
+.daily-record-day {
+  min-inline-size: 0; display: grid; place-items: center; gap: 2px; padding: 4px 1px;
+  border: 1px solid #776852; border-radius: 4px; background: #2b382f; text-align: center;
+}
+.daily-record-day[aria-current] { border-color: #e7b576; background: #3a4836; }
+.daily-record-day time { color: #f3e5c7; font-size: .74rem; line-height: 1.16; }
+.daily-marks { display: flex; gap: 2px; }
+.daily-mark {
+  inline-size: .85rem; border-block-end: 1px solid #897a62;
+  color: #dccbb0; font-size: .72rem; line-height: 1.15;
+}
+.daily-mark[data-cleared] { color: #ffe3af; border-color: currentColor; font-weight: 740; }
+.daily-record-sr {
+  position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+@media (min-width: 860px) {
+  .daily-activity { grid-template-columns: repeat(14, minmax(0, 1fr)); }
+}
 .daily-table {
   display: grid; align-items: start; gap: clamp(11px, 2.5vw, 22px); grid-template-areas: "board" "guide";
 }
