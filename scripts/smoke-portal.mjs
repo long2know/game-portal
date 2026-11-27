@@ -16,7 +16,7 @@ const { origin, pathname } = app;
 const mount = pathname.slice(0, -1);
 const extraClientRoutes = [
   'holdem', 'solitaire', 'sudoku', 'word-tiles', 'farkle', 'backgammon', 'lantern-run', 'mahjong-solitaire', 'big-two',
-  'daily-court', 'koi-koi', 'nonograms',
+  'daily-court', 'koi-koi', 'nonograms', 'jade-harbors',
 ];
 const newBoards = { xiangqi: 'standard', gomoku: 'freestyle' };
 assert(['http:', 'https:'].includes(app.protocol) && ['/portal', '/game-portal'].includes(mount)
@@ -71,7 +71,7 @@ async function checkApplication() {
   assert.deepEqual((await json('health/live')).value, { status: 'live' });
   assert.deepEqual((await json('api/version')).value, { appVersion, protocolVersion: 1, commitSha });
   const missing = ['no-such-board/', 'farkle/not-a-table/', 'backgammon/not-a-table/', 'lantern-run/private-table/',
-    'daily-court/private-table/', 'api/daily-court', 'assets/infra-smoke-missing.js'];
+    'daily-court/private-table/', 'jade-harbors/private-table/', 'api/daily-court', 'assets/infra-smoke-missing.js'];
   if (app.protocol === 'http:') missing.push('/api/version', '/mahjong/');
   for (const path of missing) {
     const response = await fetchApp(path);
@@ -257,14 +257,15 @@ async function playNewBoards({ host, visitor, outsider }) {
   return boards;
 }
 
-async function checkNewSaves({ host, visitor, outsider }, boards, bigTwo) {
+async function checkNewSaves({ host, visitor, outsider }, boards, { bigTwo, harbors }) {
   const target = (game, tableId, variant, players) => ({
     game, tableId, variant, players, botDifficulty: null, canStartFresh: true,
   });
   const expected = [
     target('big-two', bigTwo.id, null, 4),
-    ...Object.keys(boards).sort().map(game => target(game, boards[game].id, boards[game].variant, 2)),
-  ];
+    target('jade-harbors', harbors.id, null, 3),
+    ...Object.keys(boards).map(game => target(game, boards[game].id, boards[game].variant, 2)),
+  ].sort((a, b) => a.game.localeCompare(b.game));
   const games = new Set([...expected.map(save => save.game), 'mahjong-solitaire']);
   const newSaves = async cookie => {
     const { saves } = await jsonValue('api/saves', { cookie });
@@ -338,7 +339,7 @@ if (phase === 'seed') {
   const { committed: visitorMove } = await play(visitorTurn, visitor);
   const boards = await playNewBoards(guests);
   const expansion = await playExpansion(jsonValue, guests);
-  await checkNewSaves(guests, boards, expansion.bigTwo);
+  await checkNewSaves(guests, boards, expansion);
   await writeFile(stateFile, JSON.stringify({
     host, visitor, outsider, botReply, visitorMove, reversiInvite: waiting.invite, boards, expansion,
   }), { mode: 0o600, flag: 'wx' });
@@ -347,7 +348,7 @@ if (phase === 'seed') {
   const { host, visitor, outsider, botReply, visitorMove, reversiInvite, boards, expansion } =
     JSON.parse(await readFile(stateFile, 'utf8'));
   const guests = { host, visitor, outsider };
-  await checkNewSaves(guests, boards, expansion.bigTwo);
+  await checkNewSaves(guests, boards, expansion);
   for (const game of Object.keys(newBoards)) {
     const saved = boards[game];
     const { tableId } = await resumeTable(game, host);

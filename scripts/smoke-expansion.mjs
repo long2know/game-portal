@@ -543,6 +543,76 @@ async function seedBigTwo(call, { host, outsider }) {
   return played;
 }
 
+const harborsGame = 'jade-harbors';
+
+async function seedHarbors(call, { host, outsider }) {
+  let table = await createTable(call, harborsGame, host, true, 3);
+  assert.deepEqual([table.status, table.seat, table.revision, table.invite], ['playing', 0, 0, null],
+    'Jade Harbors did not start a private bot table');
+  assert.deepEqual(table.seats.map(({ seat, occupied, bot }) => [seat, occupied, bot]),
+    [[0, true, false], [1, true, true], [2, true, true]], 'Jade Harbors did not seat one guest and two bots');
+
+  const pier = ['placePier', 'buildPier', 'piers', 'nodes'];
+  const route = ['placeRoute', 'buildRoute', 'routes', 'routes'];
+  for (const [phase, kind, options, pieces] of [pier, route, pier, route]) {
+    const position = table.position;
+    assert.deepEqual([position.phase, position.turnSeat, position.turn, position.lastRoll], [phase, 0, 0, null],
+      'Jade Harbors did not return the correct opening step to the guest');
+    const target = position.legalActions[options][0];
+    assert(Number.isInteger(target) && target >= 0, `Jade Harbors offered no legal ${kind} target`);
+    table = await act(call, harborsGame, table, host, { kind, target });
+    assert.equal(table.position[pieces].find(piece => piece.id === target)?.seat, table.seat,
+      `Jade Harbors did not commit the requested ${kind}`);
+  }
+
+  const before = table.position;
+  assert.deepEqual([before.phase, before.turnSeat, before.turn, before.lastRoll, before.legalActions.canRoll],
+    ['roll', 0, 1, null, true], 'Jade Harbors did not make the first roll available after setup');
+  const rolled = await act(call, harborsGame, table, host, roll);
+  const { phase, turnSeat, turn, lastRoll, legalActions, ownResources, seats } = rolled.position;
+  assert.deepEqual([phase, turnSeat, turn, legalActions.canRoll, legalActions.canEndTurn], ['build', 0, 1, false, true],
+    'Jade Harbors did not enter the guest’s build phase with a legal End Turn');
+  assert(Array.isArray(lastRoll), 'Jade Harbors did not expose the rolled dice pair');
+  checkDice(lastRoll, 2);
+
+  assert.deepEqual(Object.keys(rolled.position).sort(),
+    ['lastRoll', 'legalActions', 'nodes', 'ownResources', 'phase', 'routes', 'seats', 'tiles', 'turn', 'turnSeat', 'winnerSeat'],
+    'Jade Harbors exposed an unexpected position field');
+  for (const seat of seats) {
+    assert.deepEqual(Object.keys(seat).sort(), ['points', 'resourceCount', 'seat'],
+      'Jade Harbors exposed more than public points and resource counts for a seat');
+    assert(Number.isInteger(seat.resourceCount) && seat.resourceCount >= 0, 'Jade Harbors returned an invalid resource total');
+  }
+  assert.deepEqual(seats.map(({ seat, points }) => [seat, points]), [[0, 2], [1, 2], [2, 2]],
+    'Jade Harbors did not finish setup for all three seats');
+  assert(Array.isArray(ownResources) && ownResources.length === 4 &&
+    ownResources.every(count => Number.isInteger(count) && count >= 0),
+    'Jade Harbors did not project exactly the viewer’s four resource counts');
+  assert.equal(ownResources.reduce((sum, count) => sum + count, 0), seats[rolled.seat].resourceCount,
+    'Jade Harbors viewer holdings did not match the public total');
+
+  const earned = [0, 0, 0, 0];
+  const production = [0, 0, 0];
+  const nodes = new Map(before.nodes.map(node => [node.id, node]));
+  const total = lastRoll[0] + lastRoll[1];
+  for (const { number, resource, nodeIds } of before.tiles) {
+    if (number !== total || resource === null) continue;
+    for (const id of nodeIds) {
+      const { seat, level } = nodes.get(id);
+      if (seat === null) continue;
+      production[seat] += level;
+      if (seat === rolled.seat) earned[resource] += level;
+    }
+  }
+  assert.deepEqual(ownResources, before.ownResources.map((count, kind) => count + earned[kind]),
+    'Jade Harbors did not commit the viewer’s production for the rolled pair');
+  assert.deepEqual(seats.map(({ resourceCount }) => resourceCount),
+    before.seats.map(({ seat, resourceCount }) => resourceCount + production[seat]),
+    'Jade Harbors did not update public resource totals for the rolled pair');
+  await call(tablePath(harborsGame, rolled), { cookie: outsider, status: 404, error: 'room_not_found' });
+  return rolled;
+}
+
 function checkSolitaireProjection(table) {
   const { tableau } = table.position;
   assert.equal(tableau.length, 7, 'Solitaire did not project seven columns');
@@ -615,10 +685,12 @@ export async function playExpansion(call, guests) {
   const farkle = await seedFarkle(call, guests);
   const backgammon = await seedBackgammon(call, guests);
   const bigTwo = await seedBigTwo(call, guests);
+  const harbors = await seedHarbors(call, guests);
   console.log('Played private Hold’em and Jade Letters with different guests and bots; drew one Solitaire card and marked a unique Sudoku.');
   console.log('Played Farkle and Backgammon against bots and invited guests; rejected client dice and unauthorized or stale writes.');
   console.log('Played a legal Big Two turn with three bots and verified the guest-only hand.');
-  return { poker, words, solo, farkle, backgammon, bigTwo };
+  console.log('Completed Jade Harbors setup with two bots and verified a server roll, guest holdings, and public totals.');
+  return { poker, words, solo, farkle, backgammon, bigTwo, harbors };
 }
 
 export async function resumeExpansion(call, { host, visitor, outsider }, state) {
@@ -644,11 +716,17 @@ export async function resumeExpansion(call, { host, visitor, outsider }, state) 
     assert.deepEqual(await call(`api/solo/${game}`, { cookie: visitor }), { table: null },
       `${game} revealed restored progress to another guest`);
   }
-  const { bigTwo } = state;
+  const { bigTwo, harbors } = state;
   const { tableId } = await call(`api/${bigTwoGame}/resume`, { cookie: host });
   assert(tableId === bigTwo.id, 'Big Two did not offer the restored bot table');
   assert(isDeepStrictEqual(await readSeat(call, bigTwoGame, bigTwo, host), bigTwo),
     'Big Two did not recover the committed turn and the caller’s original hand');
   await call(tablePath(bigTwoGame, bigTwo), { cookie: outsider, status: 404, error: 'room_not_found' });
   console.log('Restored private cards and racks, Big Two’s bot table, dice and checker positions, and solo progress without exposing other guest data.');
+  assert.deepEqual(await call(`api/${harborsGame}/resume`, { cookie: host }), { tableId: harbors.id },
+    'Jade Harbors did not offer the restored bot table');
+  assert.deepEqual(await readSeat(call, harborsGame, harbors, host), harbors,
+    'Jade Harbors did not restore the exact position, dice pair, and viewer holdings');
+  await call(tablePath(harborsGame, harbors), { cookie: outsider, status: 404, error: 'room_not_found' });
+  console.log('Restored Jade Harbors with the original guest, exact board, and committed dice pair.');
 }
