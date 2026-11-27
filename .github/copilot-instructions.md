@@ -54,7 +54,7 @@ In another terminal, at the root:
 ```bash
 BASE_URL=http://127.0.0.1:8912/portal/ npm --prefix web run test:e2e -- \
   e2e/catalog.spec.ts --project=chromium \
-  --grep '^lobby presents thirteen real destinations with local, cold catalog art$'
+  --grep 'lobby presents .* real destinations with local, cold catalog art$'
 ```
 
 The server's `BASE_URL` is a **path**; Playwright's is an **absolute URL with trailing slash**. Catalog specs skip outside `/portal/` or `/game-portal/`. `npm --prefix web run test:e2e` runs all specs, but live coverage needs the matching real server/mount.
