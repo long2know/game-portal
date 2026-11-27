@@ -40,10 +40,13 @@ export function showSettings({ guest, state, available, audio, modal, opener, le
   volume.value = String(Math.round(preferences.volume * 100));
   const readout = el("span", "", `Volume · ${volume.value}%`);
   const track = audio.deviceChoices ? select([["still", "Still Water"], ["bamboo", "Bamboo by the Xiang"]], audio.choices.track) : undefined;
-  const voice = audio.deviceChoices ? select([
+  const recordingKey = audio.callRecordingKey;
+  const voice = recordingKey ? select([
     ["off", "Off"], ["mixed", "English Cha · Mandarin Peng/Hu"],
     ["lower", "Mandarin · lower"], ["higher", "Mandarin · higher"],
+    ["changsha", "Changsha dialect (your recordings)"],
   ], audio.choices.voice) : undefined;
+  let changshaReady = false;
   const chosenTrack = () => track?.value === "bamboo" ? "bamboo" : "still";
   const preview = () => audio.preview([music.input.checked, Number(volume.value) / 100, chosenTrack()]);
   track?.addEventListener("change", preview);
@@ -64,11 +67,21 @@ export function showSettings({ guest, state, available, audio, modal, opener, le
   const form = el("form", "form", field("Display name", name), sound.field, music.field);
   if (track) form.append(field("Soundtrack", track));
   form.append(el("label", "field", readout, volume), audioNote);
-  if (voice) {
+  if (voice && recordingKey) {
     const note = el("p", "note", "Calls follow tile sounds and volume. The soundtrack and voice are saved in this browser for this portal.");
     note.id = "device-audio-note";
     voice.setAttribute("aria-describedby", note.id);
-    form.append(field("Spoken table calls", voice), note);
+    const option = voice.querySelector<HTMLOptionElement>('option[value="changsha"]')!;
+    option.disabled = true;
+    const recordings = el("div", "note", "Checking Changsha recordings…");
+    form.append(field("Spoken table calls", voice), note, recordings);
+    void import("./changsha-settings").then(({ changshaSettings }) => {
+      if (!form.isConnected || !modal.root.open) return;
+      recordings.replaceWith(changshaSettings(recordingKey, modal.root, ready => {
+        changshaReady = ready;
+        option.disabled = !ready;
+      }));
+    }, () => text(recordings, "Changsha recordings are unavailable. Table cues still play."));
   }
   form.append(motion.field, actions);
   if (reserve) form.append(el("p", "note", "Your seat stays reserved. Timed decisions continue at the table."));
@@ -78,6 +91,10 @@ export function showSettings({ guest, state, available, audio, modal, opener, le
     if (!displayName || /[\u0000-\u001f\u007f-\u009f]/u.test(displayName)) {
       modal.message("Enter a display name of 1–24 characters without controls.");
       name.focus();
+      return;
+    }
+    if (voice?.value === "changsha" && !changshaReady && audio.choices.voice !== "changsha") {
+      modal.message("Save all three Changsha recordings before enabling this voice.");
       return;
     }
     const prefs: Preferences = { sound: sound.input.checked, music: music.input.checked,

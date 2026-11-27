@@ -5,7 +5,7 @@ import type { Ambient, BarPlayer } from "./portal/ambient";
 import type { Effect, TileSounds } from "./table-sounds";
 
 type Soundtrack = "still" | "bamboo";
-export type CallVoice = "off" | "mixed" | "lower" | "higher";
+export type CallVoice = "off" | "mixed" | "lower" | "higher" | "changsha";
 export interface AudioChoices { track: Soundtrack; voice: CallVoice }
 type MusicChoice = [enabled: boolean, volume: number, track: Soundtrack];
 
@@ -37,7 +37,7 @@ export class LanternAudio {
         const [track, voice] = localStorage.getItem(key)?.split(":") ?? [];
         this.choices = {
           track: track === "bamboo" ? "bamboo" : "still",
-          voice: voice === "mixed" || voice === "lower" || voice === "higher" ? voice : "off",
+          voice: voice === "mixed" || voice === "lower" || voice === "higher" || voice === "changsha" ? voice : "off",
         };
       } catch { /* Storage is optional. */ }
     }
@@ -51,6 +51,7 @@ export class LanternAudio {
   }
 
   get deviceChoices(): boolean { return !!this.key; }
+  get callRecordingKey(): string | undefined { return this.key; }
 
   saveChoices(choices: AudioChoices): boolean {
     if (!this.key) return true;
@@ -204,7 +205,7 @@ export class LanternAudio {
     else if (!this.callsLoading) {
       this.callsLoading = true;
       void import("./callouts").then(({ Callouts }) => {
-        this.callouts = new Callouts(bus, () => this.changed?.());
+        this.callouts = new Callouts(bus, () => this.changed?.(), this.key);
         this.updateTableSound();
       }).catch(() => { this.callsFailed = true; this.changed?.(); });
     }

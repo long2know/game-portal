@@ -17,11 +17,14 @@ interface Playback {
 }
 interface AudioProbe {
   decoded: string[];
+  pendingLocal: number;
   playback: Playback[];
   active: number;
   rms: number;
   duration: number;
   cueStrikes: number;
+  auditions: number[];
+  deviceCalls: string[];
 }
 
 async function observeCalls(page: Page) {
@@ -30,7 +33,25 @@ async function observeCalls(page: Page) {
     const inputs = new WeakMap<ArrayBuffer, string>(), buffers = new WeakMap<AudioBuffer, string>();
     const decoded: string[] = [], playback: Playback[] = [];
     const active = new Set<AudioBufferSourceNode>(), analysers: AnalyserNode[] = [];
-    let duration = 0, cueStrikes = 0;
+    const auditions: number[] = [], deviceCalls: string[] = [];
+    let duration = 0, cueStrikes = 0, pendingLocal = 0;
+    let held: Promise<void> | undefined, release: (() => void) | undefined;
+    Object.assign(window, { delayLocalCalls: (delay: boolean) => {
+      if (delay) held = new Promise<void>(resolve => { release = resolve; });
+      else { release?.(); held = release = undefined; }
+    } });
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () {
+      return play.call(this).then(() => { if (this.src.startsWith("blob:")) auditions.push(this.duration); });
+    };
+    if (typeof SpeechSynthesis !== "undefined") {
+      const speak = SpeechSynthesis.prototype.speak;
+      SpeechSynthesis.prototype.speak = function (utterance) { deviceCalls.push("speech"); speak.call(this, utterance); };
+    }
+    if (typeof MediaDevices !== "undefined") {
+      const capture = MediaDevices.prototype.getUserMedia;
+      MediaDevices.prototype.getUserMedia = function (constraints) { deviceCalls.push("capture"); return capture.call(this, constraints); };
+    }
     const fetchAudio = window.fetch;
     window.fetch = async (...args) => {
       const response = await fetchAudio(...args);
@@ -47,8 +68,13 @@ async function observeCalls(page: Page) {
     };
     const decode = BaseAudioContext.prototype.decodeAudioData;
     BaseAudioContext.prototype.decodeAudioData = function (input, success, failure) {
-      return decode.call(this, input, success, failure).then(buffer => {
-        const name = inputs.get(input);
+      const view = new DataView(input);
+      const marker = view.byteLength > 46 && view.getUint32(0) === 0x52494646 ? view.getInt16(44, true) : 0;
+      const local = !("startRendering" in this) && ["local-chi", "local-peng", "local-hu"][marker - 3101];
+      if (local) pendingLocal++;
+      const decodeInput = () => decode.call(this, input, success, failure);
+      return (local && held ? held.then(decodeInput) : decodeInput()).then(buffer => {
+        const name = inputs.get(input) ?? local;
         if (name) {
           buffers.set(buffer, name);
           decoded.push(name);
@@ -91,7 +117,7 @@ async function observeCalls(page: Page) {
         analyser.getFloatTimeDomainData(values);
         return Math.sqrt(values.reduce((sum, value) => sum + value * value, 0) / values.length);
       }));
-      return { decoded, playback, active: active.size, rms, duration, cueStrikes };
+      return { decoded, pendingLocal, playback, active: active.size, rms, duration, cueStrikes, auditions, deviceCalls };
     } });
   }, clipPattern.source);
   return () => page.evaluate(() => (window as unknown as { mahjongAudio: () => AudioProbe }).mahjongAudio());
@@ -188,10 +214,75 @@ async function fixture(page: Page, child: string) {
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const dialog = (page: Page) => page.getByRole("dialog", { name: "Settings" });
 const voice = (page: Page) => dialog(page).getByRole("combobox", { name: "Spoken table calls", exact: true });
+const changshaOption = (page: Page) => voice(page).locator('option[value="changsha"]');
+const savePack = (page: Page) => button(page, "Save recordings on this device");
 const played = async (read: () => Promise<AudioProbe>) => (await read()).playback.map(event => event.name);
+
+function wave(marker: number, seconds = .5, amplitude = .28) {
+  const rate = 24000, samples = Math.floor(seconds * rate);
+  const buffer = Buffer.alloc(44 + samples * 2);
+  buffer.write("RIFF", 0); buffer.writeUInt32LE(buffer.length - 8, 4); buffer.write("WAVEfmt ", 8);
+  buffer.writeUInt32LE(16, 16); buffer.writeUInt16LE(1, 20); buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(rate, 24); buffer.writeUInt32LE(rate * 2, 28);
+  buffer.writeUInt16LE(2, 32); buffer.writeUInt16LE(16, 34); buffer.write("data", 36);
+  buffer.writeUInt32LE(samples * 2, 40);
+  for (let i = 0; i < samples; i++) buffer.writeInt16LE(Math.round(amplitude * 32767 * Math.sin(i * marker / rate)), 44 + i * 2);
+  if (marker) buffer.writeInt16LE(marker, 44);
+  return buffer;
+}
+
+const recordings = {
+  Cha: { name: "fixture-Cha.wav", mimeType: "audio/wav", buffer: wave(3101) },
+  Peng: { name: "fixture-Peng.wav", mimeType: "audio/wav", buffer: wave(3102) },
+  Hu: { name: "fixture-Hu.wav", mimeType: "audio/wav", buffer: wave(3103) },
+};
+const input = (page: Page, name: string) => dialog(page).getByLabel(`${name} recording`, { exact: true });
+
+async function openPack(page: Page) {
+  await button(page, "Settings").tap();
+  await dialog(page).getByText("Configure Changsha recordings", { exact: true }).tap();
+  await expect(input(page, "Cha")).toBeEnabled();
+}
+
+async function fillPack(page: Page) {
+  for (const [label, file] of Object.entries(recordings)) await input(page, label).setInputFiles(file);
+}
+
+type Stored = { keys: string[]; sizes?: number[]; hashes?: string[]; types?: string[]; fields?: string[][] };
+async function inspectPack(page: Page, key: string, seed?: "foreign" | "corrupt"): Promise<Stored> {
+  const waves = seed && Object.values(recordings).map(file => file.buffer.toString("base64"));
+  return page.evaluate(async ({ key, waves, seed }) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("jade-court-changsha-calls");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const clip = (bytes: string) => ({ bytes: Uint8Array.from(atob(bytes), char => char.charCodeAt(0)).buffer, type: "audio/wav" });
+    const saved = await new Promise<{ keys: string[]; clips?: ReturnType<typeof clip>[] }>((resolve, reject) => {
+      const tx = db.transaction("recordings", waves ? "readwrite" : "readonly"), store = tx.objectStore("recordings");
+      if (waves) store.put({ chi: clip(waves[0]), peng: clip(seed === "corrupt" ? "AwUH" : waves[1]), hu: clip(waves[2]) }, key);
+      const keys = store.getAllKeys();
+      const value = store.get(key);
+      tx.oncomplete = () => resolve({ keys: keys.result as string[],
+        clips: value.result && [value.result.chi, value.result.peng, value.result.hu] });
+      tx.onabort = () => reject(tx.error);
+    }).finally(() => db.close());
+    return {
+      keys: saved.keys,
+      sizes: saved.clips?.map(clip => clip.bytes.byteLength),
+      hashes: saved.clips && await Promise.all(saved.clips.map(async clip => {
+        const digest = await crypto.subtle.digest("SHA-256", clip.bytes);
+        return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+      })),
+      types: saved.clips?.map(clip => clip.type),
+      fields: saved.clips?.map(clip => Object.keys(clip).sort()),
+    };
+  }, { key, waves, seed });
+}
 
 async function setVoice(page: Page, value: string, sound = true, volumeKey?: "Home" | "End") {
   await button(page, "Settings").tap();
+  if (value === "changsha") await expect(changshaOption(page)).toBeEnabled();
   await voice(page).selectOption(value);
   await dialog(page).getByLabel("Tile and turn sounds").setChecked(sound);
   if (volumeKey) {
@@ -343,6 +434,173 @@ test("committed calls play the selected Mandarin PCM exactly once, independently
   expect(shipped.ok()).toBe(true);
   expect(createHash("sha256").update(await shipped.body()).digest("hex"))
     .toBe("4c5d494a23a16758367082775bb5888d5a52a80d2afaef4c140aefc024535c65");
+});
+
+test("Changsha recording drafts are validated and saved privately for this mount without enabling the voice", async ({ page, baseURL }, info) => {
+  const child = new URL("mahjong/", baseURL), key = `${child.pathname}audio`;
+  const otherKey = child.pathname.startsWith("/portal/") ? "/game-portal/mahjong/audio" : "/portal/mahjong/audio";
+  const read = await observeCalls(page);
+  const requests: { url: string; method: string; body: string | null }[] = [];
+  page.on("request", request => requests.push({ url: request.url(), method: request.method(), body: request.postData() }));
+  await fixture(page, child.href);
+  expect(requests.some(item => /\/(?:changsha-(?:calls|settings)|callouts)-|\.mp3$/.test(item.url))).toBe(false);
+  await openPack(page);
+  await expect(changshaOption(page)).toHaveText("Changsha dialect (your recordings)");
+  await expect(changshaOption(page)).toBeDisabled();
+  await expect(savePack(page)).toBeDisabled();
+  await expect(input(page, "Cha")).toHaveAttribute("accept", /\.m4a,.mp3,.wav/);
+  expect((await inspectPack(page, key)).keys).toEqual([]);
+  await button(page, "Close dialog").tap();
+
+  await inspectPack(page, otherKey, "foreign");
+  await openPack(page);
+  await expect(dialog(page).getByText(/^No Changsha recordings saved\./)).toBeVisible();
+  await expect(changshaOption(page)).toBeDisabled();
+  await input(page, "Cha").setInputFiles(recordings.Cha);
+  await expect(button(page, "Audition Cha")).toBeEnabled();
+  await button(page, "Audition Cha").tap();
+  await expect.poll(async () => (await read()).auditions).toEqual([.5]);
+  await input(page, "Peng").setInputFiles({ name: "large.m4a", mimeType: "audio/mp4", buffer: Buffer.alloc(192 * 1024 + 1) });
+  await expect(dialog(page).getByText(/no larger than 192 KiB/)).toBeVisible();
+  await input(page, "Peng").setInputFiles({ ...recordings.Peng, buffer: wave(3102, 2.25) });
+  await expect(dialog(page).getByText(/between 0.1 and 2 seconds/)).toBeVisible();
+  await input(page, "Peng").setInputFiles({ ...recordings.Peng, buffer: wave(0, .5, 0) });
+  await expect(dialog(page).getByText(/silent or too quiet/)).toBeVisible();
+  await input(page, "Peng").setInputFiles({ ...recordings.Peng, buffer: Buffer.from("not audio") });
+  await expect(dialog(page).getByText(/couldn’t decode the clip/)).toBeVisible();
+  await input(page, "Hu").setInputFiles(recordings.Hu);
+  await expect(button(page, "Audition Hu")).toBeEnabled();
+  await expect(savePack(page)).toBeDisabled();
+  await expect(changshaOption(page)).toBeDisabled();
+  await button(page, "Close dialog").tap();
+  expect(await inspectPack(page, key)).toEqual({ keys: [otherKey] });
+
+  await openPack(page);
+  await expect(button(page, "Audition Cha")).toBeDisabled();
+  await fillPack(page);
+  await savePack(page).tap();
+  await expect(dialog(page).getByText("Recordings saved on this device. Your voice choice is unchanged.")).toBeVisible();
+  await expect(changshaOption(page)).toBeEnabled();
+  await expect(voice(page)).toHaveValue("off");
+  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBeNull();
+  await voice(page).selectOption("changsha");
+  await button(page, "Close dialog").tap();
+  await page.reload();
+  await expect(page.locator(online)).toBeVisible();
+  await openPack(page);
+  await expect(voice(page)).toHaveValue("off");
+  await expect(changshaOption(page)).toBeEnabled();
+  await expect(button(page, "Audition Peng")).toBeEnabled();
+  await button(page, "Audition Peng").tap();
+  await expect.poll(async () => (await read()).auditions).toEqual([.5]);
+  const stored = await inspectPack(page, key);
+  expect(stored).toEqual({ keys: [key, otherKey].sort(),
+    sizes: [24044, 24044, 24044], types: ["audio/wav", "audio/wav", "audio/wav"],
+    fields: [["bytes", "type"], ["bytes", "type"], ["bytes", "type"]],
+    hashes: Object.values(recordings).map(file => createHash("sha256").update(file.buffer).digest("hex")),
+  });
+  expect(requests.filter(item => {
+    const url = new URL(item.url);
+    if (url.origin !== child.origin || /\.mp3$/.test(url.pathname)) return true;
+    if (item.method === "GET") return false;
+    if (item.method !== "POST") return true;
+    if (url.href === new URL("api/guest", baseURL).href) return item.body !== "{}";
+    if (url.href === new URL("api/social/presence", baseURL).href) {
+      const { tabId, ...body } = JSON.parse(item.body ?? "{}");
+      return typeof tabId !== "string" || body.active !== false || body.busy !== false || Object.keys(body).length !== 2;
+    }
+    return true;
+  })).toEqual([]);
+  expect((await read()).deviceCalls).toEqual([]);
+  await info.attach("private-recording-readback", { body: JSON.stringify(stored), contentType: "application/json" });
+  await button(page, "Delete saved recordings").tap();
+  await expect(changshaOption(page)).toBeDisabled();
+  expect(await inspectPack(page, key)).toEqual({ keys: [otherKey] });
+});
+
+test("Changsha PCM follows fresh commits only and falls back to table cues while delayed, absent or invalid", async ({ page, baseURL }, info) => {
+  const child = new URL("mahjong/", baseURL), key = `${child.pathname}audio`;
+  const read = await observeCalls(page);
+  const clips: string[] = [];
+  page.on("request", request => { if (clipPattern.test(new URL(request.url()).pathname)) clips.push(request.url()); });
+  const wire = await fixture(page, child.href);
+  await openPack(page);
+  await fillPack(page);
+  await savePack(page).tap();
+  await expect(changshaOption(page)).toBeEnabled();
+  await button(page, "Close dialog").tap();
+  const delay = (set: boolean) => page.evaluate(set =>
+    (window as unknown as { delayLocalCalls: (set: boolean) => void }).delayLocalCalls(set), set);
+  const cueInstead = async (change: (state: Snapshot) => void) => {
+    const before = await read();
+    await wire.commit(change);
+    await expect.poll(async () => (await read()).cueStrikes).toBeGreaterThan(before.cueStrikes);
+    expect(await played(read)).toEqual(before.playback.map(event => event.name));
+  };
+  await delay(true);
+  await setVoice(page, "changsha");
+  await expect.poll(async () => (await read()).pendingLocal).toBe(3);
+  await cueInstead(state => meld(state, 1, "chi"));
+  await delay(false);
+  await expect.poll(async () => new Set((await read()).decoded)).toEqual(new Set(["local-chi", "local-peng", "local-hu"]));
+  wire.duplicate();
+  await wire.commit();
+  expect(await played(read)).toEqual([]);
+
+  await wire.commit(state => meld(state, 2, "chi"));
+  await expect.poll(() => played(read)).toEqual(["local-chi"]);
+  await expect.poll(async () => (await read()).rms).toBeGreaterThan(.009);
+  await wire.commit(state => meld(state, 3, "peng"));
+  await expect.poll(() => played(read)).toEqual(["local-chi", "local-peng"]);
+  await wire.commit(hu);
+  await expect.poll(() => played(read)).toEqual(["local-chi", "local-peng", "local-hu"]);
+  const local = (await read()).playback;
+  expect(new Set(local.map(event => event.fingerprint)).size).toBe(3);
+  expect(local.every(event => event.running && event.simultaneous === 1)).toBe(true);
+  await info.attach("local-decoded-voice-playback", { body: JSON.stringify(local), contentType: "application/json" });
+  await expect(page.getByRole("dialog", { name: "Hand results" })).toBeVisible();
+  await button(page, "Close dialog").tap();
+  await wire.commit(state => {
+    const { game, room, self } = initial();
+    state.game = { ...game!, handNumber: 2, wallCount: state.game!.wallCount };
+    state.room = room;
+    state.self = self;
+  });
+  await setVoice(page, "changsha", false);
+  const muted = await read();
+  await wire.commit(state => meld(state, 1, "peng"));
+  expect((await read()).cueStrikes).toBe(muted.cueStrikes);
+  expect(await played(read)).toEqual(local.map(event => event.name));
+  await setVoice(page, "changsha");
+  await visible(page, false);
+  await wire.commit(state => meld(state, 2, "peng"));
+  expect(await played(read)).toEqual(local.map(event => event.name));
+  await visible(page, true);
+  await wire.commit();
+
+  await openPack(page);
+  await button(page, "Delete saved recordings").tap();
+  await expect(dialog(page).getByText(/^No Changsha recordings saved\./)).toBeVisible();
+  await expect(voice(page)).toHaveValue("changsha");
+  await expect(changshaOption(page)).toBeDisabled();
+  await button(page, "Close dialog").tap();
+  await cueInstead(state => meld(state, 3, "chi"));
+  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBe("still:changsha");
+
+  await inspectPack(page, key, "corrupt");
+  await page.reload();
+  await expect(page.locator(online)).toBeVisible();
+  await openPack(page);
+  await expect(dialog(page).getByText(/^Saved Changsha recordings couldn’t be read or played\./)).toBeVisible();
+  await expect(voice(page)).toHaveValue("changsha");
+  await expect(changshaOption(page)).toBeDisabled();
+  await expect(button(page, "Audition Cha")).toBeDisabled();
+  await expect.poll(async () => (await read()).pendingLocal).toBe(2);
+  await button(page, "Close dialog").tap();
+  await cueInstead(state => meld(state, 1, "chi"));
+  expect(await played(read)).toEqual([]);
+  expect(clips).toEqual([]);
+  expect((await read()).deviceCalls).toEqual([]);
 });
 
 test("a real published Mahjong game speaks a committed call", async ({ page, baseURL, browserName }, info) => {
