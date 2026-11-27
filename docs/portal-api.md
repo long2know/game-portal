@@ -6,7 +6,7 @@ Set `Portal__Enabled=true` to enable the game APIs and portal shell (the default
 `/portal/chinese-checkers/`, `/portal/holdem/`, `/portal/solitaire/`, `/portal/sudoku/`,
 `/portal/word-tiles/`, `/portal/farkle/`, `/portal/backgammon/`, `/portal/lantern-run/`,
 `/portal/xiangqi/`, `/portal/gomoku/`, `/portal/mahjong-solitaire/`, `/portal/big-two/`,
-`/portal/koi-koi/`, `/portal/nonograms/`,
+`/portal/koi-koi/`, `/portal/nonograms/`, `/portal/jade-harbors/`,
 and the Daily Court feature at `/portal/daily-court/`. `/portal/mahjong/` and
 its nested SPA routes serve the existing Changsha Mahjong client. The bare routes return
 a 308 with the query intact. Browsers retain the original fragment because the redirect
@@ -52,7 +52,7 @@ WebSocket `sync`; the list does not authorize a new membership or any write.
 | Game | Target and setup fields | When `canStartFresh` is true |
 | --- | --- | --- |
 | Shared boards | Catalog game ID, `tableId`, `variant`, `players`, and `botDifficulty` only for bot Chess (`standard` by default). | The guest owns the bot table. Creating another with those options preserves the prior table. |
-| Seated games | Catalog slug (`holdem`, `word-tiles`, `farkle`, `backgammon`, `big-two`, or `koi-koi`), `tableId` and `players`. | The guest owns the bot table. Create another for the same player count; the prior table is unchanged. |
+| Seated games | Catalog slug (`holdem`, `word-tiles`, `farkle`, `backgammon`, `big-two`, `koi-koi`, or `jade-harbors`), `tableId` and `players`. | The guest owns the bot table. Create another for the same player count; the prior table is unchanged. |
 | Solitaire and Sudoku | `solitaire` or `sudoku` and the saved `variant`; `tableId` is `null`. | The guest has a save. Dealing that variant through the existing endpoint replaces it. |
 | Changsha Mahjong | `mahjong` and the durable member's `tableId` (room ID); other setup fields are `null`. | The member is the room host with exactly three bots, and the room is `playing`, `betweenHands`, or `complete`. Restart in place only after normal WebSocket attachment, using `restartMatch` with the current room revision. |
 
@@ -136,7 +136,7 @@ other guest's current profile name, and expiry is UTC ISO 8601. These responses 
 guest identities, current games, table IDs, or link credentials.
 
 `game` is one of `mahjong`, `chess`, `go`, `reversi`, `checkers`, `chinese-checkers`,
-`xiangqi`, `gomoku`, `holdem`, `word-tiles`, `farkle`, `backgammon`, `big-two`, or `koi-koi`
+`xiangqi`, `gomoku`, `holdem`, `word-tiles`, `farkle`, `backgammon`, `big-two`, `koi-koi`, or `jade-harbors`
 (the existing HTTP paths for Hold'em and Word Tiles are still `/api/poker` and `/api/words`). Send uses the sender's own
 waiting table ID: the sender must be seated, or be the current host for Mahjong, and
 there must be an open human seat. Sending does not reserve a seat. An identical pending
@@ -437,6 +437,77 @@ sixth round and also null for a tie.
   true. A yaku may already be visible during a pending draw; no scoring choice is
   available until both parts of the turn finish. `canNextRound` is independent of
   turn and available to both members only at `roundEnd`.
+
+## Jade Harbors
+
+Jade Harbors is a points-only game for exactly three seats. `jade-harbors/` and
+the following routes are portal-only and relative to either configured mount.
+The usual seated guest cookie, same-origin writes, 4 KiB body limit, quotas,
+and table lifetimes apply.
+
+| Method and path | Body and result |
+| --- | --- |
+| `POST /api/jade-harbors/tables` | `{players: 3, bots}`. With `bots: true`, one guest and two bots start immediately. Otherwise play starts when all three seats have joined by link or private invite (`jade-harbors`). |
+| `POST /api/jade-harbors/join` | `{invite}` seats the guest in the waiting table. Existing members reusing the invite receive their current view without adding a seat or starting again. |
+| `GET /api/jade-harbors/tables/{id}` | A member's own view of the committed table. |
+| `GET /api/jade-harbors/resume` | `{tableId}` for the caller's newest unexpired waiting or playing table, or `null`. The same table is eligible for Continue in `/api/saves`. |
+| `POST /api/jade-harbors/tables/{id}/actions` | `{revision, action}` with an exact action shape from below. |
+| `POST /api/jade-harbors/tables/{id}/leave` | `{revision}` closes a waiting or playing table without awarding points; `endReason` is `"left"`. |
+
+Table responses use `{id, revision, status, seat, seats, invite, position, endReason?}`,
+with seat rows `{seat, name, bot, occupied}`. Waiting tables have an invite and
+`position: null`; after play begins `invite` is `null`. Always write with the
+**outer** `revision`. A human action and any bounded bot replies commit together,
+advancing it once. Reload after `stale_room` (409); a stale roll cannot reroll the
+committed dice. There is no `/next` endpoint.
+
+| Action | Meaning |
+| --- | --- |
+| `{kind: "buildPier", target}` | Build at a node ID listed in `legalActions.piers`. |
+| `{kind: "buildRoute", target}` | Build at a route ID listed in `legalActions.routes`. |
+| `{kind: "upgrade", target}` | Upgrade a node ID listed in `legalActions.upgrades`. |
+| `{kind: "trade", give, take}` | Trade resource types in a pair listed in `legalActions.trades`. |
+| `{kind: "roll"}` | Roll the server's dice when `legalActions.canRoll` is true. |
+| `{kind: "endTurn"}` | End the turn when `legalActions.canEndTurn` is true. |
+
+Targets are decimal JSON integers from 0 to 255; the engine checks the exact
+current IDs and options. Resource IDs are integers 0 timber, 1 clay, 2 grain,
+and 3 stone. The caller cannot supply prices, outcomes, dice, or a seed;
+additional or malformed fields yield `invalid_request` (400). A well-shaped action
+outside the rules yields `illegal_action`, an out-of-turn write `not_your_turn`,
+and a write to a waiting, closed, or finished table `room_not_started`,
+`room_closed`, or `game_finished` (400). A nonmember gets `room_not_found` (404);
+other authorization and quota errors follow the usual seated contract.
+
+For a started table, `position` is:
+
+```ts
+type Position = {
+    phase: "placePier" | "placeRoute" | "roll" | "build" | "finished";
+    turnSeat: number | null;
+    turn: number;
+    winnerSeat: number | null;
+    lastRoll: [number, number] | null;
+    tiles: {id: number; x: number; y: number; resource: number | null; number: number | null; nodeIds: number[]}[];
+    nodes: {id: number; x: number; y: number; seat: number | null; level: number}[];
+    routes: {id: number; a: number; b: number; seat: number | null}[];
+    seats: {seat: number; points: number; resourceCount: number}[];
+    ownResources: [number, number, number, number];
+    legalActions: {canRoll: boolean; canEndTurn: boolean; piers: number[]; routes: number[];
+        upgrades: number[]; trades: {give: number; take: number; cost: number}[]};
+};
+```
+
+Seats are zero-based. `turn` is 0 during setup and 1–120 in normal play.
+`lastRoll` is `null` until the first roll and otherwise gives the latest two
+committed public faces (1–6 each), retained until the next roll. `ownResources`
+is the caller's holdings in the resource order above; other inventories appear only as aggregate
+`resourceCount`, separate from `points`. Only the active viewer of a playing table
+gets legal options; all other views have false flags and empty option arrays.
+Closed and finished tables remain member-only, with `turnSeat: null` and no legal
+options. A tie at the turn limit is `finished` with `winnerSeat: null`. Closing
+preserves the last dealt position if there was one. Guest IDs,
+the private versioned checkpoint and future dice are never returned.
 
 ## Solitaire and Sudoku
 

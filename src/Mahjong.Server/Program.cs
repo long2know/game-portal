@@ -126,6 +126,7 @@ if (portalEnabled)
     BackgammonRules.Map(app);
     BigTwoRules.Map(app);
     KoiKoiRules.Map(app);
+    HarborsRules.Map(app);
     SoloApi.Map(app);
     SavesApi.Map(app);
     SocialApi.Map(app);
