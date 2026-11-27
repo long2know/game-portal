@@ -1,6 +1,8 @@
 # Changsha rules and evidence
 
-`changsha-v1` is the default profile for [the host boundary](architecture.md#rules--host-boundary). It follows the single-bird, single-rolled-replacement profile documented by [Tencent QQ Game][qq], with the specific interpretations below. A room can opt into [Two Birds](#optional-two-birds-changsha-two-bird-v1), which changes only terminal bird scoring. Neither profile is a reconstruction certified by video or a claim that all Changsha tables agree.
+Jade Court Mahjong defaults to [Two Birds](#optional-two-birds-changsha-two-bird-v1) for **new tables** made with **Play with bots** or **Play with friends**. The full create form still offers **One bird (classic)**. The standalone client still defaults to one bird, as does [the host](architecture.md#rules--host-boundary) when `createRoom.rulesVersion` is omitted.
+
+The classic profile (`changsha-v1`) follows the single-bird, single-rolled-replacement rules documented by [Tencent QQ Game][qq], with the interpretations below. Two Birds is a Jade Court house profile that changes only terminal bird reveals and their effect on points. Existing tables keep their original profile, whether you resume, rematch or start a new game in the same room. Create a new table to switch.
 
 ## Evidence and executable defaults
 
@@ -38,15 +40,17 @@ Public sources checked 2026-11-19: Tencent's original Chinese help was decoded f
 
 ## Optional Two Birds (`changsha-two-bird-v1`)
 
-Choose this house profile when creating a room; it stays fixed through all deals and rematches in that room. Omit the option for `changsha-v1`, which normally reveals one dealer-anchored bird. Both settle signed, zero-sum hand deltas. The Two Birds profile is one specific house rule, not a universal Hunan standard.
+This house profile is the Jade Court create-screen default. At the protocol boundary, it must be requested explicitly; omitting the option still selects `changsha-v1`, which normally reveals one dealer-anchored bird. Both settle signed, zero-sum hand deltas.
 
 ### Where the rules agree and diverge
 
-Rechecked 2026-11-22. Read Tencent's Chinese help directly as GB18030 and Salasasa's Chinese PDF (§§5, 7, 9–12, version dated 2026-07-09). A bird's **rank**, not its suit, counts counterclockwise from the chosen starting seat: **1/5/9** = anchor, **2/6** = next, **3/7** = opposite, **4/8** = previous. In absolute progression order, `hitSeat = (anchorSeat + rank - 1) % 4`. Counting is shared; who the anchor is, who qualifies for a multiplier, and how hits combine are not. In the table, `a/b` means points before birds, per payer: `a` when neither endpoint is dealer, `b` when either endpoint is dealer. Big rates are per scoring unit where the source explains stacking.
+Bird count rechecked 2026-11-27: [Tencent's Chinese help][qq] (GB18030, §七.2) describes one next-tile reveal; [Salasasa's linked Chinese Double Bird rulebook][double] (2026-07-09, §§9–10) explicitly describes two. These are documented variants, not evidence of how common either is across Changsha. The [earlier Mahjong Autotable spec][autotable] records the disagreement, deferred birds in v1, and chose one as its v2 candidate.
+
+A bird's **rank**, not its suit, counts counterclockwise from the chosen starting seat: **1/5/9** = anchor, **2/6** = next, **3/7** = opposite, **4/8** = previous. In absolute progression order, `hitSeat = (anchorSeat + rank - 1) % 4`. Counting is shared; who the anchor is, who qualifies for a multiplier, and how hits combine are not. In the table, `a/b` means points before birds, per payer: `a` when neither endpoint is dealer, `b` when either endpoint is dealer. Big rates are per scoring unit where the source explains stacking.
 
 | Evidence | Terminal birds and hits | Base points and liability | Opening awards vs. terminal Hu |
 |---|---|---|---|
-| **Default `changsha-v1`:** [`Scoring.cs`][scoring] and [settlement fixtures][win] | One next live tile; hand dealer anchors. Double each row where it hits the payer or winner. Use the actual 海底 winning tile once instead; no bird on draws or on a non-海底 win with empty wall. | Small self-draw/catch `1/2`; big self-draw `3/4`, big catch `6/7`. Three pay self-draw; only source pays each discard or rob winner. Rob Gang is big; rob Bu adds no big unit of its own. Each big unit gets its own dealer `+1`; no ordinary small unit alongside big units. | Four opening patterns, offered independently, score at small self-draw rates at hand settlement (also on a draw); never multiplied by terminal birds. A terminal 天胡 is not an opening award. |
+| **Classic `changsha-v1` (default when omitted):** [`Scoring.cs`][scoring] and [settlement fixtures][win] | One next live tile; hand dealer anchors. Double each row where it hits the payer or winner. Use the actual 海底 winning tile once instead; no bird on draws or on a non-海底 win with empty wall. | Small self-draw/catch `1/2`; big self-draw `3/4`, big catch `6/7`. Three pay self-draw; only source pays each discard or rob winner. Rob Gang is big; rob Bu adds no big unit of its own. Each big unit gets its own dealer `+1`; no ordinary small unit alongside big units. | Four opening patterns, offered independently, score at small self-draw rates at hand settlement (also on a draw); never multiplied by terminal birds. A terminal 天胡 is not an opening award. |
 | **Publisher's rules:** [Tencent QQ Game help][qq] §§五–七 | One next tile; dealer anchor. On discard it doubles the source's row on a winner or source hit; on self-draw a winner hit doubles all rows, another seat's hit only that row. 海底 itself serves as bird. | Divide the published point figures by 10 for comparison: small `1/2` either method, big self-draw `3/4`, big discard catch `6/7`. Three or one payer respectively; §五 puts exposed-kong rob in big, with no separate rob rate in §六. Big patterns add; the dealer increment on a stack is not illustrated. | Four dealt-hand small awards use self-draw pricing; §四.G has a separate next-dealer rule for multiple opening Hu, not evidence for doubling all opening awards. |
 | **Publisher corroboration, not an independent rules engine:** [Tencent Happy Mahjong article, May 2018][happy] | Describes the first following wall tile and gives the dealer map explicitly. | No full transfer table or rob, stacking or multi-Hu arithmetic. | Describes the four opening patterns and continued play; promotional comments about doubling do not specify how opening awards settle. |
 | **Primary for a named two-bird variant:** [Salasasa Double Bird PDF][double] §§1, 5, 7, 9–12; [platform overview][double-overview] | Two birds after terminal Hu; default hand-start dealer anchor, configurable winner anchor. Each hit on either endpoint doubles **that row**: `1×`, `2×`, `4×`; a winner hit on self-draw thus affects all three rows. 海底 with no wall birds counts the same tile **twice**. The PDF does not disambiguate a winner anchor across multiple winners. | Classic dealer mode: small `1/2`, big `6/7` for **both** self-draw and catch (not v1's `3/4` self-draw). Three opponents pay self-draw; discard source pays each winner independently. §§7.1–2 labels rob Bu small and rob added Kong big; no separate rate. §11.2 works out a two-unit dealer-involved catch as `7 × 2` before birds. The optional flat-base mode is distinct. | Five opening patterns including 三同; they continue play and score as small self-draw, with dice-based opening bird hits rather than wall reveals. |
@@ -101,10 +105,10 @@ The committed reveal moves real birds out of the private wall exactly once; 海�
 [baike-2]: https://baike.baidu.com/en/item/Changsha%20Mahjong/36618#2
 [qq]: https://game.qq.com/new05/help/csmj.htm
 [happy]: https://majiang.qq.com/webplat/info/news_version3/7207/31873/31888/35514/m18795/201805/719441.shtml
-[double]: https://salasasa.cn/rulebooks/changsha-classic-double-bird-rulebook.pdf
+[double]: https://salasasa.cn/rulebooks/%E9%95%BF%E6%B2%99%E9%BA%BB%E5%B0%86%E7%BB%8F%E5%85%B8%E5%8F%8C%E9%B8%9F%E8%A7%84%E5%88%99%E4%B9%A6.pdf
 [double-overview]: https://salasasa.cn/en/mahjong/changsha
 [casual]: https://casualchinesemahjong.com/rules/changsha
-[autotable]: https://github.com/long2know/mahjong-autotable/blob/b133be7ee8b36dc299d6dbc3e601c09f63699334/docs/rules/changsha-spec.md#51-payment-structure
+[autotable]: https://github.com/long2know/mahjong-autotable/blob/b133be7ee8b36dc299d6dbc3e601c09f63699334/docs/rules/changsha-spec.md#oq-1-number-of-bird-tiles-drawn
 [videos]: references.md#cross-video-feature-and-implementation-matrix
 [wire]: protocol.md#snapshots-and-windows
 [commit-model]: protocol.md#commit-idempotency-and-recovery

@@ -95,8 +95,11 @@ test("a mounted guest can copy an invite, start a live hand, and reload into the
   await page.getByLabel("Display name").fill("Mounted Host");
   await fits("Play with friends");
   await tap("Play with friends");
-  await page.getByRole("dialog", { name: "Create a table" }).getByRole("button", { name: "Create table" }).tap();
+  const create = page.getByRole("dialog", { name: "Create a table" });
+  await expect(create.getByLabel("Birds")).toHaveValue("changsha-v1");
+  await create.getByRole("button", { name: "Create table" }).tap();
   await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
+  expect(snapshot?.room.rulesVersion).toBe("changsha-v1");
   await expect(inviteDialog).toHaveCount(0);
   await fits("Invite friends");
   await page.setViewportSize({ width: 740, height: 320 });

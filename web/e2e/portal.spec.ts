@@ -815,22 +815,37 @@ test.describe("mounted Jade Court portal", () => {
       await dialog.getByRole("button", { name: "Close dialog" }).tap();
       await audible(signal, .016);
     });
+});
+
+test.describe("mounted Jade Court Mahjong", () => {
+  test.beforeEach(({ baseURL }) => {
+    test.skip(!baseURL || !/^\/(?:portal|game-portal)\/$/.test(new URL(baseURL).pathname),
+      "Requires a server with the portal mounted at /portal/ or /game-portal/.");
+  });
 
   test("the Mahjong child keeps its cold flagship assets, socket mount, return link and canonical invite", async ({ page, baseURL, request }) => {
-    const url = urls(baseURL!);
+    const mount = new URL(baseURL!);
+    const address = new URL("mahjong/", mount).href;
     const copied = await observeClipboard(page);
     const assets = new Set<string>();
     const sockets = new Set<string>();
+    let snapshot: Snapshot | undefined;
     page.on("request", request => {
-      if (new URL(request.url()).pathname.startsWith("/portal/assets/")) assets.add(request.url());
+      if (new URL(request.url()).pathname.startsWith(`${mount.pathname}assets/`)) assets.add(request.url());
     });
-    page.on("websocket", socket => sockets.add(new URL(socket.url()).pathname));
-    const html = (await page.goto(url("mahjong/")))!;
+    page.on("websocket", socket => {
+      sockets.add(new URL(socket.url()).pathname);
+      socket.on("framereceived", ({ payload }) => {
+        const message = JSON.parse(payload.toString()) as ServerMessage;
+        if (message.type === "snapshot") snapshot = message;
+      });
+    });
+    const html = (await page.goto(address))!;
     await expect(page).toHaveTitle("Jade Court · Changsha Mahjong");
-    await expect(page.locator("#app")).toHaveAttribute("data-base", "/portal/");
+    await expect(page.locator("#app")).toHaveAttribute("data-base", mount.pathname);
     await expect(page.locator(".connection")).toHaveAttribute("data-status", "online");
-    await expect(page.getByRole("link", { name: "Back to all games in Jade Court" })).toHaveAttribute("href", "/portal/");
-    expect([...sockets]).toEqual(["/portal/ws"]);
+    await expect(page.getByRole("link", { name: "Back to all games in Jade Court" })).toHaveAttribute("href", mount.pathname);
+    expect([...sockets]).toEqual([`${mount.pathname}ws`]);
     const source = await html.body();
     expect(source.toString()).not.toContain("modulepreload");
     expect(assets.size).toBe(3);
@@ -848,19 +863,22 @@ test.describe("mounted Jade Court portal", () => {
     expect(gzipSync(source).length + compressed.reduce((total, size) => total + size, 0)).toBeLessThanOrEqual(32 * 1024);
 
     await tap(page, "Play with friends");
-    await page.getByRole("dialog", { name: "Create a table" }).getByRole("button", { name: "Create table" }).tap();
+    const create = page.getByRole("dialog", { name: "Create a table" });
+    await expect(create.getByLabel("Birds")).toHaveValue("changsha-two-bird-v1");
+    await create.getByRole("button", { name: "Create table" }).tap();
     await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
+    expect(snapshot?.room.rulesVersion).toBe("changsha-two-bird-v1");
     await tap(page, "Invite friends");
     expect(await copied()).toEqual([]);
     await tap(page, "Copy invite link");
     const [invitation] = await copied();
     const link = new URL(invitation);
-    expect(link.origin + link.pathname + link.search).toBe(url("mahjong/"));
+    expect(link.origin + link.pathname + link.search).toBe(address);
     expect(link.hash).toMatch(/^#invite=[\w-]{16}$/);
   });
 
   test("a resumed Mahjong bot host can cancel, start a new game in place, or quit without a saved seat", async ({ page, baseURL }) => {
-    const url = urls(baseURL!);
+    const url = (path = "") => new URL(path, baseURL!).href;
     const commands: Command[] = [];
     const frames: (Ack | Snapshot)[] = [];
     let sendStale: (() => void) | undefined;
@@ -920,21 +938,18 @@ test.describe("mounted Jade Court portal", () => {
     await page.goto(url("mahjong/"));
     await tap(page, "Play with friends");
     const create = dialog("Create a table");
-    await expect(create.getByLabel("Birds")).toHaveValue("changsha-v1");
-    await create.getByLabel("Birds").selectOption("changsha-two-bird-v1");
+    await create.getByLabel("Birds").selectOption({ label: "One bird (classic)" });
     await create.getByLabel("Fill the other three seats with bots").check();
     await create.getByRole("button", { name: "Create table" }).tap();
     const waiting = page.getByRole("main");
-    await expect(waiting.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
-    expect(commands.find(command => command.op === "createRoom")?.payload).toEqual({
-      visibility: "invite", matchHands: 1, fillBots: true, rulesVersion: "changsha-two-bird-v1",
-    });
-    expect(latest().room.rulesVersion).toBe("changsha-two-bird-v1");
+    await expect(waiting.getByText("One bird (classic)", { exact: true })).toBeVisible();
+    expect(latest().room.rulesVersion).toBe("changsha-v1");
     const selectedDealer = latest().room.nextDealerSeat;
     expect(selectedDealer).toEqual(expect.any(Number));
     await expect(waiting.getByText(`Next dealer: ${latest().room.seats[selectedDealer!].displayName}`, { exact: true })).toBeVisible();
     await tap(page, "Changsha rules");
-    await expect(dialog("Changsha rules").getByText("This table: Two birds (house rules). Local variations exist.")).toBeVisible();
+    await expect(dialog("Changsha rules").getByText("This table: One bird (classic). Local variations exist.")).toBeVisible();
+    await expect(dialog("Changsha rules").getByText(/Create a new table to change bird rules/)).toBeVisible();
     await expect(dialog("Changsha rules").getByText(/Cha makes a sequence/)).toBeVisible();
     await tap(page, "Close dialog");
     await tap(page, "Mark ready");
@@ -958,6 +973,7 @@ test.describe("mounted Jade Court portal", () => {
     await tap(page, "Resume your table");
     await expect(page.getByText("Table paused", { exact: true })).toBeVisible();
     expect(latest()).toMatchObject({ roomId: paused.roomId, gameRevision: paused.gameRevision,
+      room: { rulesVersion: "changsha-v1", seats: paused.room.seats, tableTotals: paused.room.tableTotals },
       game: { window: { windowId: paused.game!.window!.windowId } } });
 
     await fitsPhone(page);
@@ -1047,6 +1063,11 @@ test.describe("mounted Jade Court portal", () => {
     await tap(page, "Play with bots");
     await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
     expect(latest().roomId).not.toBe(paused.roomId);
+    expect(latest().room.rulesVersion).toBe("changsha-two-bird-v1");
+    expect(latest().room.seats.map(seat => seat.kind)).toEqual(["human", "bot", "bot", "bot"]);
+    expect(commands.at(-1)?.payload).toEqual({
+      visibility: "invite", matchHands: 1, fillBots: true, rulesVersion: "changsha-two-bird-v1",
+    });
     await tap(page, "Leave table");
   });
 });

@@ -334,6 +334,7 @@ test("invite table with two cookie sessions: settings, chat, retry, legal match 
     ].map(display));
     await expect(result.getByText(`Current dealer: ${finished.room.seats[game!.dealerSeat].displayName}`)).toBeVisible();
     await expect(result.getByText(`Next dealer: ${finished.room.seats[settlement.nextDealerSeat!].displayName}`)).toBeVisible();
+    await expect(result.getByRole("heading", { name: `Birds (${settlement.birds.length})`, exact: true })).toBeVisible();
     const counted = result.getByRole("group", { name: /^Counts for / });
     await expect(counted).toHaveCount(settlement.birds.length);
     for (const [index, face] of settlement.birds.entries()) {

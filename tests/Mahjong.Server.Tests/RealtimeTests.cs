@@ -195,10 +195,13 @@ public sealed class RealtimeTests
         Assert.Equal(5, chat.EnumerateArray().Select(post => post.Text("messageId")).Distinct().Count());
     }
 
-    [Fact]
-    public async Task RulesProfilesAreStrictlyOptInAndOnlyPublicVariantRowsAdvertiseThem()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RulesProfilesAreStrictlyOptInAndOnlyPublicVariantRowsAdvertiseThem(bool portalEnabled)
     {
-        await using var server = new Kestrel();
+        await using var server = new Kestrel().WithSetting("Portal__Enabled", portalEnabled ? "true" : "false");
+        server.WithSetting("GamePortal__DataDirectory", server.DataDirectory);
         await server.StartAsync();
         var classicUser = new User(server);
         var variantUser = new User(server);
@@ -231,9 +234,14 @@ public sealed class RealtimeTests
         Assert.Empty(await Listed(observer));
 
         const string twoBirds = "changsha-two-bird-v1";
-        (await classic.Command("createRoom", new { visibility = "public", matchHands = 1, rulesVersion = "changsha-v1" })).Ok();
+        var classicId = Guid.NewGuid();
+        var classicCreated = await classic.Command("createRoom", new { visibility = "public", matchHands = 1 }, classicId);
+        classicCreated.Ok();
         var classicRoom = await classic.Snapshot();
         Assert.Equal("changsha-v1", classicRoom.At("room", "rulesVersion").GetString());
+        var classicRetry = await classic.Command("createRoom",
+            new { visibility = "public", matchHands = 1, rulesVersion = "changsha-v1" }, classicId);
+        Assert.Equal(classicCreated.GetRawText(), classicRetry.GetRawText());
         var create = new { visibility = "public", matchHands = 4, rulesVersion = twoBirds };
         var createId = Guid.NewGuid();
         var created = await variant.Command("createRoom", create, createId);

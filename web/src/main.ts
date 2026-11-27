@@ -22,6 +22,7 @@ const connectionText: Record<Connection, string> = {
 const nonDiscard = /[\u0000-\u001f\u007f-\u009f]/u;
 const mahjongPath = `${appPath}mahjong/`;
 const fromPortal = document.querySelector("#app")!.hasAttribute("data-portal-mahjong") && location.pathname.startsWith(mahjongPath);
+const newTableRules = fromPortal ? "changsha-two-bird-v1" : undefined;
 const handoffError = "Couldn’t verify the accepted Mahjong seat. Try again, or ask your friend for their full invite link.";
 
 class LanternTable {
@@ -39,7 +40,8 @@ class LanternTable {
   private readonly settingsButton = iconButton("settings", "Settings", () => this.openSettings());
   private chat?: ChatPanel;
   private readonly home = new HomeScreen({
-    quick: () => void this.enter({ op: "createRoom", payload: { visibility: "invite", matchHands: 1, fillBots: true } }),
+    quick: () => void this.enter({ op: "createRoom",
+      payload: { visibility: "invite", matchHands: 1, fillBots: true, rulesVersion: newTableRules } }),
     create: () => this.openCreate(),
     resume: () => this.session.resume(),
     join: inviteCode => void this.enter({ op: "joinRoom", payload: { inviteCode } }),
@@ -391,7 +393,7 @@ class LanternTable {
   private openCreate(): void {
     void this.openForm(({ showCreate }) => {
       if (!this.session.available || this.session.savedRoomId) return;
-      this.overlayActions = [showCreate(this.modal, payload => void this.enter({ op: "createRoom", payload }))];
+      this.overlayActions = [showCreate(this.modal, newTableRules, payload => void this.enter({ op: "createRoom", payload }))];
     });
   }
 

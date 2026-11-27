@@ -1081,13 +1081,56 @@ test("two-bird final results separate hand, match and table points and count fro
   await expect(results.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
   await expect(results.getByText("Current dealer: Ink")).toBeVisible();
   await expect(results.getByText("Next dealer: River")).toBeVisible();
-  await expect(results.getByText("No tiles left in the wall.")).toBeVisible();
-  await expect(results.getByRole("group", { name: "Counts for Ink (East)" }).getByRole("img", { name: "5 dots" })).toBeVisible();
-  await expect(results.getByRole("group", { name: "Counts for River (West)" }).getByRole("img", { name: "3 characters" })).toBeVisible();
+  await expect(results.getByRole("heading", { name: "Birds (2)", exact: true })).toBeVisible();
+  await expect(results.getByText(/wall tiles? remained after the win/)).toHaveCount(0);
+  const birds = results.getByRole("group", { name: /^Counts for / });
+  await expect(birds).toHaveCount(2);
+  await expect(birds.nth(0)).toHaveAccessibleName("Counts for Ink (East)");
+  await expect(birds.nth(0).getByRole("img")).toHaveAccessibleName("5 dots");
+  await expect(birds.nth(1)).toHaveAccessibleName("Counts for River (West)");
+  await expect(birds.nth(1).getByRole("img")).toHaveAccessibleName("3 characters");
   await expect(results.getByText("Ink → River: 6 (win)")).toBeVisible();
-  await expect(results.getByText("A new match resets match scores but keeps the table total.")).toBeVisible();
+  await expect(results.getByText(/A new match keeps the table’s bird rules/)).toBeVisible();
   await page.screenshot({ path: info.outputPath("table-ledger.png") });
 });
+
+for (const [name, wall, birds, code, note] of [
+  ["one wall tile", 0, ["d5"], "plain", "Only one wall tile remained after the win."],
+  ["no wall tiles", 0, [], "kongBloom", "No wall tiles remained after the win."],
+  ["last-tile self-draw", 0, ["b8"], "lastTileDraw", "The winning last tile counts as one reference bird. No extra tile is flipped."],
+  ["last-tile discard", 0, ["b8"], "lastTileDiscard", "The winning last tile counts as one reference bird. No extra tile is flipped."],
+  ["a draw with one unclaimed tile", 1, [], "draw", "A draw flips no birds."],
+] as const) {
+  test(`two-bird results explain ${name}`, async ({ page }) => {
+    await page.setViewportSize({ width: 740, height: 320 });
+    const state = settled(frame(30), code === "draw" ? [] : [1]);
+    state.room.rulesVersion = "changsha-two-bird-v1";
+    state.game!.wallCount = wall;
+    const settlement = state.game!.settlement!;
+    settlement.birds = [...birds];
+    if (code === "draw") {
+      settlement.reason = "draw";
+      settlement.sourceSeat = null;
+      settlement.nextDealerSeat = 1;
+    } else {
+      const [winner] = settlement.winners;
+      winner.patterns = [{ code, label: name, points: 1 }];
+      if (code === "lastTileDraw") {
+        winner.winBy = "selfDraw";
+        settlement.sourceSeat = null;
+      }
+    }
+
+    await open(page, state, true);
+    const results = page.getByRole("dialog", { name: "Hand results" });
+    await expect(results.getByRole("button", { name: "Next hand" })).toBeInViewport({ ratio: 1 });
+    await expect(results.getByRole("heading", { name: `Birds (${birds.length})`, exact: true })).toBeVisible();
+    await expect(results.getByText(note, { exact: true })).toBeVisible();
+    const counted = results.getByRole("group", { name: /^Counts for / });
+    await expect(counted).toHaveCount(birds.length);
+    if (birds.length) await expect(counted.locator("use")).toHaveAttribute("href", new RegExp(`#lt-${birds[0]}$`));
+  });
+}
 
 for (const preference of ["OS", "saved"] as const) {
   test(`${preference} reduced motion keeps immediate rack, call labels and results without ghosts`, async ({ page }) => {

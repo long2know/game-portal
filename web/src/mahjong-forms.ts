@@ -6,14 +6,16 @@ import type { Action, ChatMessage, Face, Payloads, RulesVersion, Seat, Snapshot 
 import { field, submit, toggle } from "./screens";
 import { tileLabel } from "./tile";
 
-export function showCreate(modal: Modal, enter: (payload: Payloads["createRoom"]) => void): HTMLButtonElement {
+export function showCreate(modal: Modal, initialBirds: RulesVersion | undefined,
+  enter: (payload: Payloads["createRoom"]) => void): HTMLButtonElement {
   const visibility = el("select", "", new Option("Invite only", "invite"), new Option("Public", "public"));
   const hands = el("select", "", el("option", "", "One hand"), el("option", "", "Four hands"));
   const birds = el("select", "", ...Object.entries(birdProfiles).map(([value, label]) => new Option(label, value)));
+  birds.value = initialBirds ?? "changsha-v1";
   const bots = toggle("Fill the other three seats with bots", false);
   const create = submit("Create table");
   const form = el("form", "form", field("Who can join?", visibility), field("Match length", hands), field("Birds", birds), bots.field,
-    el("p", "note", "You can also add or remove bots from the waiting room."), el("div", "row-actions", create));
+    el("p", "note", "Bird rules stay with this table. You can add or remove bots in the waiting room."), el("div", "row-actions", create));
   form.addEventListener("submit", event => {
     event.preventDefault();
     enter({ visibility: visibility.selectedIndex === 0 ? "invite" : "public",
@@ -56,9 +58,10 @@ export function rulesContent(profile?: RulesVersion): HTMLElement {
     el("h3", "", "Claims and wins"),
     el("p", "", "Cha makes a sequence, Peng makes three matching tiles, and a Kong uses four. The table offers only the choices your seat can make; use Pass to decline an optional claim. Open Exposed tiles to read opponents’ committed open melds."),
     el("h3", "", "Birds"),
-    el("p", "", "One bird (classic) normally reveals one bird after a win. Two birds (house rules) can reveal up to two. Each bird counts by rank from this hand’s dealer and adds to the payment multiplier when it counts for the payer or winner. A draw has no birds."),
+    el("p", "", "After a win, One bird (classic) flips up to one wall tile and Two birds (house rules) flips up to two, in wall order. A last-tile win uses its winning tile as one reference bird. A draw flips none."),
+    el("p", "", "Rank counts from this hand’s dealer: 1/5/9 dealer, 2/6 next seat, 3/7 opposite, 4/8 previous. In Jade Court, each win payment is multiplied by 1 + the number of birds that count for its payer or winner."),
     el("h3", "", "After a hand"),
-    el("p", "", "Results show the points from this hand, the match total and the running table total. A new match resets match scores but keeps table scores. At the end, the host can rematch with the same seats."));
+    el("p", "", "Results show the points from this hand, the match total and the running table total. A new match with the same seats resets match scores but keeps table scores and bird rules. Create a new table to change bird rules."));
 }
 
 const clockFormat = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
@@ -133,7 +136,6 @@ function resultsContent(state: Snapshot, nextHand: HTMLButtonElement | null, act
     el("p", "detail", summary), el("p", "note", birdProfiles[state.room.rulesVersion]),
     el("p", "note", `Current dealer: ${seatName(game.dealerSeat)}`),
     el("p", "note", `Next dealer: ${nextDealer == null ? "Not available" : seatName(nextDealer)}`));
-  if (game.wallCount < 2) overview.append(el("p", "note", game.wallCount === 0 ? "No tiles left in the wall." : "One tile left in the wall."));
   const root = el("div", "form result-review");
   const actionRow = el("div", "row-actions", ...actions);
   const head = el("thead", "", el("tr", "", ...["Seat", "This hand", "Match total", "Table total"].map(label => {
@@ -171,15 +173,27 @@ function resultsContent(state: Snapshot, nextHand: HTMLButtonElement | null, act
     root.append(hands);
   }
   if (managed && actions.length) root.append(actionRow);
-  if (settlement.birds.length) root.append(el("section", "result-section", el("h3", "", "Birds"),
-    el("div", "result-tiles", ...settlement.birds.map(face => {
-      const hit = ((game.dealerSeat + Number(face[1]) - 1) % 4) as Seat;
-      return resultRack(`Counts for ${seatName(hit)} (${wind(hit, game.dealerSeat)})`, [face], "bird-hit");
-    }))));
+  const { birds } = settlement;
+  const birdSection = el("section", "result-section", el("h3", "", `Birds (${birds.length})`));
+  if (settlement.reason === "draw") birdSection.append(el("p", "note", "A draw flips no birds."));
+  else if (settlement.winners.some(winner =>
+    winner.patterns.some(({ code }) => code === "lastTileDraw" || code === "lastTileDiscard"))) {
+    birdSection.append(el("p", "note", "The winning last tile counts as one reference bird. No extra tile is flipped."));
+  } else {
+    const availableBeforeReveal = game.wallCount + birds.length;
+    const limit = state.room.rulesVersion === "changsha-two-bird-v1" ? 2 : 1;
+    if (availableBeforeReveal < limit) birdSection.append(el("p", "note", availableBeforeReveal === 0
+      ? "No wall tiles remained after the win." : "Only one wall tile remained after the win."));
+  }
+  if (birds.length) birdSection.append(el("div", "result-tiles", ...birds.map(face => {
+    const hit = ((game.dealerSeat + Number(face[1]) - 1) % 4) as Seat;
+    return resultRack(`Counts for ${seatName(hit)} (${wind(hit, game.dealerSeat)})`, [face], "bird-hit");
+  })));
+  root.append(birdSection);
   if (settlement.transfers?.length) root.append(el("section", "result-section", el("h3", "", "Score transfers"),
     el("ul", "inline-list", ...settlement.transfers.map(transfer =>
       el("li", "", `${seatName(transfer.fromSeat)} → ${seatName(transfer.toSeat)}: ${transfer.points} (${transfer.reason})`)))));
-  if (state.room.status === "complete") root.append(el("p", "note", "A new match resets match scores but keeps the table total."));
+  if (state.room.status === "complete") root.append(el("p", "note", "A new match keeps the table’s bird rules and table total but resets match scores."));
   if (!managed && actions.length) root.append(actionRow);
   return root;
 }
@@ -195,7 +209,7 @@ interface TableDialog {
 const matchActions = {
   restartMatch: {
     label: "New game",
-    warning: "Start over with the same bots and settings. This resets the match score but keeps the table total.",
+    warning: "Start over with the same bots and settings, including bird rules. This resets the match score but keeps the table total.",
   },
   quit: {
     label: "Quit table",
