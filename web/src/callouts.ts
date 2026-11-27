@@ -25,6 +25,8 @@ export class Callouts {
   private source?: { node: AudioBufferSourceNode; voice: Voice };
   private local?: Record<TableCall, AudioBuffer> | null;
   private localLoading = false;
+  private unwatch?: () => void;
+  private disposed = false;
 
   constructor(private readonly bus: GainNode, private readonly changed: () => void, private readonly key?: string) {}
 
@@ -40,8 +42,10 @@ export class Callouts {
         if (!response.ok) throw new Error("Could not load call.");
         return response.arrayBuffer();
       }).then(bytes => this.bus.context.decodeAudioData(bytes))
-        .then(buffer => { this.buffers.set(url, buffer); })
-        .catch(() => { this.failed.add(url); this.changed(); });
+        .then(buffer => { if (!this.disposed) this.buffers.set(url, buffer); })
+        .catch(() => {
+          if (!this.disposed) { this.failed.add(url); this.changed(); }
+        });
     }
   }
 
@@ -50,6 +54,7 @@ export class Callouts {
     if (!key || this.localLoading) return;
     this.localLoading = true;
     void import("./changsha-calls").then(({ decodeRecordings, readRecordings, watchRecordings }) => {
+      if (this.disposed) return;
       let generation = 0;
       const reload = async () => {
         const current = ++generation;
@@ -60,13 +65,15 @@ export class Callouts {
           const recordings = await readRecordings(key);
           if (recordings) next = await decodeRecordings(recordings, this.bus.context);
         } catch { /* An incomplete or unreadable pack never supplies individual calls. */ }
-        if (generation !== current) return;
+        if (this.disposed || generation !== current) return;
         this.local = next;
         this.changed();
       };
-      watchRecordings(key, () => void reload());
+      this.unwatch = watchRecordings(key, () => void reload());
       return reload();
-    }).catch(() => { this.local = null; this.changed(); });
+    }).catch(() => {
+      if (!this.disposed) { this.local = null; this.changed(); }
+    });
   }
 
   unavailable(voice: Voice): boolean {
@@ -96,5 +103,11 @@ export class Callouts {
     this.source = undefined;
     source.stop();
     source.disconnect();
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.unwatch?.();
+    this.stop();
   }
 }

@@ -101,6 +101,15 @@ The live tests cover public discovery and retry, private invite admission, two h
 
 **Historical baseline (2026-11-19):** **14/14** browser cases after the server takeover-close fix; a separate **2/2** on a Production host with the default **700 ms** bot delay and **100 ms** server tick. Those results predate the later visual passes. Not every rare action occurs in live samples; deterministic rare cases belong to the [Rules tests](rules.md#reducer-projections-and-verification).
 
+## Mahjong sound on iPhone
+
+1. Open Mahjong directly in Safari. In **Settings**, check **Tile and turn sounds** and set the site's **Volume** above 0%. **Quiet table music** is separate and optional. A new guest starts with tile sounds on, music off and 70% volume; returning guests use their saved settings.
+2. Tap **Test sound** to hear a tile cue without turning on music. If only music is on, the button tries to resume that preview. Testing does not save anything; use **Save settings** to apply changes to play. On a build without the test button, try selecting a tile on your turn or turn on the music preview.
+3. If you still hear nothing, raise [media volume](https://support.apple.com/en-sg/guide/iphone/-iphb71f9b54d/ios) in Control Center, verify the [playback destination](https://support.apple.com/guide/iphone/play-audio-iphone-a-bluetooth-accessory-iph01b6ea9a3/ios) (speaker vs. headphones, Bluetooth or AirPlay), and try with [Silent Mode](https://support.apple.com/guide/iphone/silence-iphone-iph81c7fd7d1/ios) off. Silent Mode can affect sound effects, but Apple notes that some games and audio apps still play; it does not establish why this table is silent.
+4. After switching tabs or apps, locking the phone or taking a call, return to the visible table and tap again, or use **Settings → Test sound**. [MDN documents](https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext/state#resuming_interrupted_play_states_in_ios_safari) that iOS Safari can interrupt Web Audio while away. Mahjong attempts to start or resume audio on trusted input, not on visibility changes or after a profile request. See [WebKit's activation guidance](https://webkit.org/blog/13862/the-user-activation-api/) and [Web Audio start policy](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/Modules/webaudio/AudioContext.cpp). The game does not change system volume, Silent Mode or audio routing.
+
+The published-server browser tests measure the real synthesized cue with music off and verify that music previews still cancel. The separate pending-resume and hidden-tab regression uses controlled interruption and visibility; it is not an iOS audio-session test. On a physical iPhone, verify the first cue and recovery after app switch, lock and call, with the speaker and a Bluetooth output at nonzero media volume, including how Silent Mode affects that device.
+
 ## Cross-game invitations
 
 In the Jade Court portal, open **Online lobby** from the globe in the header or use

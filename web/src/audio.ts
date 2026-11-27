@@ -8,6 +8,7 @@ type Soundtrack = "still" | "bamboo";
 export type CallVoice = "off" | "mixed" | "lower" | "higher" | "changsha";
 export interface AudioChoices { track: Soundtrack; voice: CallVoice }
 type MusicChoice = [enabled: boolean, volume: number, track: Soundtrack];
+type AudioDraft = { sound: boolean; music: MusicChoice };
 
 export class LanternAudio {
   private context: AudioContext | null = null;
@@ -18,14 +19,22 @@ export class LanternAudio {
   private bamboo?: BarPlayer;
   private bambooLoading = false;
   private bambooFailed = false;
-  private draft?: MusicChoice;
+  private draft?: AudioDraft;
   private callouts?: Callouts;
   private callsLoading = false;
   private callsFailed = false;
   private atTable = false;
+  private away = false;
+  private Sounds?: typeof TileSounds;
   private cues?: TileSounds;
   private cuesLoading = false;
+  private cuesFailed = false;
   private pendingCue?: () => void;
+  private test?: { bus: GainNode; cues: TileSounds };
+  private pendingTest?: { expires: number; inSettings: () => boolean };
+  private ready = false;
+  private resumeTimer = 0;
+  private blocked = false;
   private prefs = defaultPreferences;
   private unavailable = false;
   choices: AudioChoices = { track: "still", voice: "off" };
@@ -41,13 +50,18 @@ export class LanternAudio {
         };
       } catch { /* Storage is optional. */ }
     }
-    const activate = (event: Event) => { if (event.isTrusted) void this.unlock(); };
+    const activate = (event: Event) => {
+      if (event.isTrusted && !event.defaultPrevented) this.unlock(event.type === "click");
+    };
     // Touch and pen grant activation on release, not pointerdown.
     window.addEventListener("pointerdown", event => { if (event.pointerType === "mouse") activate(event); }, { passive: true });
     window.addEventListener("pointerup", event => { if (event.pointerType !== "mouse") activate(event); }, { passive: true });
     window.addEventListener("touchend", activate, { passive: true });
-    window.addEventListener("keydown", activate);
+    window.addEventListener("keydown", event => { if (!event.repeat && event.key !== "Escape") activate(event); }, true);
+    window.addEventListener("click", activate);
     document.addEventListener("visibilitychange", () => this.updateBuses());
+    window.addEventListener("pagehide", () => { this.away = true; this.updateBuses(); });
+    window.addEventListener("pageshow", () => { this.away = false; this.updateBuses(); });
   }
 
   get deviceChoices(): boolean { return !!this.key; }
@@ -65,48 +79,112 @@ export class LanternAudio {
 
   get note(): string {
     const [music, volume, track] = this.musicChoice;
+    const sound = this.draft?.sound ?? this.prefs.sound;
+    if (!sound && !music) return "Tile sounds and music are off in Settings.";
+    if (!volume) return sound ? "Audio is muted at 0% volume." : "Music is muted at 0% volume.";
     if (this.unavailable) return "Audio unavailable.";
+    if (!this.running) {
+      if (this.resumeTimer) return "Starting audio…";
+      if (this.blocked) return "The browser kept audio paused. Tap Test sound to retry.";
+      return "Audio is paused. Tap Test sound to start or resume it.";
+    }
+    if (sound && this.cuesFailed) return "Tile sounds couldn’t load. Reload this page to try again.";
     if (music && (this.musicFailed || this.music?.unavailable)) return "Music is unavailable.";
     if (music && track === "bamboo" && this.bambooFailed) return "Bamboo by the Xiang is unavailable.";
-    if (music && !volume) return "Music is muted at 0% volume.";
     const voice = this.choices.voice;
     if (voice !== "off" && (this.callsFailed || this.callouts?.unavailable(voice)))
       return "Spoken calls are unavailable. Table cues still play.";
-    if (music && !this.music?.playing)
-      return this.context?.state === "running" ? "Music is paused." : "Tap or press a key to allow sound.";
-    return music ? "Music preview · Save settings to keep changes." : "Turn on music to preview. Save settings to keep changes.";
+    if (this.pendingTest) return "Preparing the tile sound…";
+    if (music) return this.music?.playing ? "Music preview · Save settings to keep changes." : "Music is paused.";
+    return "Tap Test sound to hear a tile cue. If it’s silent, check device volume and audio output.";
   }
 
   private get musicChoice(): MusicChoice {
-    return this.draft ?? [this.prefs.music, this.prefs.volume, this.choices.track];
+    return this.draft?.music ?? [this.prefs.music, this.prefs.volume, this.choices.track];
   }
 
-  preview(draft?: MusicChoice): void {
+  private get visible(): boolean { return !this.away && !document.hidden; }
+  private get running(): boolean { return this.ready && this.context?.state === "running"; }
+  private get wantsAudio(): boolean {
+    const [music, volume] = this.musicChoice;
+    return volume > 0 && (music || (this.draft?.sound ?? this.prefs.sound));
+  }
+
+  preview(draft?: AudioDraft): void {
     this.draft = draft;
-    if (draft?.[0] && draft[1]) void this.unlock(true);
-    this.updateMusic();
+    this.clearTest();
+    this.updateBuses();
   }
 
-  async unlock(explicit = false): Promise<void> {
-    if (this.unavailable || this.context?.state === "running" || navigator.userActivation?.isActive === false ||
-      (!explicit && !this.prefs.sound && !this.musicChoice[0])) return;
+  testSound(inSettings: () => boolean): void {
+    this.clearTest();
+    this.unlock(true);
+    if (this.visible && this.draft?.sound && this.musicChoice[1] > 0 && (this.running || this.resumeTimer)) {
+      this.pendingTest = { expires: performance.now() + 1200, inSettings };
+      this.updateTest();
+    }
+    this.changed?.();
+  }
+
+  unlock(retry = false): void {
+    if (!this.visible || !this.wantsAudio || this.unavailable || this.running || this.resumeTimer && !retry) return;
     try {
-      if (!this.context) {
-        const Safari = (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-        const Context = window.AudioContext ?? Safari;
-        if (!Context) {
-          this.unavailable = true;
-          return;
-        }
-        this.context = new Context();
-        this.effects = this.context.createGain();
-        this.effects.connect(this.context.destination);
-        this.context.addEventListener("statechange", () => this.updateBuses());
+      const current = this.context;
+      const context = current && current.state !== "closed" ? current : this.openContext();
+      if (context) {
+        this.cancelResume();
+        this.blocked = false;
+        const settle = () => {
+          if (this.resumeTimer === timer) this.finishResume(context);
+        };
+        // A browser can leave resume() pending rather than reject an activation it can't honor.
+        const timer = this.resumeTimer = window.setTimeout(settle, 1200);
+        void context.resume().then(settle, settle);
       }
-      await this.context.resume();
-      this.updateBuses();
-    } catch { /* Autoplay restrictions do not block play. */ }
-    finally { this.changed?.(); }
+    } catch {
+      this.cancelResume();
+      this.blocked = true;
+      this.clearTest();
+    }
+    this.changed?.();
+  }
+
+  private openContext(): AudioContext | undefined {
+    const Safari = (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const Context = window.AudioContext ?? Safari;
+    if (!Context) { this.unavailable = true; return; }
+    const context = new Context();
+    const effects = context.createGain();
+    effects.gain.value = 0;
+    effects.connect(context.destination);
+    this.clearCues(true);
+    this.callouts?.dispose();
+    this.clearTest();
+    this.ready = false;
+    this.cues = this.test = this.music = this.bamboo = this.callouts = undefined;
+    this.musicLoading = this.bambooLoading = this.callsLoading = false;
+    this.musicFailed = this.bambooFailed = this.callsFailed = false;
+    this.context = context;
+    this.effects = effects;
+    context.addEventListener("statechange", () => {
+      if (this.context !== context) return;
+      if (this.visible && this.resumeTimer && context.state === "running") this.finishResume(context);
+      else this.updateBuses();
+    });
+    return context;
+  }
+
+  private cancelResume(): void {
+    clearTimeout(this.resumeTimer);
+    this.resumeTimer = 0;
+  }
+
+  private finishResume(context: AudioContext): void {
+    this.cancelResume();
+    if (this.visible && context.state === "running") this.ready = true;
+    this.blocked = !this.running;
+    if (this.blocked) this.clearTest();
+    this.updateBuses();
   }
 
   configure(prefs: Preferences): void {
@@ -118,6 +196,7 @@ export class LanternAudio {
   setTableActive(active: boolean): void {
     if (active === this.atTable) return;
     this.atTable = active;
+    if (!active) this.clearTest();
     this.updateTableSound();
   }
 
@@ -141,38 +220,76 @@ export class LanternAudio {
 
   clearEffects(): void {
     this.callouts?.stop();
-    this.clearCues();
+    this.clearCues(true);
   }
 
-  private clearCues(): void {
+  private clearCues(immediate = false): void {
     this.pendingCue = undefined;
-    this.cues?.clear();
+    this.cues?.clear(immediate);
+  }
+
+  private clearTest(): void {
+    this.pendingTest = undefined;
+    this.test?.cues.clear(true);
+  }
+
+  private updateTest(): void {
+    const pending = this.pendingTest;
+    if (!this.running) {
+      if (this.resumeTimer) this.test?.cues.clear(true);
+      else this.clearTest();
+    } else if (pending) {
+      if (!pending.inSettings() || performance.now() >= pending.expires || this.cuesFailed) this.clearTest();
+      else if (!this.Sounds) this.loadCues();
+      else {
+        const context = this.context!;
+        if (!this.test) {
+          // A draft sound test must not change the live table's saved cue volume.
+          const bus = context.createGain();
+          bus.connect(context.destination);
+          this.test = { bus, cues: new this.Sounds(bus) };
+        }
+        this.test.bus.gain.value = this.musicChoice[1];
+        this.test.cues.play("turn");
+        this.pendingTest = undefined;
+      }
+    }
   }
 
   private updateBuses(): void {
+    if (!this.visible || !this.wantsAudio) {
+      this.cancelResume();
+      this.clearTest();
+    }
     this.updateMusic();
     this.updateTableSound();
-    if (!this.context || !this.effects) return;
-    this.effects.gain.setTargetAtTime(this.prefs.sound && !document.hidden ? this.prefs.volume : 0, this.context.currentTime, .02);
+    this.updateTest();
+    this.changed?.();
   }
 
   private updateMusic(): void {
     const [music, volume, track] = this.musicChoice;
     const context = this.context;
-    if (music && volume && context?.state === "running" && !document.hidden && !this.musicLoading) {
+    if (music && volume && context && this.running && this.visible && !this.musicLoading) {
       this.musicLoading = true;
       const url = new URL("./portal/ambient.js?no-inline", import.meta.url).href;
       void (import(/* @vite-ignore */ url) as Promise<typeof import("./portal/ambient")>).then(({ Ambient }) => {
+        if (context !== this.context) return;
         this.music = new Ambient(context, () => this.changed?.());
         this.updateMusic();
-      }).catch(() => { this.musicFailed = true; this.changed?.(); });
+      }).catch(() => {
+        if (context === this.context) { this.musicFailed = true; this.changed?.(); }
+      });
     }
-    if (music && volume && track === "bamboo" && context?.state === "running" && !document.hidden && !this.bambooLoading) {
+    if (music && volume && track === "bamboo" && context && this.running && this.visible && !this.bambooLoading) {
       this.bambooLoading = true;
       void import("./bamboo").then(({ bamboo }) => {
+        if (context !== this.context) return;
         this.bamboo = bamboo(context);
         this.updateMusic();
-      }).catch(() => { this.bambooFailed = true; this.updateMusic(); });
+      }).catch(() => {
+        if (context === this.context) { this.bambooFailed = true; this.updateMusic(); }
+      });
     }
     if (!music || !volume || this.bambooFailed && track === "bamboo") this.music?.setVolume(0);
     else if (track === "still" || this.bamboo) {
@@ -183,31 +300,49 @@ export class LanternAudio {
   }
 
   private get tableAudible(): boolean {
-    return this.atTable && this.prefs.sound && this.prefs.volume > 0 && !document.hidden && this.context?.state === "running";
+    return this.atTable && this.prefs.sound && this.prefs.volume > 0 && this.visible && this.running;
+  }
+
+  private loadCues(): void {
+    if (this.cuesLoading) return;
+    this.cuesLoading = true;
+    void import("./table-sounds").then(({ TileSounds }) => {
+      this.Sounds = TileSounds;
+      this.updateBuses();
+    }).catch(() => { this.cuesFailed = true; this.updateBuses(); });
   }
 
   private updateTableSound(): void {
+    const bus = this.effects;
+    if (!bus) return;
     if (!this.tableAudible) {
       this.clearEffects();
+      bus.gain.cancelScheduledValues(bus.context.currentTime);
+      bus.gain.setValueAtTime(0, bus.context.currentTime);
       return;
     }
-    const bus = this.effects!, voice = this.choices.voice;
-    if (!this.cuesLoading) {
-      this.cuesLoading = true;
-      void import("./table-sounds").then(({ TileSounds }) => {
-        this.cues = new TileSounds(bus);
-        this.pendingCue?.();
-        this.pendingCue = undefined;
-      }).catch(() => { this.pendingCue = undefined; });
+    const voice = this.choices.voice;
+    bus.gain.setTargetAtTime(this.prefs.volume, bus.context.currentTime, .02);
+    if (this.Sounds) {
+      this.cues ??= new this.Sounds(bus);
+      this.pendingCue?.();
+      this.pendingCue = undefined;
+    } else if (this.cuesFailed) {
+      this.pendingCue = undefined;
+    } else {
+      this.loadCues();
     }
     if (voice === "off") return;
     if (this.callouts) this.callouts.prepare(voice);
     else if (!this.callsLoading) {
       this.callsLoading = true;
       void import("./callouts").then(({ Callouts }) => {
+        if (bus !== this.effects) return;
         this.callouts = new Callouts(bus, () => this.changed?.(), this.key);
         this.updateTableSound();
-      }).catch(() => { this.callsFailed = true; this.changed?.(); });
+      }).catch(() => {
+        if (bus === this.effects) { this.callsFailed = true; this.changed?.(); }
+      });
     }
   }
 }

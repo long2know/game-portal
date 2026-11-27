@@ -44,18 +44,23 @@ function expectPoint(actual: Point, expected: Point) {
 }
 
 type AudioProbe = Window & {
-  audioSignal: () => { running: boolean; rms: number; peak: number; taps: number; breaths: number; rooms: number };
+  audioSignal: () => { running: boolean; rms: number; peak: number; taps: number; breaths: number; rooms: number; tones: number };
 };
 
 async function observeAudio(page: Page) {
   await page.addInitScript(() => {
     const taps: AnalyserNode[] = [];
     const echoes = new Set<DelayNode>();
-    let breaths = 0;
+    let breaths = 0, tones = 0;
     const start = AudioBufferSourceNode.prototype.start;
     AudioBufferSourceNode.prototype.start = function (...args: Parameters<typeof start>) {
       if (this.loop) breaths++;
       start.apply(this, args);
+    };
+    const tone = OscillatorNode.prototype.start;
+    OscillatorNode.prototype.start = function (...args: Parameters<typeof tone>) {
+      tones++;
+      tone.apply(this, args);
     };
     const connect = AudioNode.prototype.connect;
     AudioNode.prototype.connect = function (this: AudioNode, destination: AudioNode | AudioParam, ...args: number[]) {
@@ -82,7 +87,7 @@ async function observeAudio(page: Page) {
         rms = Math.max(rms, Math.sqrt(samples.reduce((sum, i) => sum + i * i, 0) / samples.length));
         peak = Math.max(peak, ...samples.map(Math.abs));
       }
-      return { running: taps.some(tap => tap.context.state === "running"), rms, peak, taps: taps.length, breaths, rooms: echoes.size };
+      return { running: taps.some(tap => tap.context.state === "running"), rms, peak, taps: taps.length, breaths, rooms: echoes.size, tones };
     };
   });
   return () => page.evaluate(() => (window as unknown as AudioProbe).audioSignal());
@@ -92,7 +97,7 @@ async function audible(signal: Awaited<ReturnType<typeof observeAudio>>, floor =
   await expect.poll(async () => {
     const { running, rms, peak } = await signal();
     return running && rms > floor && peak < .65;
-  }).toBe(true);
+  }, { intervals: [20, 40, 100, 250] }).toBe(true);
 }
 
 async function simulateVisibility(page: Page, hidden: boolean) {
@@ -100,6 +105,39 @@ async function simulateVisibility(page: Page, hidden: boolean) {
     Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
     document.dispatchEvent(new Event("visibilitychange"));
   }, hidden);
+}
+
+type PolicyProbe = Window & {
+  audioPolicy: { interrupt: () => Promise<void>; allowClicks: () => void; calls: () => { attempts: number; native: number } };
+};
+
+async function emulateAudioPolicy(page: Page) {
+  await page.addInitScript(() => {
+    let context: AudioContext;
+    let policy: "native" | "pending" | "click-only" = "native";
+    let click = false, attempts = 0, native = 0;
+    for (const type of ["click", "pointerdown", "pointerup", "touchend", "keydown"]) {
+      window.addEventListener(type, event => { click = type === "click" && event.isTrusted; }, { capture: true });
+    }
+    const resume = AudioContext.prototype.resume;
+    AudioContext.prototype.resume = function () {
+      context = this;
+      attempts++;
+      if (policy === "pending" || policy === "click-only" && !click) return new Promise<void>(() => {});
+      native++;
+      return resume.call(this);
+    };
+    (window as unknown as PolicyProbe).audioPolicy = {
+      interrupt: () => { policy = "pending"; return context.suspend(); },
+      allowClicks: () => { policy = "click-only"; },
+      calls: () => ({ attempts, native }),
+    };
+  });
+  return {
+    interrupt: () => page.evaluate(() => (window as unknown as PolicyProbe).audioPolicy.interrupt()),
+    allowClicks: () => page.evaluate(() => (window as unknown as PolicyProbe).audioPolicy.allowClicks()),
+    calls: () => page.evaluate(() => (window as unknown as PolicyProbe).audioPolicy.calls()),
+  };
 }
 
 async function seedPreferences(request: APIRequestContext, base: string, volume = .7): Promise<Guest> {
@@ -724,6 +762,122 @@ test.describe("mounted Jade Court portal", () => {
       await tap(page, "Music off");
       await expect(page.getByText("Music is muted at 0% volume.")).toBeVisible();
       expect(await signal()).toMatchObject({ rms: 0, taps: 0 });
+    });
+
+  test("published Mahjong Test sound plays a real tile cue by touch and keyboard without music or saving",
+    async ({ page, baseURL }) => {
+      const url = urls(baseURL!);
+      const signal = await observeAudio(page);
+      const writes: string[] = [];
+      page.on("request", request => {
+        if (request.method() === "PATCH") writes.push(new URL(request.url()).pathname);
+      });
+      const guest = receive(page, url("api/guest"), "POST");
+      await page.goto(url("mahjong/"));
+      expect(await (await guest).json()).toMatchObject({ preferences: { sound: true, music: false, volume: .7 } });
+      const settings = page.getByRole("button", { name: "Settings", exact: true });
+      const dialog = page.getByRole("dialog", { name: "Settings" });
+      const testSound = dialog.getByRole("button", { name: "Test sound", exact: true });
+      expect(await signal()).toMatchObject({ running: false, rms: 0, tones: 0 });
+      await settings.tap();
+      await expect(dialog.getByLabel("Tile and turn sounds")).toBeChecked();
+      await expect(dialog.getByLabel("Quiet table music")).not.toBeChecked();
+      expect(await signal()).toMatchObject({ rms: 0, tones: 0 });
+      await testSound.tap();
+      await audible(signal, .008);
+      expect(await signal()).toMatchObject({ breaths: 0, rooms: 0, tones: 2 });
+      await page.reload();
+      await expect(settings).toBeEnabled();
+      expect(await signal()).toMatchObject({ running: false, rms: 0, tones: 0 });
+      await settings.press("Enter");
+      await testSound.press("Space");
+      await audible(signal, .008);
+      expect(await signal()).toMatchObject({ breaths: 0, rooms: 0, tones: 2 });
+      expect(writes).toEqual([]);
+    });
+
+  test("Mahjong cue-only audio retries a blocked resume on trusted click and drops the pending cue when hidden",
+    async ({ page, baseURL }) => {
+      const url = urls(baseURL!);
+      const signal = await observeAudio(page);
+      // Linux WebKit cannot reproduce the iPhone audio session; suspend and defer resume in this test only.
+      const policy = await emulateAudioPolicy(page);
+      const cueAsset = /\/assets\/table-sounds-[\w-]+\.js$/;
+      let release!: () => void;
+      const hold = new Promise<void>(resolve => { release = resolve; });
+      await page.route(cueAsset, async route => { await hold; await route.continue(); });
+      await page.goto(url("mahjong/"));
+      const settings = page.getByRole("button", { name: "Settings", exact: true });
+      const dialog = page.getByRole("dialog", { name: "Settings" });
+      const testSound = dialog.getByRole("button", { name: "Test sound", exact: true });
+      const note = dialog.locator("#table-audio-note");
+      await settings.tap();
+      await expect.poll(async () => (await signal()).running).toBe(true);
+      await policy.interrupt();
+      const interrupted = await policy.calls();
+      await simulateVisibility(page, true);
+      await testSound.tap();
+      await simulateVisibility(page, false);
+      await testSound.evaluate(control => (control as HTMLButtonElement).click());
+      expect(await policy.calls()).toEqual(interrupted);
+      expect(await signal()).toMatchObject({ running: false, rms: 0, tones: 0 });
+      await testSound.tap();
+      await expect(note).toHaveText("The browser kept audio paused. Tap Test sound to retry.");
+      expect((await policy.calls()).attempts).toBeGreaterThan(interrupted.attempts);
+      expect((await policy.calls()).native).toBe(interrupted.native);
+
+      await policy.allowClicks();
+      const requested = page.waitForRequest(cueAsset);
+      await testSound.press("Enter");
+      await requested;
+      await expect(note).toHaveText("Preparing the tile sound…");
+      expect((await policy.calls()).native).toBe(interrupted.native + 1);
+      await simulateVisibility(page, true);
+      const loaded = page.waitForResponse(cueAsset);
+      release();
+      expect((await loaded).ok()).toBe(true);
+      await simulateVisibility(page, false);
+      expect(await signal()).toMatchObject({ running: true, rms: 0, tones: 0 });
+
+      await policy.interrupt();
+      await policy.allowClicks();
+      let saveProfile!: () => void;
+      const requestHeld = new Promise<void>(resolve => { saveProfile = resolve; });
+      await page.route(url("api/profile"), async route => { await requestHeld; await route.continue(); }, { times: 1 });
+      const patch = page.waitForRequest(request => request.method() === "PATCH" && request.url() === url("api/profile"));
+      const unchanged = receive(page, url("api/profile"), "PATCH");
+      try {
+        await dialog.getByRole("button", { name: "Save settings" }).press("Enter");
+        await patch;
+        await expect.poll(async () => (await signal()).running).toBe(true);
+        expect((await signal()).tones).toBe(0);
+      } finally { saveProfile(); }
+      expect(await (await unchanged).json()).toMatchObject({ preferences: { sound: true, music: false, volume: .7 } });
+
+      await testSound.tap();
+      await audible(signal, .008);
+      expect((await signal()).tones).toBe(2);
+
+      await dialog.getByRole("slider").press("Home");
+      await expect(note).toHaveText("Audio is muted at 0% volume.");
+      await testSound.tap();
+      expect((await signal()).tones).toBe(2);
+      const saved = receive(page, url("api/profile"), "PATCH");
+      await dialog.getByRole("button", { name: "Save settings" }).tap();
+      expect(await (await saved).json()).toMatchObject({ preferences: { sound: true, music: false, volume: 0 } });
+      await page.reload();
+      await settings.tap();
+      await expect(note).toHaveText("Audio is muted at 0% volume.");
+      await testSound.tap();
+      expect(await policy.calls()).toEqual({ attempts: 0, native: 0 });
+      expect(await signal()).toMatchObject({ running: false, rms: 0, tones: 0 });
+
+      await dialog.getByLabel("Tile and turn sounds").uncheck();
+      await dialog.getByRole("slider").press("End");
+      await expect(note).toHaveText("Tile sounds and music are off in Settings.");
+      await testSound.tap();
+      expect(await policy.calls()).toEqual({ attempts: 0, native: 0 });
+      expect(await signal()).toMatchObject({ running: false, rms: 0, tones: 0 });
     });
 
   test("Mahjong previews actual music before Save, cancels drafts, and plays saved music only on gesture",

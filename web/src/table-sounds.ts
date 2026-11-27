@@ -52,14 +52,17 @@ export class TileSounds {
     }
   }
 
-  clear(): void {
+  clear(immediate = false): void {
     const now = this.context.currentTime;
     for (const [source, envelope] of this.voices) {
-      envelope.gain.cancelScheduledValues(now);
-      envelope.gain.setTargetAtTime(0, now, .005);
-      source.stop(now + .02);
+      if (immediate) envelope.disconnect();
+      else {
+        envelope.gain.cancelScheduledValues(now);
+        envelope.gain.setTargetAtTime(0, now, .005);
+      }
+      source.stop(immediate ? now : now + .02);
     }
-    this.voices.clear();
+    if (immediate) this.voices.clear();
   }
 
   private tone(frequency: number, wait: number, duration: number, level: number, wave: OscillatorType = "sine"): void {

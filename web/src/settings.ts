@@ -48,16 +48,31 @@ export function showSettings({ guest, state, available, audio, modal, opener, le
   ], audio.choices.voice) : undefined;
   let changshaReady = false;
   const chosenTrack = () => track?.value === "bamboo" ? "bamboo" : "still";
-  const preview = () => audio.preview([music.input.checked, Number(volume.value) / 100, chosenTrack()]);
+  const preview = () => audio.preview({
+    sound: sound.input.checked, music: [music.input.checked, Number(volume.value) / 100, chosenTrack()],
+  });
   track?.addEventListener("change", preview);
+  sound.input.addEventListener("click", preview);
+  sound.input.addEventListener("change", preview);
+  music.input.addEventListener("click", preview);
   music.input.addEventListener("change", preview);
-  volume.addEventListener("input", () => {
+  volume.addEventListener("input", event => {
     text(readout, `Volume · ${volume.value}%`);
     preview();
+    if (event.isTrusted && navigator.userActivation?.isActive) audio.unlock();
   });
+  preview();
   const audioNote = el("p", "note", audio.note);
+  audioNote.id = "table-audio-note";
   audioNote.setAttribute("role", "status");
   audio.changed = () => text(audioNote, audio.note);
+  const test = button("Test sound", "btn subtle");
+  test.setAttribute("aria-describedby", audioNote.id);
+  test.addEventListener("click", event => {
+    if (!event.isTrusted) return;
+    event.preventDefault();
+    audio.testSound(() => form.isConnected && modal.root.open && modal.kind === "settings");
+  });
   const control = submit("Save settings");
   const actions = el("div", "row-actions", control);
   const reserve = state?.room.status === "playing" || state?.room.status === "betweenHands";
@@ -66,7 +81,7 @@ export function showSettings({ guest, state, available, audio, modal, opener, le
   if (state) actions.append(leaveButton);
   const form = el("form", "form", field("Display name", name), sound.field, music.field);
   if (track) form.append(field("Soundtrack", track));
-  form.append(el("label", "field", readout, volume), audioNote);
+  form.append(el("label", "field", readout, volume), test, audioNote);
   if (voice && recordingKey) {
     const note = el("p", "note", "Calls follow tile sounds and volume. The soundtrack and voice are saved in this browser for this portal.");
     note.id = "device-audio-note";
@@ -99,7 +114,6 @@ export function showSettings({ guest, state, available, audio, modal, opener, le
     }
     const prefs: Preferences = { sound: sound.input.checked, music: music.input.checked,
       volume: Number(volume.value) / 100, reducedMotion: motion.input.checked };
-    if (prefs.sound || prefs.music) void audio.unlock(true);
     save(displayName, prefs, form, control, voice ? { track: chosenTrack(), voice: voice.value as AudioChoices["voice"] } : undefined);
   });
   modal.show("settings", "Settings", form, opener);
