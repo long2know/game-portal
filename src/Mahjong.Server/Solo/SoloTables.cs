@@ -20,8 +20,10 @@ internal sealed class SoloTables(IDbContextFactory<MahjongDb> factory)
     private sealed record SoloRules(Func<string, string> Start, Func<string, SoloAction, string> Apply, Func<string, object> View);
     private static readonly KlondikeGame Klondike = new();
     private static readonly SudokuGame Sudoku = new();
+    private static readonly WindwardGame Windward = new();
     private static readonly SoloRules SolitaireRules = new(Klondike.Start, Klondike.Apply, Klondike.View);
     private static readonly SoloRules SudokuRules = new(Sudoku.Start, Sudoku.Apply, Sudoku.View);
+    private static readonly SoloRules WindwardRules = new(Windward.Start, Windward.Apply, Windward.View);
     private readonly SemaphoreSlim _dealWorkers = new(4);
 
     public async Task<SoloTable?> GetAsync(Guid guest, string game, CancellationToken stop)
@@ -81,6 +83,7 @@ internal sealed class SoloTables(IDbContextFactory<MahjongDb> factory)
         catch (InvalidOperationException)
         {
             throw rules.View(before) is KlondikePosition { Finished: true } or SudokuPosition { Finished: true }
+                or WindwardPosition { Finished: true }
                 ? new PortalFault(400, "game_finished") : new PortalFault(400, "illegal_action");
         }
         var position = rules.View(CheckedCheckpoint(after));
@@ -96,7 +99,8 @@ internal sealed class SoloTables(IDbContextFactory<MahjongDb> factory)
 
     private static SoloRules Find(string game) => game switch
     {
-        "solitaire" => SolitaireRules, "sudoku" => SudokuRules, _ => throw new PortalFault(400, "invalid_request")
+        "solitaire" => SolitaireRules, "sudoku" => SudokuRules, WindwardGame.Id => WindwardRules,
+        _ => throw new PortalFault(400, "invalid_request")
     };
 
     private static string CheckedCheckpoint(string checkpoint) =>

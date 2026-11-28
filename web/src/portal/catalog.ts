@@ -1,5 +1,5 @@
 export const boardIds = ["chess", "go", "reversi", "checkers", "chinese-checkers", "xiangqi", "gomoku"] as const;
-export const expansionIds = ["holdem", "solitaire", "sudoku", "word-tiles", "farkle", "backgammon", "big-two", "koi-koi", "jade-harbors"] as const;
+export const expansionIds = ["holdem", "solitaire", "sudoku", "word-tiles", "farkle", "backgammon", "big-two", "koi-koi", "jade-harbors", "windward-ledger"] as const;
 export type BoardId = typeof boardIds[number];
 export type ExpansionId = typeof expansionIds[number];
 export type GameId = BoardId | ExpansionId | "mahjong" | "lantern-run" | "mahjong-solitaire" | "nonograms";
@@ -106,6 +106,11 @@ export const catalog: Record<GameId, { name: string; seats: string; description:
     name: "Jade Harbors", seats: "3 players · Canal network",
     description: "Roll for supplies, lay routes between canalside sites, and raise warehouses.",
     invitation: "Set up Jade Harbors",
+  },
+  "windward-ledger": {
+    name: "Windward Ledger", seats: "Solo · Voyage campaign",
+    description: "Chart a coast, work its ports, and bring three kinds of cargo home.",
+    invitation: "Play Windward Ledger",
   },
 };
 

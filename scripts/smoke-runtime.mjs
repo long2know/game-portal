@@ -55,7 +55,7 @@ async function checkApplication() {
 
   assert.deepEqual((await json('/health/live')).body, { status: 'live' });
   assert.deepEqual((await json('/api/version')).body, { appVersion, protocolVersion: 1, commitSha });
-  for (const path of ['/api/board/games', '/api/poker/resume', '/api/words/resume', '/api/solo/solitaire', '/api/solo/sudoku']) {
+  for (const path of ['/api/board/games', '/api/poker/resume', '/api/words/resume', '/api/solo/solitaire', '/api/solo/sudoku', '/api/solo/windward-ledger']) {
     const portalDisabled = await get(path);
     assert.equal(portalDisabled.status, 404, `${path} must be disabled at ${pathname}`);
     await portalDisabled.body?.cancel();

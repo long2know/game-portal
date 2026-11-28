@@ -6,7 +6,7 @@ Set `Portal__Enabled=true` to enable the game APIs and portal shell (the default
 `/portal/chinese-checkers/`, `/portal/holdem/`, `/portal/solitaire/`, `/portal/sudoku/`,
 `/portal/word-tiles/`, `/portal/farkle/`, `/portal/backgammon/`, `/portal/lantern-run/`,
 `/portal/xiangqi/`, `/portal/gomoku/`, `/portal/mahjong-solitaire/`, `/portal/big-two/`,
-`/portal/koi-koi/`, `/portal/nonograms/`, `/portal/jade-harbors/`,
+`/portal/koi-koi/`, `/portal/nonograms/`, `/portal/jade-harbors/`, `/portal/windward-ledger/`,
 and the Daily Court feature at `/portal/daily-court/`. `/portal/mahjong/` and
 its nested SPA routes serve the existing Changsha Mahjong client. The bare routes return
 a 308 with the query intact. Browsers retain the original fragment because the redirect
@@ -58,7 +58,7 @@ WebSocket `sync`; the list does not authorize a new membership or any write.
 | --- | --- | --- |
 | Shared boards | Catalog game ID, `tableId`, `variant`, `players`, and `botDifficulty` only for bot Chess (`standard` by default). | The guest owns the bot table. Creating another with those options preserves the prior table. |
 | Seated games | Catalog slug (`holdem`, `word-tiles`, `farkle`, `backgammon`, `big-two`, `koi-koi`, or `jade-harbors`), `tableId` and `players`. | The guest owns the bot table. Create another for the same player count; the prior table is unchanged. |
-| Solitaire and Sudoku | `solitaire` or `sudoku` and the saved `variant`; `tableId` is `null`. | The guest has a save. Dealing that variant through the existing endpoint replaces it. |
+| Solitaire, Sudoku, and Windward Ledger | `solitaire`, `sudoku`, or `windward-ledger` and the saved `variant`; `tableId` is `null`. | The guest has a save. Starting that variant through the existing endpoint replaces it. |
 | Changsha Mahjong | `mahjong` and the durable member's `tableId` (room ID); other setup fields are `null`. | The member is the room host with exactly three bots, and the room is `playing`, `betweenHands`, or `complete`. Restart in place only after normal WebSocket attachment, using `restartMatch` with the current room revision. |
 
 For board and seated games the most recently joined or created eligible table per
@@ -514,7 +514,7 @@ options. A tie at the turn limit is `finished` with `winnerSeat: null`. Closing
 preserves the last dealt position if there was one. Guest IDs,
 the private versioned checkpoint and future dice are never returned.
 
-## Solitaire and Sudoku
+## Solo saves
 
 Each protected guest has one saved table per game in SQLite, independent of other guests.
 The save lasts with the guest identity and survives server restarts when the database and
@@ -538,6 +538,20 @@ move; a prior board's revision after a redeal returns `stale_room` (409).
   `{kind: "set", index, value}` (value `0` clears the cell), or `{kind: "hint", index?}`.
   The view contains row-major givens, current values, and conflicts. A hint changes
   just one editable cell.
+- `windward-ledger` supports `soundings`. Actions are `{kind: "sail", index}` for
+  a neighboring charted square (zero-based row-major index `0`–`41`),
+  `{kind: "assign", value}` and `{kind: "load", value}` with a zero-based good index
+  (`0` kelp, `1` dye, `2` cedar), and `{kind: "found"}`, `{kind: "deliver"}`, or
+  `{kind: "end-season"}`. Use the exact bodies in `position.legalActions`; only
+  its `sail` entries have `index`, and only `assign` or `load` entries have `value`.
+  The view gives the season and allowances, ship square, charter score, cargo and
+  delivered quantities per good, and each established port's production index
+  (or `null`) and stock per good. `position.chart` is row-major with `null` for
+  uncharted squares; charted entries are `{kind, name, specialty}`, where optional
+  names and specialty indices can be `null`. Valid `status` values are `active`,
+  `won`, and `lost`; the latter two have `finished: true` and no legal actions.
+  No hidden chart cells, seed, or private checkpoint are projected. Rejected orders
+  do not change the save, revision, or season. See [Windward Ledger rules](windward-ledger-rules.md).
 
 See [solo engine rules](solo-rules.md) for action details. Unsupported variants, games, or
 malformed actions return `invalid_request`; illegal plays and finished saves return

@@ -1,8 +1,14 @@
+using System.Text.Json.Serialization;
+
 namespace JadeCourt.Solo;
 
 public sealed record SoloAction(
-    string Kind, string? From = null, string? To = null, int? Count = null,
-    int? Index = null, int? Value = null);
+    string Kind,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? From = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? To = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Count = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Index = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Value = null);
 
 public sealed record SolitaireCard(int? Rank, string? Suit, bool FaceUp);
 

@@ -313,6 +313,13 @@
     <path d="M34 32v-9l6-3 5 4v8z" fill="#b35c43" stroke="#382a26"/>
     <path d="m10 46 12-2m33 1 10-2M14 13l5-3" stroke="#a8c1a8"/>
   </symbol>
+  <symbol id="windward-ledger" viewBox="0 0 72 60">
+    <path d="M0 0h72v60H0z" fill="#514237"/>
+    <path d="M5 5h62v50H5z" fill="#214d50" stroke="#bf9d6d" stroke-width="2"/>
+    <path d="M8 14l14 3 6 9-9 5-11-2m49 20-8-7 9-14 6 3v18z" fill="#9ea780"/>
+    <path d="m22 41 16 6 10-10H23Zm15-7V13L25 34Zm3-16 8 16h-8Z" fill="#f3d9a8"/>
+    <path d="M11 45h7m30-30h12m-5-5v10" stroke="#cfac78"/>
+  </symbol>
   <symbol id="daily-court" viewBox="0 0 72 60">
     <path d="M5 15 64 4l5 47-60 7Z" fill="#684434"/>
     <path d="M7 15 64 6l2 42-55 7Z" fill="#a56f50" stroke="#c58d63"/>

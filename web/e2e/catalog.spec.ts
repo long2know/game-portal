@@ -9,7 +9,7 @@ test.beforeEach(({ baseURL }) => {
   test.skip(!baseURL || !/^\/(?:game-)?portal\/$/.test(new URL(baseURL).pathname), "Requires the published portal.");
 });
 
-test("lobby presents twenty real destinations with local, cold catalog art", async ({ page, baseURL, request }) => {
+test("lobby presents twenty-one real destinations with local, cold catalog art", async ({ page, baseURL, request }) => {
   const mount = new URL(baseURL!);
   const href = (path: string) => new URL(path, mount).href;
   const assets = new Set<string>();
@@ -39,7 +39,7 @@ test("lobby presents twenty real destinations with local, cold catalog art", asy
   await expect(page.getByRole("region", { name: "Continue playing" })).toHaveCount(0);
   const games = ["mahjong", "chess", "go", "reversi", "checkers", "chinese-checkers", "holdem", "solitaire",
     "sudoku", "word-tiles", "farkle", "backgammon", "lantern-run", "xiangqi", "gomoku", "mahjong-solitaire", "big-two", "koi-koi",
-    "nonograms", "jade-harbors"];
+    "nonograms", "jade-harbors", "windward-ledger"];
   const cards = page.getByRole("region", { name: "Choose a game" }).getByRole("link");
   await expect(cards).toHaveCount(games.length);
   await expect(cards.filter({ hasText: "↗" })).toHaveCount(0);
@@ -103,6 +103,8 @@ test("catalog links announce the game and player context without changing the in
     "Solo · Picture logic Read the row and column clues to uncover a picture. Play and save in this browser.");
   await expect(page.getByRole("link", { name: "Set up Jade Harbors", exact: true })).toHaveAccessibleDescription(
     "3 players · Canal network Roll for supplies, lay routes between canalside sites, and raise warehouses.");
+  await expect(page.getByRole("link", { name: "Play Windward Ledger", exact: true })).toHaveAccessibleDescription(
+    "Solo · Voyage campaign Chart a coast, work its ports, and bring three kinds of cargo home.");
 });
 
 test("Ink Grids opens its canonical browser-only route without guest, music, or social traffic", async ({

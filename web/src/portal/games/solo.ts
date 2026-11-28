@@ -4,7 +4,7 @@ import { button, el, text } from "../dom";
 import type { PortalHost } from "../host";
 import { expired, field, gameFrame, messageFor } from "./shared";
 
-type Game = "sudoku" | "solitaire";
+type Game = "sudoku" | "solitaire" | "windward-ledger";
 type Position = { finished: boolean; moves: number };
 export interface SoloView<P> {
   root: HTMLElement;
@@ -16,10 +16,16 @@ type Options<P, A> = {
   variants: Record<string, string>;
   defaultVariant: string;
   view: (play: (action: A) => void) => SoloView<P>;
+  startLabel?: string;
+  restartLabel?: string;
+  finishLabel?: (position: P) => string;
+  onAccepted?: (action: A) => void;
 };
 
 export function solo<P extends Position, A extends object>(host: PortalHost, options: Options<P, A>): void {
   const { game, variants, defaultVariant } = options;
+  const startLabel = options.startLabel ?? (game === "sudoku" ? "Start puzzle" : "Deal cards");
+  const restartLabel = options.restartLabel ?? (game === "sudoku" ? "Restart puzzle" : "Restart game");
   const frame = gameFrame(game, "Jade Court · Solo");
   const json = mountedJson(host.mount);
   const path = `api/solo/${game}`;
@@ -33,10 +39,10 @@ export function solo<P extends Position, A extends object>(host: PortalHost, opt
   const status = el("p", "feature-status");
   status.setAttribute("role", "status");
   const retry = button("Reconnect now", "button secondary", () => void open());
-  const start = button(game === "sudoku" ? "Start puzzle" : "Deal cards", "button primary", () => {
+  const start = button(startLabel, "button primary", () => {
     const choice = variant.value;
     if (busy || !ready) return;
-    if (current) confirmation.show(game === "sudoku" ? "Restart puzzle" : "Restart game",
+    if (current) confirmation.show(restartLabel,
       "Starting over replaces your saved progress.", start, () => void deal(choice));
     else void deal(choice);
   });
@@ -54,10 +60,11 @@ export function solo<P extends Position, A extends object>(host: PortalHost, opt
     status.hidden = !position?.finished;
     retry.hidden = ready || busy;
     variant.disabled = start.disabled = busy || !ready;
-    text(start, game === "sudoku" ? current ? "Restart puzzle" : "Start puzzle" : current ? "Restart game" : "Deal cards");
+    text(start, current ? restartLabel : startLabel);
     if (!position || !current) return;
     text(summary, `${variants[current.variant]} · ${position.moves} ${position.moves === 1 ? "move" : "moves"}`);
-    text(status, position.finished ? game === "sudoku" ? "Puzzle complete!" : "Solitaire complete!" : "");
+    text(status, position.finished ? options.finishLabel?.(position)
+      ?? (game === "sudoku" ? "Puzzle complete!" : "Solitaire complete!") : "");
     gameView.show(position, ready && !busy && !position.finished, newGame);
   }
 
@@ -103,11 +110,14 @@ export function solo<P extends Position, A extends object>(host: PortalHost, opt
     busy = true;
     frame.say("");
     show();
+    let accepted = false;
     try {
       current = await json<Table<P>>(`${path}/moves`, "POST", { revision: current.revision, action });
+      accepted = true;
     } catch (error) {
       failure(error);
     } finally { busy = false; show(); }
+    if (accepted) options.onAccepted?.(action);
   }
 
   function failure(error: unknown): void {

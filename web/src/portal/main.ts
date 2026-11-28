@@ -102,6 +102,7 @@ const expansions = {
   "big-two": () => import("./games/big-two"),
   "koi-koi": () => import("./games/koi-koi"),
   "jade-harbors": () => import("./games/jade-harbors"),
+  "windward-ledger": () => import("./games/windward-ledger"),
 };
 if (route === "daily-court") {
   void openGame("Daily Court", async () => (await import("./daily-court")).mountDailyCourt(main, mount));

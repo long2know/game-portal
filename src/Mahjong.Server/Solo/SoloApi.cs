@@ -40,6 +40,14 @@ internal static class SoloApi
             && body.Get("index").Int(out var index) && index is >= 0 and < 81
             && body.Get("value").Int(out var value) && value is >= 0 and <= 9 => new("set", Index: index, Value: value),
         ("sudoku", "hint") when Wire.Fields(body, "kind", "index") => ReadHint(body.Get("index")),
+        (WindwardGame.Id, "sail") when Wire.Fields(body, "kind", "index")
+            && body.Get("index").Int(out var cell) && cell is >= 0 and < WindwardGame.CellCount =>
+            new("sail", Index: cell),
+        (WindwardGame.Id, "assign" or "load") when Wire.Fields(body, "kind", "value")
+            && body.Get("value").Int(out var good) && good is >= 0 and < WindwardGame.GoodCount =>
+            new(body.Get("kind").AsString()!, Value: good),
+        (WindwardGame.Id, "found" or "deliver" or "end-season") when Wire.Fields(body, "kind") =>
+            new(body.Get("kind").AsString()!),
         _ => null
     };
 

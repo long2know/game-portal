@@ -10,7 +10,7 @@ import type { InviteTable } from "./invite-handoff";
 
 const seated = { holdem: "poker", "word-tiles": "words", farkle: "farkle", backgammon: "backgammon",
   "big-two": "big-two", "koi-koi": "koi-koi", "jade-harbors": "jade-harbors" } as const;
-type Target = InviteTable | { game: "solitaire" | "sudoku"; tableId: null };
+type Target = InviteTable | { game: "solitaire" | "sudoku" | "windward-ledger"; tableId: null };
 type Save = Target & { variant: string | null; players: number | null; botDifficulty?: BotDifficulty; canStartFresh: boolean };
 type FreshTable = Pick<Table, "id" | "status" | "seat" | "seats">;
 type Row = { game: GameId; note: string; resume: HTMLElement; fresh?: HTMLElement };
@@ -23,7 +23,9 @@ function readSave(value: unknown): Save | undefined {
   const raw = value as { game?: unknown; tableId?: unknown; variant?: unknown; players?: unknown; botDifficulty?: unknown; canStartFresh?: unknown };
   let target: Target;
   if (isInviteTable(value)) target = { game: value.game, tableId: value.tableId };
-  else if ((raw.game === "solitaire" || raw.game === "sudoku") && raw.tableId === null) target = { game: raw.game, tableId: null };
+  else if ((raw.game === "solitaire" || raw.game === "sudoku" || raw.game === "windward-ledger") && raw.tableId === null) {
+    target = { game: raw.game, tableId: null };
+  }
   else return;
   const variant = typeof raw.variant === "string" && raw.variant.length <= 64 ? raw.variant : null;
   const players = typeof raw.players === "number" && Number.isInteger(raw.players) && raw.players >= 2 && raw.players <= 6 ? raw.players : null;

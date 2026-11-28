@@ -1,0 +1,79 @@
+.windward-run { display: grid; gap: .75rem; min-inline-size: 0; }
+.windward-banner {
+  display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: .5rem;
+  padding: .8rem 1rem; border: 1px solid #8b7651; border-radius: 8px; color: #f5dfb1;
+  background: repeating-linear-gradient(86deg, #f3d9aa09 0 1px, transparent 1px 5px), #294343;
+}
+.windward-kicker {
+  color: #e5c992; font-size: .73rem; font-weight: 720; letter-spacing: .13em; text-transform: uppercase;
+}
+.windward-season { font-family: Georgia, serif; font-size: 1.4rem; }
+.windward-score { font-size: .92rem; color: #f5dfb1; }
+.windward-panels { display: grid; grid-template-columns: minmax(0, 1.09fr) minmax(0, .91fr); gap: .75rem; align-items: start; }
+.windward-sheet {
+  display: grid; gap: .66rem; min-inline-size: 0;
+  padding: clamp(8px, 2.5vw, 22px); border: 1px solid #9a8561; border-radius: 8px;
+  color: #242d29; background: repeating-linear-gradient(0deg, #573c1710 0 1px, transparent 1px 4px), #f0dfb8;
+  box-shadow: inset 0 0 0 3px #8f693423;
+}
+.windward-sheet h2 { font-size: clamp(1.3rem, 3vw, 1.8rem); margin: 0; }
+.windward-chart {
+  inline-size: 100%; max-inline-size: 38rem; table-layout: fixed; border-spacing: 2px;
+  border: 1px solid #9e855d; padding: 2px; background: #d7bd93;
+}
+.windward-chart caption { color: #242d29; text-align: start; font: bold 1.35rem Georgia, serif; padding-block-end: .38rem; }
+.windward-chart th { color: #3b392b; font-size: .76rem; font-variant-numeric: tabular-nums; }
+.windward-chart tr > :first-child { inline-size: 1.15rem; }
+.windward-chart [data-kind] {
+  position: relative; text-align: center; padding: 0; block-size: clamp(28px, 5.3vw, 52px);
+  border: 1px solid #234444; color: #d5e0bf;
+  background: repeating-linear-gradient(154deg, #d6ead115 0 1px, transparent 1px 7px), #326365;
+}
+.windward-chart [data-kind="fog"] {
+  border-color: #7e7055; color: #514638;
+  background: repeating-linear-gradient(135deg, #7a644226 0 1px, transparent 1px 4px), #d5c6a9;
+}
+.windward-chart [data-kind="land"] { border-color: #626348; color: #394130; background: #a3a47c; }
+.windward-chart [data-kind="coast"] { border-color: #765735; color: #3e3524; background: #e2bc82; }
+.windward-chart [data-kind="port"] { border-color: #673722; color: #ffede0; background: #984b38; }
+.windward-chart [data-kind="home"] { border-color: #635535; color: #342d24; background: #efd697; }
+.windward-mark {
+  display: inline-block; vertical-align: middle; inline-size: 1.12em; block-size: 1.12em;
+  fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round;
+}
+.windward-chart .windward-mark { inline-size: 64%; block-size: auto; max-inline-size: 25px; }
+.windward-chart td[data-cutter] { box-shadow: inset 0 0 0 2px #fff3c9; }
+.windward-chart [data-cutter] .windward-mark:first-of-type { visibility: hidden; }
+.windward-chart .windward-cutter {
+  position: absolute; inset: 0; margin: auto; inline-size: 84%;
+  fill: #fff3c9; stroke: #2a2420; stroke-width: 1.25; filter: drop-shadow(0 1px 1px #39250b);
+}
+.windward-sr {
+  position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.windward-legend { display: flex; flex-wrap: wrap; gap: .25rem .65rem; font-size: .79rem; }
+.windward-legend span { display: inline-flex; align-items: center; gap: .2rem; }
+.windward-location { border-block-start: 1px solid #896d48; padding-block-start: .55rem; font-weight: 750; }
+.windward-tide, .windward-note { font-size: .89rem; }
+.windward-compass, .windward-orders { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .38rem; }
+.windward-sheet .button { padding-inline: .35rem; font-size: .88rem; }
+.windward-sheet .button.secondary { color: #213731; border-color: #557269; background: #e4e6cc; }
+.windward-sheet .button.secondary:hover:not([aria-disabled="true"]),
+.windward-sheet .button[aria-pressed="true"] { color: #fff1d2; background: #335a52; }
+.windward-sheet .button:focus-visible, .windward-rules summary:focus-visible { outline: 3px solid #754330; outline-offset: 2px; }
+.windward-sheet .button[aria-disabled="true"] { opacity: 1; color: #574e40; background: #dcd0b6; border-color: #97866a; }
+.windward-berth { display: grid; gap: .52rem; border-block: 1px solid #a68a62; padding-block: .6rem; }
+.windward-manifest { display: grid; gap: .25rem; margin: 0; font-size: .86rem; }
+.windward-manifest div {
+  display: grid; grid-template-columns: minmax(3.2rem, 1fr) 4fr; gap: .25rem;
+  padding: .32rem .43rem; background: #fff2d6; border-inline-start: 3px solid #546b50;
+}
+.windward-manifest dt { font-weight: 740; }
+.windward-manifest dd { margin: 0; }
+.windward-ports { display: grid; gap: .3rem; padding: 0; margin: 0; list-style: none; font-size: .86rem; }
+.windward-ports li { display: grid; padding: .35rem .5rem; border-inline-start: 3px solid #984b38; background: #e2c99e; }
+.windward-rules { font-size: .86rem; }
+.windward-rules summary { display: list-item; align-content: center; min-block-size: 44px; cursor: pointer; font-weight: 700; }
+.windward-rules p + p { margin-block-start: .45rem; }
+.windward-cues { justify-self: start; }
+@media (max-width: 680px) { .windward-panels { grid-template-columns: minmax(0, 1fr); } }

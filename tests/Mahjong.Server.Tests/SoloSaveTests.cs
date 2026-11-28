@@ -8,6 +8,7 @@ public sealed class SoloSaveTests
 {
     private const string Solitaire = "/portal/api/solo/solitaire";
     private const string Sudoku = "/portal/api/solo/sudoku";
+    private const string Windward = "/portal/api/solo/windward-ledger";
 
     [Fact]
     public async Task SolitaireSaveIsPrivateDurableAndRejectsMovesAgainstARedeal()
@@ -103,6 +104,131 @@ public sealed class SoloSaveTests
         await Error(await host.Request(HttpMethod.Post, moves, Set(2, emptyCell, 1)),
             HttpStatusCode.Conflict, "stale_room");
         Assert.True(JsonElement.DeepEquals(redealt, await Saved(host, Sudoku)));
+    }
+
+    [Fact]
+    public async Task WindwardSaveCommitsSupplyAndPositionOnlyForItsGuestAndCurrentRevision()
+    {
+        await using var server = PortalServer();
+        server.WithSetting("GamePortal__DataDirectory", Path.Combine(server.DataDirectory, "portal"));
+        await server.StartAsync();
+        var owner = await Guest(server, "Voyager");
+        var peer = await Guest(server, "Separate voyager");
+        var anonymous = new User(server);
+        var moves = Windward + "/moves";
+        var start = new { variant = "soundings" };
+        await Error(await anonymous.Request(HttpMethod.Get, Windward), HttpStatusCode.Unauthorized, "not_authenticated");
+        await Error(await anonymous.Request(HttpMethod.Post, Windward, start), HttpStatusCode.Unauthorized, "not_authenticated");
+        await Error(await owner.Request(HttpMethod.Post, Windward, new { variant = "soundings", seed = 41 }),
+            HttpStatusCode.BadRequest, "invalid_request");
+        await Error(await owner.Request(HttpMethod.Post, Windward, new { variant = "other" }),
+            HttpStatusCode.BadRequest, "invalid_request");
+        Assert.Equal(JsonValueKind.Null, (await Saved(owner, Windward)).ValueKind);
+        var first = await Post(owner, Windward, start);
+        AssertTable(first, "windward-ledger", "soundings", 0);
+        Assert.Equal(new[] { "cargoCapacity", "chart", "charterPoints", "finished", "goods", "height", "legalActions", "moves",
+            "ordersRemaining", "portLimit", "ports", "sailRemaining", "season", "seasonLimit", "shipIndex",
+            "status", "stockLimit", "targetPoints", "width" },
+            Position(first).EnumerateObject().Select(e => e.Name).Order(StringComparer.Ordinal));
+        var chart = Position(first).GetProperty("chart");
+        Assert.Equal(42, chart.GetArrayLength());
+        Assert.Equal(new[] { 14, 21, 22, 28 }, Enumerable.Range(0, 42).Where(i => chart[i].ValueKind != JsonValueKind.Null));
+        var legal = Position(first).GetProperty("legalActions");
+        Assert.True(JsonElement.DeepEquals(JsonSerializer.SerializeToElement(new object[]
+        {
+            new { kind = "sail", index = 14 }, new { kind = "sail", index = 22 }, new { kind = "sail", index = 28 }, new { kind = "end-season" }
+        }), legal));
+        Assert.Equal(JsonValueKind.Null, (await Saved(peer, Windward)).ValueKind);
+        await Error(await peer.Request(HttpMethod.Post, moves, new { revision = 0, action = legal[1] }),
+            HttpStatusCode.NotFound, "room_not_found");
+        await Error(await owner.Request(HttpMethod.Post, moves, new { revision = 0, action = legal[1] }, origin: "https://other.invalid"),
+            HttpStatusCode.Forbidden, "forbidden");
+        foreach (var malformed in new object[]
+        {
+            new { kind = "sail" }, new { kind = "sail", index = 42 }, new { kind = "sail", index = "22" },
+            new { kind = "sail", index = 22, value = 0 }, new { kind = "assign", value = -1 },
+            new { kind = "load", value = 3 }, new { kind = "end-season", index = 0 },
+            new { kind = "found", value = 0 }, new { kind = "deliver", count = 1 }
+        })
+            await Error(await owner.Request(HttpMethod.Post, moves, new { revision = 0, action = malformed }),
+                HttpStatusCode.BadRequest, "invalid_request");
+        foreach (var impossible in new object[] { new { kind = "sail", index = 15 }, new { kind = "found" }, new { kind = "load", value = 0 } })
+            await Error(await owner.Request(HttpMethod.Post, moves, new { revision = 0, action = impossible }),
+                HttpStatusCode.BadRequest, "illegal_action");
+        Assert.True(JsonElement.DeepEquals(first, await Saved(owner, Windward)));
+
+        var replies = await Task.WhenAll(
+            owner.Request(HttpMethod.Post, moves, new { revision = 0, action = legal[1] }),
+            owner.Request(HttpMethod.Post, moves, new { revision = 0, action = legal[1] }));
+        var table = await Ok(Assert.Single(replies, reply => reply.IsSuccessStatusCode));
+        await Error(Assert.Single(replies, reply => !reply.IsSuccessStatusCode), HttpStatusCode.Conflict, "stale_room");
+        AssertTable(table, "windward-ledger", "soundings", 1);
+        Assert.Equal(22, Position(table).GetProperty("shipIndex").GetInt32());
+        Assert.Equal("Reed Haven", Position(table).GetProperty("chart")[15].Text("name"));
+        foreach (var action in new object[]
+        {
+            new { kind = "sail", index = 15 }, new { kind = "found" }, new { kind = "assign", value = 0 },
+            new { kind = "end-season" }, new { kind = "load", value = 0 }
+        })
+            table = await Post(owner, moves, new { revision = table.GetProperty("revision").GetInt64(), action });
+
+        AssertTable(table, "windward-ledger", "soundings", 6);
+        var position = Position(table);
+        Assert.Equal(15, position.GetProperty("shipIndex").GetInt32());
+        Assert.Equal(2, position.GetProperty("season").GetInt32());
+        Assert.Equal(1, position.GetProperty("ordersRemaining").GetInt32());
+        var port = Assert.Single(position.GetProperty("ports").EnumerateArray());
+        Assert.Equal(15, port.GetProperty("index").GetInt32());
+        Assert.Equal(0, port.GetProperty("production").GetInt32());
+        Assert.Equal(new[] { 1, 0, 0 }, port.GetProperty("stock").EnumerateArray().Select(value => value.GetInt32()));
+        Assert.Equal(1, position.GetProperty("goods")[0].GetProperty("cargo").GetInt32());
+        Assert.Equal(0, position.GetProperty("charterPoints").GetInt32());
+        var save = Assert.Single((await Ok(await owner.Request(HttpMethod.Get, "/portal/api/saves"))).GetProperty("saves").EnumerateArray());
+        Assert.Equal("windward-ledger", save.Text("game"));
+        Assert.Equal("soundings", save.Text("variant"));
+        Assert.Equal(JsonValueKind.Null, save.GetProperty("tableId").ValueKind);
+        Assert.True(save.GetProperty("canStartFresh").GetBoolean());
+        Assert.Empty((await Ok(await peer.Request(HttpMethod.Get, "/portal/api/saves"))).GetProperty("saves").EnumerateArray());
+
+        await server.StopAsync();
+        await server.StartAsync();
+        Assert.True(JsonElement.DeepEquals(table, await Saved(owner, Windward)));
+        Assert.Equal(JsonValueKind.Null, (await Saved(peer, Windward)).ValueKind);
+        await Error(await owner.Request(HttpMethod.Post, moves, new { revision = 5, action = new { kind = "load", value = 0 } }),
+            HttpStatusCode.Conflict, "stale_room");
+        table = await Post(owner, moves, new { revision = 6, action = new { kind = "sail", index = 22 } });
+        table = await Post(owner, moves, new { revision = 7, action = new { kind = "sail", index = 21 } });
+        table = await Post(owner, moves, new { revision = 8, action = new { kind = "deliver" } });
+        Assert.Equal(2, Position(table).GetProperty("charterPoints").GetInt32());
+        Assert.Equal(0, Position(table).GetProperty("goods")[0].GetProperty("cargo").GetInt32());
+        Assert.Equal(1, Position(table).GetProperty("goods")[0].GetProperty("delivered").GetInt32());
+
+        var restarted = await Post(owner, Windward, start);
+        AssertTable(restarted, "windward-ledger", "soundings", 10);
+        Assert.True(JsonElement.DeepEquals(Position(first), Position(restarted)));
+        await Error(await owner.Request(HttpMethod.Post, moves, new { revision = 9, action = legal[1] }),
+            HttpStatusCode.Conflict, "stale_room");
+        Assert.True(JsonElement.DeepEquals(restarted, await Saved(owner, Windward)));
+    }
+
+    [Fact]
+    public async Task WindwardExpiredCharterCannotAcceptMoreOrders()
+    {
+        await using var server = PortalServer();
+        server.WithSetting("GamePortal__DataDirectory", Path.Combine(server.DataDirectory, "portal"));
+        await server.StartAsync();
+        var owner = await Guest(server, "Waiting cutter");
+        var table = await Post(owner, Windward, new { variant = "soundings" });
+        for (var revision = 0; revision < 22; revision++)
+            table = await Post(owner, Windward + "/moves", new { revision, action = new { kind = "end-season" } });
+
+        AssertTable(table, "windward-ledger", "soundings", 22);
+        Assert.Equal("lost", Position(table).Text("status"));
+        Assert.True(Position(table).GetProperty("finished").GetBoolean());
+        Assert.Empty(Position(table).GetProperty("legalActions").EnumerateArray());
+        await Error(await owner.Request(HttpMethod.Post, Windward + "/moves", new { revision = 22, action = new { kind = "end-season" } }),
+            HttpStatusCode.BadRequest, "game_finished");
+        Assert.True(JsonElement.DeepEquals(table, await Saved(owner, Windward)));
     }
 
     private static object Draw(long revision) => new { revision, action = new { kind = "draw" } };

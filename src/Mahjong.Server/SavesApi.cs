@@ -1,3 +1,4 @@
+using JadeCourt.Solo;
 using Mahjong.Server.Board;
 using Mahjong.Server.Seated;
 using Microsoft.EntityFrameworkCore;
@@ -47,7 +48,8 @@ internal static class SavesApi
             .Where(m => SeatedGames.Contains(m.Table.Game))
             .Select(m => new { m.Table.Game, m.TableId, m.Table.Players, CanStartFresh = m.Seat == 0 && m.Table.Bots })
             .ToArrayAsync(stop);
-        var solo = await db.SoloSaves.AsNoTracking().Where(s => s.GuestId == guest && (s.Game == "solitaire" || s.Game == "sudoku"))
+        var solo = await db.SoloSaves.AsNoTracking()
+            .Where(s => s.GuestId == guest && (s.Game == "solitaire" || s.Game == "sudoku" || s.Game == WindwardGame.Id))
             .Select(s => new { s.Game, s.Variant }).ToArrayAsync(stop);
 
         var saves = boards.DistinctBy(table => table.Game)

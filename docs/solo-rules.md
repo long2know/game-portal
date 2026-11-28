@@ -1,6 +1,6 @@
 # Jade Court solo engines
 
-`JadeCourt.Solo` exposes `KlondikeGame` and `SudokuGame`. Each takes a variant in
+`JadeCourt.Solo` exposes `KlondikeGame`, `SudokuGame`, and `WindwardGame`. Each takes a variant in
 `Start`, a saved checkpoint and a `SoloAction` in `Apply`, and returns a typed
 position from `View`. Only the host stores the opaque, versioned checkpoint;
 it contains private game state and must never go to clients or logs. The
@@ -39,8 +39,16 @@ and invalid checkpoints throw `InvalidDataException`.
 - `hint` fills or corrects one editable cell, defaulting to the first blank or
   incorrect editable cell in row-major order. Hints do not lock cells and no
   solution field is projected. A set or targeted hint that would leave the
-  cell unchanged is rejected. Both games count successful actions as `Moves`,
+  cell unchanged is rejected. Klondike and Sudoku count successful actions as `Moves`,
   including hints and recycles. Completed games reject further actions.
+
+## Windward Ledger (`soundings`)
+
+See the [voyage rules and controls](windward-ledger-rules.md). The server stores
+an opaque `windward-ledger-v1` replay of accepted orders, bounded by the season and
+action limits. The engine replays against the original fixed chart and rejects
+unknown versions, malformed journals, and illegal histories. The chart and
+stock shown in the guest view are reconstructed, never accepted from the client.
 
 ## Mahjong Solitaire (`mahjong-solitaire/`)
 
