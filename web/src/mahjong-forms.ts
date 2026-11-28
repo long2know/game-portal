@@ -75,6 +75,7 @@ export function rulesContent(profile?: RulesVersion, portal = false): HTMLElemen
     el("p", "", "Cha makes a sequence, Peng makes three matching tiles, and a Kong uses four. The table offers only the choices your seat can make; use Pass to decline an optional claim. Open Exposed tiles to read opponents’ committed open melds."),
     ...(showTwoTile ? [
       el("h3", "", "Rolling for Kong"),
+      el("p", "", "Peng leaves a fourth matching tile concealed. On a Two-tile Kong table, you can add that held tile on a later turn after you draw. Supplement draws one tile without a Kong Bloom bonus; Roll for Kong is available when the upgrade leaves you ready to win."),
       el("p", "", "On the Two-tile Kong table, count stacks from the tail, starting at #1. Use the dice sum; if there aren’t enough stacks, use the lower die, then the rear stack if even that is too far. Take the tiles from that stack, up to two. The older profiles use a single rolled replacement."),
       el("p", "", "Each replacement is a separate choice for Hu, never part of a combined win. If you can’t win or decline, discard all the replacements together. Other players may pass or take one Kong Cannon win each, on one of those tiles."),
     ] : []),
