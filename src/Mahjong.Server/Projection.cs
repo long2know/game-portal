@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 using Mahjong.Rules;
 
 namespace Mahjong.Server;
@@ -8,10 +9,18 @@ internal static class Projection
     // Absolute seat order matches the artwork in web/src/actors.ts.
     private static readonly ImmutableArray<string> PortalBotNames = ["Maple", "Pip", "Tallow", "Nori"];
 
+    private sealed record SeatSnapshot(int Seat, string? InviteCode, HandTile[] Hand, string? DrawnTileId,
+        LegalOption[] LegalOptions,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ImmutableArray<HandTile>? KongReplacements);
+
     public static object Snapshot(RoomCheckpoint room, int seat, DateTimeOffset utc, bool portalEnabled, Func<Guid, bool> connected)
     {
         var table = room.Game is null ? null : ChangshaEngine.ViewPublic(room.Game);
         var view = room.Game is null ? null : ChangshaEngine.ViewSeat(room.Game, seat);
+        ImmutableArray<HandTile>? replacements = room.RulesVersion == ChangshaEngine.TwoTileKongProfile
+            && table is { Phase: "turn", Window: { Reason: "turn", Trigger: null }, KongRoll.Seat: var kongSeat }
+            && kongSeat == seat && table.TurnSeat == seat
+            && view?.KongReplacements is { IsDefaultOrEmpty: false } candidates ? candidates : null;
         return new
         {
             v = Wire.Version,
@@ -83,14 +92,13 @@ internal static class Projection
                     settlement.Transfers
                 }
             },
-            self = new
-            {
+            self = new SeatSnapshot(
                 seat,
-                inviteCode = seat == room.HostSeat ? room.InviteCode : null,
-                hand = view?.Hand.ToArray() ?? [],
-                drawnTileId = view?.DrawnTileId,
-                legalOptions = room.PauseStartedUtc.HasValue ? [] : view?.LegalOptions.ToArray() ?? []
-            }
+                seat == room.HostSeat ? room.InviteCode : null,
+                view?.Hand.ToArray() ?? [],
+                view?.DrawnTileId,
+                room.PauseStartedUtc.HasValue ? [] : view?.LegalOptions.ToArray() ?? [],
+                replacements)
         };
     }
 }

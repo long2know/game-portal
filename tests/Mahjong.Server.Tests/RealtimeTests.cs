@@ -196,9 +196,11 @@ public sealed class RealtimeTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RulesProfilesAreStrictlyOptInAndOnlyPublicVariantRowsAdvertiseThem(bool portalEnabled)
+    [InlineData(false, "changsha-two-bird-v1")]
+    [InlineData(true, "changsha-two-bird-v1")]
+    [InlineData(false, "changsha-two-tile-kong-v1")]
+    [InlineData(true, "changsha-two-tile-kong-v1")]
+    public async Task RulesProfilesAreStrictlyOptInAndOnlyPublicVariantRowsAdvertiseThem(bool portalEnabled, string rulesVersion)
     {
         await using var server = new Kestrel().WithSetting("Portal__Enabled", portalEnabled ? "true" : "false");
         server.WithSetting("GamePortal__DataDirectory", server.DataDirectory);
@@ -233,7 +235,6 @@ public sealed class RealtimeTests
         Assert.Null((await variantUser.Guest()).Text("resumeRoomId"));
         Assert.Empty(await Listed(observer));
 
-        const string twoBirds = "changsha-two-bird-v1";
         var classicId = Guid.NewGuid();
         var classicCreated = await classic.Command("createRoom", new { visibility = "public", matchHands = 1 }, classicId);
         classicCreated.Ok();
@@ -242,13 +243,18 @@ public sealed class RealtimeTests
         var classicRetry = await classic.Command("createRoom",
             new { visibility = "public", matchHands = 1, rulesVersion = "changsha-v1" }, classicId);
         Assert.Equal(classicCreated.GetRawText(), classicRetry.GetRawText());
-        var create = new { visibility = "public", matchHands = 4, rulesVersion = twoBirds };
+        var create = new { visibility = "public", matchHands = 4, rulesVersion };
         var createId = Guid.NewGuid();
         var created = await variant.Command("createRoom", create, createId);
         created.Ok();
         var variantRoom = await variant.Snapshot();
-        Assert.Equal(twoBirds, variantRoom.At("room", "rulesVersion").GetString());
+        Assert.Equal(rulesVersion, variantRoom.At("room", "rulesVersion").GetString());
+        Assert.False(classicRoom.Private().TryGetProperty("kongReplacements", out _));
+        Assert.False(variantRoom.Private().TryGetProperty("kongReplacements", out _));
         Assert.Equal("request_conflict", (await variant.Command("createRoom", create with { rulesVersion = "changsha-v1" },
+            createId)).Error());
+        var differentVariant = rulesVersion == "changsha-two-bird-v1" ? "changsha-two-tile-kong-v1" : "changsha-two-bird-v1";
+        Assert.Equal("request_conflict", (await variant.Command("createRoom", create with { rulesVersion = differentVariant },
             createId)).Error());
         Assert.Equal(created.GetRawText(), (await variant.Command("createRoom", create, createId)).GetRawText());
 
@@ -263,7 +269,7 @@ public sealed class RealtimeTests
             : ["matchHands", "occupiedSeats", "roomId"];
         Assert.Equal(fields, classicRow.EnumerateObject().Select(p => p.Name).Order());
         Assert.Equal(fields.Append("rulesVersion").Order(), variantRow.EnumerateObject().Select(p => p.Name).Order());
-        Assert.Equal(twoBirds, variantRow.Text("rulesVersion"));
+        Assert.Equal(rulesVersion, variantRow.Text("rulesVersion"));
         var notFound = await joiner.Command("joinRoom", new { roomId = privateRoom.Text("roomId") });
         Assert.Equal("room_not_found", notFound.Error());
         Assert.Null(notFound.Text("roomId"));
@@ -271,7 +277,7 @@ public sealed class RealtimeTests
         (await joiner.Command("joinRoom", new { inviteCode = privateRoom.Private().Text("inviteCode") })).Ok();
         var joined = await joiner.Snapshot();
         Assert.Equal("waiting", joined.Status());
-        Assert.Equal(twoBirds, joined.At("room", "rulesVersion").GetString());
+        Assert.Equal(rulesVersion, joined.At("room", "rulesVersion").GetString());
         Assert.Equal(new[] { 0, 0, 0, 0 }, joined.At("room", "tableTotals").EnumerateArray().Select(score => score.GetInt32()));
         Assert.False(joined.Chair(1).GetProperty("ready").GetBoolean());
         Assert.Null(joined.Private().Text("inviteCode"));

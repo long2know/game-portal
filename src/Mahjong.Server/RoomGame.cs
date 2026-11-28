@@ -266,7 +266,7 @@ internal sealed class RoomGame(ServerOptions options, ILogger<RoomGame> log)
                 log.LogWarning("A bot could not select an option; attempting a legal fallback.");
             }
             var option = view.LegalOptions.FirstOrDefault(x => x.OptionId == picked)
-                ?? view.LegalOptions.FirstOrDefault(x => x.Kind is "pass" or "draw" or "discard")
+                ?? view.LegalOptions.FirstOrDefault(x => x.Kind is "pass" or "draw" or "discard" or "discardKong")
                 ?? view.LegalOptions[0];
             var move = ChangshaEngine.Apply(room.Game!, new Choose(seat, window.WindowId, option.OptionId), gameTime);
             if (move.Status != MoveStatus.Accepted)

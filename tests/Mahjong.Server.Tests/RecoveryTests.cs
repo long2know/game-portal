@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Mahjong.Rules;
@@ -119,6 +120,220 @@ public sealed class RecoveryTests
         Assert.Equal("request_conflict", (await reconnected.Command("choose", intent with { optionId = "different" },
             id, originalLease)).Error());
         Assert.Equal("stale_window", (await reconnected.Command("choose", intent)).Error());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TwoTileKongRecoversPrivateCandidatesAndCommitsPublicBatchExactlyOnce(bool expire)
+    {
+        const string mount = "/game-portal";
+        const string profile = ChangshaEngine.TwoTileKongProfile;
+        await using var server = new Kestrel(("TurnSeconds", 120), ("ClaimSeconds", 30))
+            .WithSetting("BASE_URL", mount).WithSetting("Portal__Enabled", "true");
+        server.WithSetting("GamePortal__DataDirectory", server.DataDirectory);
+        await server.StartAsync();
+        var hostUser = new User(server, mount);
+        var firstUser = new User(server, mount);
+        var secondUser = new User(server, mount);
+        await hostUser.Guest("Kong declarer");
+        await firstUser.Guest("Bamboo claimant");
+        await secondUser.Guest("Dots claimant");
+        using var host = await hostUser.Connect();
+        using var first = await firstUser.Connect();
+        using var second = await secondUser.Connect();
+        var roomId = (await Start(host, first, hands: 4, profile: profile, another: second)).Text("roomId");
+
+        // Stage only the pre-Kong deal. Kestrel must commit and recover both of the new windows itself.
+        await server.StopAsync();
+        await RewriteCheckpoint(server, roomId, room =>
+        {
+            room["game"] = JsonSerializer.SerializeToNode(TwoTileKongTurn(), Wire.Json);
+            room["windowAnchor"] = room["gameRevision"]!.GetValue<long>();
+            room["nextBotGameTime"] = null;
+        });
+        await server.StartAsync();
+        using var declarer = await hostUser.Connect();
+        using var observer = await firstUser.Connect();
+        (await observer.Sync(roomId)).Ok();
+        (await declarer.Sync(roomId)).Ok();
+        var turn = await declarer.Snapshot();
+        Assert.False(turn.Private().TryGetProperty("kongReplacements", out _));
+        Assert.Equal(JsonValueKind.Null, turn.At("game", "kongRoll").ValueKind);
+        var declare = Choice(turn, Assert.Single(Options(turn, "gang")));
+        var declareId = Guid.NewGuid();
+        var declaration = await declarer.Command("choose", declare, declareId);
+        declaration.Ok();
+        var pending = await declarer.Snapshot();
+        Assert.Equal(turn.GameRevision() + 1, pending.GameRevision());
+        Assert.Equal(turn.RoomRevision(), pending.RoomRevision());
+        Assert.Equal(turn.Table().GetProperty("wallCount").GetInt32() - 2, pending.Table().GetProperty("wallCount").GetInt32());
+        Assert.Equal("turn", pending.Table().Text("phase"));
+        Assert.Equal("turn", pending.Window().Text("reason"));
+        Assert.Equal(JsonValueKind.Null, pending.Window().GetProperty("trigger").ValueKind);
+        Assert.Equal(pending.GameRevision(), pending.Window().GetProperty("anchorGameRevision").GetInt64());
+        Assert.Equal(pending.GetProperty("serverTimeUtc").GetDateTimeOffset().AddSeconds(120),
+            pending.Window().GetProperty("deadlineUtc").GetDateTimeOffset());
+        var roll = pending.At("game", "kongRoll");
+        Assert.Equal(["dice", "lowerDie", "seat", "stackCount", "stackMethod"], roll.EnumerateObject().Select(field => field.Name).Order());
+        Assert.Equal(0, roll.GetProperty("seat").GetInt32());
+        Assert.Equal([4, 1], roll.GetProperty("dice").EnumerateArray().Select(die => die.GetInt32()));
+        Assert.Equal(1, roll.GetProperty("lowerDie").GetInt32());
+        Assert.Equal(5, roll.GetProperty("stackCount").GetInt32());
+        Assert.Equal("sum", roll.Text("stackMethod"));
+
+        var replacements = pending.At("self", "kongReplacements").EnumerateArray().ToArray();
+        var faces = replacements.Select(tile => tile.Text("face")).ToArray();
+        var ids = replacements.Select(tile => tile.Text("tileId")).ToArray();
+        Assert.Equal(["b5", "d5"], faces);
+        Assert.All(replacements, tile => Assert.Equal(["face", "tileId"], tile.EnumerateObject().Select(field => field.Name).Order()));
+        Assert.All(ids, id => Assert.False(string.IsNullOrEmpty(id)));
+        Assert.Equal(2, ids.Distinct().Count());
+        Assert.Empty(pending.At("self", "hand").EnumerateArray().Select(tile => tile.Text("tileId")).Intersect(ids));
+        var discard = Assert.Single(Options(pending, "discardKong"));
+        Assert.Equal(ids, discard.GetProperty("tileIds").EnumerateArray().Select(tile => tile.GetString()));
+        Assert.Equal(faces, discard.GetProperty("faces").EnumerateArray().Select(tile => tile.GetString()));
+        Assert.Empty(Options(pending, "discard"));
+        var batch = Choice(pending, discard);
+        AssertPrivate(await observer.Snapshot(s => s.GameRevision() == pending.GameRevision()));
+
+        await server.StopAsync();
+        await server.StartAsync();
+        using var recoveredHost = await hostUser.Connect();
+        using var recoveredFirst = await firstUser.Connect();
+        (await recoveredHost.Sync(roomId)).Ok();
+        var recovered = await recoveredHost.Snapshot();
+        Assert.Equal(profile, recovered.At("room", "rulesVersion").GetString());
+        Assert.Equal(pending.GameRevision(), recovered.GameRevision());
+        Assert.Equal(pending.RoomRevision(), recovered.RoomRevision());
+        Assert.Equal(pending.Table().GetRawText(), recovered.Table().GetRawText());
+        Assert.Equal(pending.Private().GetRawText(), recovered.Private().GetRawText());
+        Assert.Equal(declaration.GetRawText(), (await recoveredHost.Command("choose", declare, declareId, declarer.Lease)).GetRawText());
+        Assert.Equal(pending.Private().GetRawText(), (await recoveredHost.Snapshot()).Private().GetRawText());
+        (await recoveredFirst.Sync(roomId)).Ok();
+        AssertPrivate(await recoveredFirst.Snapshot());
+        var stolen = await recoveredFirst.Command("choose", batch);
+        Assert.Equal("illegal_option", stolen.Error());
+        Assert.Equal(pending.GameRevision(), stolen.GameRevision());
+        AssertPrivate(await recoveredFirst.Snapshot());
+
+        if (expire)
+        {
+            var deadline = pending.Window().GetProperty("deadlineUtc").GetDateTimeOffset();
+            await server.StopAsync();
+            server.SetClockOffset((int)Math.Ceiling((deadline - DateTimeOffset.UtcNow).TotalSeconds));
+            await server.StartAsync();
+            using var afterExpiry = await hostUser.Connect();
+            (await afterExpiry.Sync(roomId)).Ok();
+            var expired = await afterExpiry.Snapshot();
+            AssertBatch(expired, deadline);
+            Assert.Equal("stale_window", (await afterExpiry.Command("choose", batch)).Error());
+            Assert.Equal(expired.Table().GetRawText(), (await afterExpiry.Snapshot()).Table().GetRawText());
+            return;
+        }
+
+        var batchId = Guid.NewGuid();
+        var batchLease = recoveredHost.Lease;
+        await recoveredHost.Send(new { v = 1, type = "command", requestId = batchId, lease = batchLease, op = "choose", payload = batch });
+        var claim = await recoveredFirst.Snapshot(s => s.GameRevision() > pending.GameRevision());
+        AssertBatch(claim, claim.GetProperty("serverTimeUtc").GetDateTimeOffset());
+
+        // The observer has the commit. Lose the declarer's ack and prove the same receipt and claim are recovered.
+        await server.StopAsync();
+        await server.StartAsync();
+        using var returnedHost = await hostUser.Connect();
+        using var returnedFirst = await firstUser.Connect();
+        using var returnedSecond = await secondUser.Connect();
+        (await returnedHost.Sync(roomId)).Ok();
+        var recoveredClaim = await returnedHost.Snapshot();
+        AssertNoCandidates(recoveredClaim);
+        Assert.Equal(claim.Table().GetRawText(), recoveredClaim.Table().GetRawText());
+        var replay = await returnedHost.Command("choose", batch, batchId, batchLease);
+        replay.Ok();
+        Assert.Equal(claim.GameRevision(), replay.GameRevision());
+        Assert.Equal(claim.RoomRevision(), replay.RoomRevision());
+        Assert.Equal(claim.Table().GetRawText(), (await returnedHost.Snapshot()).Table().GetRawText());
+
+        (await returnedFirst.Sync(roomId)).Ok();
+        var firstClaim = await returnedFirst.Snapshot();
+        (await returnedSecond.Sync(roomId)).Ok();
+        var secondClaim = await returnedSecond.Snapshot();
+        var firstHu = ClaimChoice(firstClaim, "b5");
+        var secondHu = ClaimChoice(secondClaim, "d5");
+        var forged = await returnedSecond.Command("choose", new
+        {
+            secondHu.roomId, secondHu.windowId, secondHu.anchorGameRevision, secondHu.optionId, faces = new[] { "b5" }
+        });
+        Assert.Equal("invalid_request", forged.Error());
+        Assert.Equal("illegal_option", (await returnedSecond.Command("choose", firstHu)).Error());
+        Assert.Equal(claim.Table().GetRawText(), (await returnedSecond.Snapshot()).Table().GetRawText());
+        var accepted = await returnedFirst.Command("choose", firstHu);
+        accepted.Ok();
+        var waiting = await returnedSecond.Snapshot(s => s.GameRevision() > claim.GameRevision());
+        Assert.Equal(claim.GameRevision() + 1, waiting.GameRevision());
+        Assert.Equal(claim.Window().GetRawText(), waiting.Window().GetRawText());
+        Assert.Equal(secondHu, ClaimChoice(waiting, "d5"));
+        Assert.Empty((await returnedFirst.Snapshot()).At("self", "legalOptions").EnumerateArray());
+        var duplicate = await returnedFirst.Command("choose", firstHu);
+        Assert.Equal("illegal_option", duplicate.Error());
+        Assert.Equal(waiting.GameRevision(), duplicate.GameRevision());
+
+        (await returnedSecond.Command("choose", secondHu)).Ok();
+        var settled = await returnedHost.Snapshot(s => s.Status() == "betweenHands");
+        Assert.Equal(waiting.GameRevision() + 1, settled.GameRevision());
+        AssertNoCandidates(settled);
+        var winners = settled.At("game", "settlement").GetProperty("winners").EnumerateArray();
+        Assert.Equal([(1, "b5"), (2, "d5")], winners.Select(winner =>
+            (winner.GetProperty("seat").GetInt32(), Assert.Single(winner.GetProperty("winningTiles").EnumerateArray()).GetString())));
+        Assert.Equal(replay.GetRawText(), (await returnedHost.Command("choose", batch, batchId, batchLease)).GetRawText());
+        Assert.Equal(settled.Table().GetRawText(), (await returnedHost.Snapshot()).Table().GetRawText());
+        Assert.Equal("stale_window", (await returnedHost.Command("choose", batch)).Error());
+        Assert.Equal(settled.GameRevision(), (await returnedHost.Snapshot()).GameRevision());
+
+        void AssertPrivate(JsonElement view)
+        {
+            Assert.Equal(pending.Table().GetRawText(), view.Table().GetRawText());
+            Assert.Empty(view.At("self", "legalOptions").EnumerateArray());
+            Assert.All(faces, face => Assert.DoesNotContain($"\"{face}\"", view.GetRawText()));
+            AssertNoCandidates(view);
+        }
+
+        void AssertNoCandidates(JsonElement view)
+        {
+            Assert.DoesNotContain("\"kongReplacements\"", view.GetRawText());
+            Assert.All(ids, id => Assert.DoesNotContain(id, view.GetRawText()));
+            AssertRedacted(view);
+        }
+
+        void AssertBatch(JsonElement view, DateTimeOffset openedAt)
+        {
+            Assert.Equal(pending.GameRevision() + 1, view.GameRevision());
+            Assert.Equal(pending.RoomRevision(), view.RoomRevision());
+            Assert.Equal(pending.Table().GetProperty("wallCount").GetInt32(), view.Table().GetProperty("wallCount").GetInt32());
+            Assert.Equal("claim", view.Table().Text("phase"));
+            Assert.Equal("kong", view.Window().Text("reason"));
+            Assert.Equal(JsonValueKind.Null, view.At("game", "kongRoll").ValueKind);
+            Assert.NotEqual(batch.windowId, view.Window().Text("windowId"));
+            Assert.Equal(view.GameRevision(), view.Window().GetProperty("anchorGameRevision").GetInt64());
+            Assert.Equal(openedAt.AddSeconds(30), view.Window().GetProperty("deadlineUtc").GetDateTimeOffset());
+            var trigger = view.Window().GetProperty("trigger");
+            Assert.Equal(["faces", "seat"], trigger.EnumerateObject().Select(field => field.Name).Order());
+            Assert.Equal(0, trigger.GetProperty("seat").GetInt32());
+            Assert.Equal(faces, trigger.GetProperty("faces").EnumerateArray().Select(tile => tile.GetString()));
+            Assert.Equal(faces, view.At("game", "seats")[0].GetProperty("discards").EnumerateArray().Select(tile => tile.GetString()));
+            AssertNoCandidates(view);
+        }
+
+        ChoicePayload ClaimChoice(JsonElement view, string face)
+        {
+            AssertNoCandidates(view);
+            Assert.Equal(["hu", "pass"], view.At("self", "legalOptions").EnumerateArray()
+                .Select(option => option.Text("kind")).Order());
+            var hu = Assert.Single(Options(view, "hu"));
+            Assert.Equal(face, Assert.Single(hu.GetProperty("faces").EnumerateArray()).GetString());
+            Assert.Empty(hu.GetProperty("tileIds").EnumerateArray());
+            return Choice(view, hu);
+        }
     }
 
     [Fact]
@@ -700,24 +915,32 @@ public sealed class RecoveryTests
         Assert.Equal("lease", (await client.Take()).Text("type"));
     }
 
-    private static async Task<JsonElement> Start(Client host, Client? other = null, int hands = 1, string? profile = null)
+    private static async Task<JsonElement> Start(Client host, Client? other = null, int hands = 1, string? profile = null,
+        Client? another = null)
     {
-        object create = profile is null ? new { visibility = "invite", matchHands = hands, fillBots = other is null } :
-            new { visibility = "invite", matchHands = hands, fillBots = other is null, rulesVersion = profile };
+        var members = new[] { other, another }.OfType<Client>().ToArray();
+        object create = profile is null ? new { visibility = "invite", matchHands = hands, fillBots = members.Length == 0 } :
+            new { visibility = "invite", matchHands = hands, fillBots = members.Length == 0, rulesVersion = profile };
         (await host.Command("createRoom", create)).Ok();
         var snapshot = await host.Snapshot();
         var roomId = snapshot.Text("roomId");
-        if (other is not null)
+        if (members.Length > 0)
         {
-            (await other.Command("joinRoom", new { inviteCode = snapshot.Private().Text("inviteCode") })).Ok();
-            snapshot = await host.Snapshot(s => s.Connected(1));
-            for (var seat = 2; seat <= 3; seat++)
+            for (var index = 0; index < members.Length; index++)
+            {
+                (await members[index].Command("joinRoom", new { inviteCode = snapshot.Private().Text("inviteCode") })).Ok();
+                snapshot = await host.Snapshot(s => s.Connected(index + 1));
+            }
+            for (var seat = members.Length + 1; seat <= 3; seat++)
             {
                 (await host.Command("setBot", new { roomId, expectedRoomRevision = snapshot.RoomRevision(), seat, enabled = true })).Ok();
                 snapshot = await host.Snapshot();
             }
-            (await other.Command("setReady", new { roomId, expectedRoomRevision = snapshot.RoomRevision(), ready = true })).Ok();
-            snapshot = await host.Snapshot(s => s.Chair(1).GetProperty("ready").GetBoolean());
+            for (var index = 0; index < members.Length; index++)
+            {
+                (await members[index].Command("setReady", new { roomId, expectedRoomRevision = snapshot.RoomRevision(), ready = true })).Ok();
+                snapshot = await host.Snapshot(s => s.Chair(index + 1).GetProperty("ready").GetBoolean());
+            }
         }
         (await host.Command("setReady", new { roomId, expectedRoomRevision = snapshot.RoomRevision(), ready = true })).Ok();
         snapshot = await host.Snapshot(s => s.Chair(0).GetProperty("ready").GetBoolean());
@@ -731,6 +954,50 @@ public sealed class RecoveryTests
     private static bool IsDealerTurn(JsonElement snapshot) =>
         snapshot.Status() == "playing" && snapshot.Window().Text("reason") == "turn"
         && snapshot.Table().GetProperty("turnSeat").GetInt32() == 0;
+
+    private static GameState TwoTileKongTurn()
+    {
+        var state = ChangshaEngine.StartHand(new(2, 0, new(369045, 29), ChangshaEngine.TwoTileKongProfile,
+            TimeSpan.FromSeconds(120), TimeSpan.FromSeconds(30)), DateTimeOffset.UtcNow);
+        if (state.Window is { Kind: DecisionKind.Opening } opening)
+            foreach (var decision in opening.Decisions)
+            {
+                var pass = ChangshaEngine.ViewSeat(state, decision.Seat).LegalOptions.Single(option => option.Kind == "pass");
+                var moved = ChangshaEngine.Apply(state, new Choose(decision.Seat, opening.Id, pass.OptionId), state.AdvancedAtGameTime);
+                Assert.Equal(MoveStatus.Accepted, moved.Status);
+                state = moved.State;
+            }
+
+        // The dealer rolls 4+1. Put distinct rival Hu waits in the fifth live stack, rear first.
+        var pool = state.Wall.Select(tile => tile.Tile)
+            .Concat(state.Seats.Skip(1).SelectMany(seat => seat.Hand)).OrderBy(tile => tile.Number).ToList();
+        WallTile[] stack = [new(Take("d5"), 98), new(Take("b5"), 99)];
+        var seats = state.Seats.ToBuilder();
+        seats[1] = seats[1] with { Hand = Hand("b3 b4 c4 c5 c6 d1 d2 d3 d7 d8 d9 c8 c8") };
+        seats[2] = seats[2] with { Hand = Hand("d6 d7 b1 b2 b3 c2 c3 c4 c7 c8 c9 b8 b8") };
+        seats[3] = seats[3] with { Hand = Hand("b1 b1 b4 b6 b9 c2 c2 c5 c7 c9 d1 d6 d9") };
+        var rest = state.Wall.Where(tile => tile.Slot is not (98 or 99)).Zip(pool, (slot, tile) => slot with { Tile = tile });
+        return state with
+        {
+            Seats = seats.ToImmutable(),
+            Wall = [.. stack.Concat(rest).OrderBy(tile => tile.Slot)]
+        };
+
+        ImmutableArray<PhysicalTile> Hand(string faces) => [.. faces.Split(' ').Select(Take).OrderBy(tile => tile.Number)];
+
+        PhysicalTile Take(string face)
+        {
+            var faceIndex = "bcd".IndexOf(face[0]) * 9 + face[1] - '1';
+            var index = pool.FindIndex(tile => tile.Number / 4 == faceIndex);
+            Assert.True(index >= 0, $"No tile remains for fixture face {face}.");
+            var tile = pool[index];
+            pool.RemoveAt(index);
+            return tile;
+        }
+    }
+
+    private static IEnumerable<JsonElement> Options(JsonElement snapshot, string kind) =>
+        snapshot.At("self", "legalOptions").EnumerateArray().Where(option => option.Text("kind") == kind);
 
     private static async Task<JsonElement> PlayHand(Client host, JsonElement snapshot)
     {

@@ -167,11 +167,14 @@ public sealed class PublicSeatTests
         }
     }
 
-    [Fact]
-    public async Task PausedKongTakeoverAndBothHandoffsPreserveTheGameAndRecoverTheirReceipts()
+    [Theory]
+    [InlineData(ChangshaEngine.Profile)]
+    [InlineData(ChangshaEngine.TwoTileKongProfile)]
+    public async Task PausedKongTakeoverAndBothHandoffsPreserveTheGameAndRecoverTheirReceipts(string profile)
     {
         const string mount = "/portal";
         const int delay = 1000;
+        var twoTile = profile == ChangshaEngine.TwoTileKongProfile;
         await using var server = Mounted(mount, delay: delay);
         await server.StartAsync();
         var hostUser = await Guest(server, mount, "First host");
@@ -179,10 +182,10 @@ public sealed class PublicSeatTests
         var newcomerUser = await Guest(server, mount, "New player");
         using var firstHost = await hostUser.Connect();
         using var firstMember = await memberUser.Connect();
-        var roomId = (await Start(firstHost, "public", 4, firstMember)).Text("roomId");
+        var roomId = (await StartWithProfile(firstHost, "public", 4, twoTile ? profile : null, firstMember)).Text("roomId");
 
         await server.StopAsync();
-        var turn = DealForTurn(2, 2, seed: 369045);
+        var turn = DealForTurn(2, 2, seed: 369045, profile);
         var rolled = Apply(turn, 2, ChangshaEngine.ViewSeat(turn, 2).LegalOptions.Single(option => option.Kind == "gang"));
         await Seed(server, roomId, rolled, room =>
         {
@@ -202,6 +205,10 @@ public sealed class PublicSeatTests
         Assert.Equal(2, rolledDetails.GetProperty("seat").GetInt32());
         Assert.Equal(new[] { 4, 1 }, rolledDetails.GetProperty("dice").EnumerateArray().Select(die => die.GetInt32()));
         Assert.Equal(1, rolledDetails.GetProperty("lowerDie").GetInt32());
+        string[] rollFields = twoTile ? ["dice", "lowerDie", "seat", "stackCount", "stackMethod"] : ["dice", "lowerDie", "seat"];
+        Assert.Equal(rollFields, rolledDetails.EnumerateObject().Select(field => field.Name).Order());
+        AssertRow(Assert.Single(await List(newcomerUser)), roomId, "playing", "First host", occupied: 4, bots: 2,
+            rulesVersion: twoTile ? profile : null);
         Assert.Equal(rolled.AdvancedAtGameTime.AddSeconds(20), (await ReadCheckpoint(server, roomId)).NextBotGameTime);
 
         var normalId = Guid.NewGuid();
@@ -233,9 +240,15 @@ public sealed class PublicSeatTests
         var expectedRack = ChangshaEngine.ViewSeat(rolled, 2).Hand.Select(tile => (tile.TileId, tile.Face));
         Assert.Equal(expectedRack, joined.At("self", "hand").EnumerateArray().Select(tile => (tile.Text("tileId"), tile.Text("face"))));
         Assert.Empty(joined.At("self", "legalOptions").EnumerateArray());
+        Assert.Equal(twoTile, joined.Private().TryGetProperty("kongReplacements", out var replacements));
+        if (twoTile)
+            Assert.Equal(["d3", "d3"], replacements.EnumerateArray().Select(tile => tile.Text("face")));
+        var replacementIds = twoTile ? replacements.EnumerateArray().Select(tile => tile.Text("tileId")).ToArray() : [];
+        Assert.Equal(replacementIds.Length, replacementIds.Distinct().Count());
         var hostWithNewcomer = await host.Snapshot(s => s.RoomRevision() == joined.RoomRevision());
         Assert.Equal(paused.Private().GetRawText(), hostWithNewcomer.Private().GetRawText());
-        Assert.All(TileIds(joined), id => Assert.DoesNotContain(id, hostWithNewcomer.GetRawText()));
+        Assert.False(hostWithNewcomer.Private().TryGetProperty("kongReplacements", out _));
+        Assert.All(TileIds(joined).Concat(replacementIds), id => Assert.DoesNotContain(id, hostWithNewcomer.GetRawText()));
         Assert.All(TileIds(hostWithNewcomer).Concat(TileIds(memberBefore)), id => Assert.DoesNotContain(id, joined.GetRawText()));
         var afterTakeover = await ReadCheckpoint(server, roomId);
         Assert.Null(afterTakeover.NextBotGameTime);
@@ -275,7 +288,8 @@ public sealed class PublicSeatTests
         Assert.Empty(await Saves(hostUser));
         Assert.Empty(await Saves(newcomerUser));
         Assert.Equal(roomId, Assert.Single(await Saves(memberUser)).Text("tableId"));
-        AssertRow(Assert.Single(await List(newcomerUser)), roomId, "playing", "Remaining member", occupied: 4, bots: 3);
+        AssertRow(Assert.Single(await List(newcomerUser)), roomId, "playing", "Remaining member", occupied: 4, bots: 3,
+            rulesVersion: twoTile ? profile : null);
         Assert.Equal(1L, await Sql(server, "SELECT count(*) FROM Memberships WHERE RoomId=$id", ("$id", roomId)));
 
         await server.StopAsync();
@@ -294,6 +308,7 @@ public sealed class PublicSeatTests
         Assert.Equal(transferred.GameRevision(), recovered.GameRevision());
         Assert.Equal(transferred.Table().GetRawText(), recovered.Table().GetRawText());
         Assert.Equal(transferred.Private().GetRawText(), recovered.Private().GetRawText());
+        Assert.All(replacementIds, id => Assert.DoesNotContain(id, recovered.GetRawText()));
         Assert.Equal(scheduled, (await ReadCheckpoint(server, roomId)).NextBotGameTime);
         Assert.DoesNotContain("releasedGuests", recovered.GetRawText());
 
@@ -303,8 +318,10 @@ public sealed class PublicSeatTests
         var processed = await remaining.Snapshot(s => s.GameRevision() > resumed.GameRevision());
         Assert.Equal(resumed.GameRevision() + 1, processed.GameRevision());
         Assert.True(processed.GetProperty("serverTimeUtc").GetDateTimeOffset() >= botDueUtc);
-        var forcedDiscard = ChangshaEngine.ViewSeat(rolled, 2).LegalOptions.Single(option => option.Kind == "discard").Faces[0];
-        Assert.Equal(forcedDiscard, Assert.Single(processed.At("game", "seats")[2].GetProperty("discards").EnumerateArray()).GetString());
+        var forcedDiscard = ChangshaEngine.ViewSeat(rolled, 2).LegalOptions
+            .Single(option => option.Kind == (twoTile ? "discardKong" : "discard"));
+        Assert.Equal(forcedDiscard.Faces,
+            processed.At("game", "seats")[2].GetProperty("discards").EnumerateArray().Select(tile => tile.GetString()));
         await NoSnapshot(returned);
     }
 
@@ -502,15 +519,21 @@ public sealed class PublicSeatTests
         return user;
     }
 
-    private static async Task<JsonElement> Create(Client host, string visibility, int matchHands, bool bots)
+    private static async Task<JsonElement> Create(Client host, string visibility, int matchHands, bool bots, string? profile = null)
     {
-        (await host.Command("createRoom", new { visibility, matchHands, fillBots = bots })).Ok();
+        object payload = profile is null ? new { visibility, matchHands, fillBots = bots }
+            : new { visibility, matchHands, fillBots = bots, rulesVersion = profile };
+        (await host.Command("createRoom", payload)).Ok();
         return await host.Snapshot();
     }
 
-    private static async Task<JsonElement> Start(Client host, string visibility, int hands, params Client[] members)
+    private static Task<JsonElement> Start(Client host, string visibility, int hands, params Client[] members) =>
+        StartWithProfile(host, visibility, hands, null, members);
+
+    private static async Task<JsonElement> StartWithProfile(Client host, string visibility, int hands, string? profile,
+        params Client[] members)
     {
-        var current = await Create(host, visibility, hands, bots: members.Length == 0);
+        var current = await Create(host, visibility, hands, bots: members.Length == 0, profile);
         var roomId = current.Text("roomId");
         var inviteCode = current.Private().Text("inviteCode");
         foreach (var member in members)
@@ -626,10 +649,13 @@ public sealed class PublicSeatTests
         return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("saves").EnumerateArray().ToArray();
     }
 
-    private static void AssertRow(JsonElement row, string roomId, string status, string host, int occupied, int bots)
+    private static void AssertRow(JsonElement row, string roomId, string status, string host, int occupied, int bots,
+        string? rulesVersion = null)
     {
-        Assert.Equal(new[] { "botSeats", "hostName", "matchHands", "occupiedSeats", "roomId", "status" },
+        string[] fields = ["botSeats", "hostName", "matchHands", "occupiedSeats", "roomId", "status"];
+        Assert.Equal(rulesVersion is null ? fields : fields.Append("rulesVersion").Order(),
             row.EnumerateObject().Select(field => field.Name).Order());
+        if (rulesVersion is not null) Assert.Equal(rulesVersion, row.Text("rulesVersion"));
         Assert.Equal(roomId, row.Text("roomId"));
         Assert.Equal(status, row.Text("status"));
         Assert.Equal(host, row.Text("hostName"));
@@ -654,9 +680,9 @@ public sealed class PublicSeatTests
         anchorGameRevision = snapshot.Window().GetProperty("anchorGameRevision").GetInt64(), optionId = option.Text("optionId")
     };
 
-    private static GameState DealForTurn(int hand, int dealer, ulong seed)
+    private static GameState DealForTurn(int hand, int dealer, ulong seed, string profile = ChangshaEngine.Profile)
     {
-        var game = ChangshaEngine.StartHand(new(hand, dealer, new(seed, 29), ChangshaEngine.Profile,
+        var game = ChangshaEngine.StartHand(new(hand, dealer, new(seed, 29), profile,
             TimeSpan.FromSeconds(120), TimeSpan.FromSeconds(30)), DateTimeOffset.UtcNow);
         if (game.Window is { Kind: DecisionKind.Opening } opening)
             foreach (var decision in opening.Decisions)
