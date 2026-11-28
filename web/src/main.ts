@@ -416,6 +416,7 @@ class LanternTable {
         available: this.session.available && !this.profileBusy, portal: fromPortal,
         audio: this.audio, modal: this.modal, opener: this.settingsButton,
         leave: payload => this.command({ op: "leaveRoom", payload }),
+        releasingSeat: () => this.session.releasingSeat,
         save: (name, prefs, form, control, choices) => void this.saveSettings(name, prefs, form, control, choices),
       });
     } catch { this.showNotice("Settings couldn’t load. Please try again."); }

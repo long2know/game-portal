@@ -13,6 +13,7 @@ interface Settings {
   modal: Modal;
   opener: HTMLButtonElement;
   leave: (payload: Payloads["leaveRoom"]) => boolean;
+  releasingSeat: () => boolean;
   save: (name: string, prefs: Preferences, form: HTMLFormElement, control: HTMLButtonElement, choices?: AudioChoices) => void;
 }
 
@@ -27,7 +28,7 @@ function select(options: [string, string][], value: string): HTMLSelectElement {
   return input;
 }
 
-export function showSettings({ guest, snapshot, available, portal, audio, modal, opener, leave, save }: Settings): (enabled: boolean) => void {
+export function showSettings({ guest, snapshot, available, portal, audio, modal, opener, leave, releasingSeat, save }: Settings): (enabled: boolean) => void {
   const name = nameField(guest.displayName);
   name.required = true;
   const preferences = guest.preferences;
@@ -104,7 +105,6 @@ export function showSettings({ guest, snapshot, available, portal, audio, modal,
   const canRelease = (state: Snapshot | null) => portal && state?.room.status === "playing" &&
     state.room.seats.some(seat => seat.kind === "human" && seat.seat !== state.self.seat);
   let enabled = available;
-  let pending = false;
   const leaveButton = button("Leave table", "btn subtle", () => {
     const state = room();
     if (enabled && state) leave({ roomId: state.roomId, expectedRoomRevision: state.roomRevision });
@@ -129,11 +129,7 @@ export function showSettings({ guest, snapshot, available, portal, audio, modal,
   const confirm = button(handoffLabel, "btn primary", () => {
     const state = room();
     if (!enabled || !state || !canRelease(state)) return;
-    pending = true;
-    if (!leave({ roomId: state.roomId, expectedRoomRevision: state.roomRevision, replaceWithBot: true })) {
-      pending = false;
-      update(false);
-    }
+    if (!leave({ roomId: state.roomId, expectedRoomRevision: state.roomRevision, replaceWithBot: true })) update(false);
   });
   const warning = el("p", "detail", "A bot takes your place in the current hand. The other players keep playing. Your seat won’t be reserved, and you can’t rejoin this hand.");
   warning.id = "seat-handoff-warning";
@@ -149,7 +145,6 @@ export function showSettings({ guest, snapshot, available, portal, audio, modal,
   }
   function update(available: boolean): void {
     enabled = available;
-    if (available) pending = false;
     const state = room();
     const reserve = state?.room.status === "playing" || state?.room.status === "betweenHands";
     leaveButton.hidden = !state;
@@ -160,6 +155,7 @@ export function showSettings({ guest, snapshot, available, portal, audio, modal,
     handoffActions.hidden = !eligible;
     handoff.disabled = !available;
     confirm.disabled = !available || !eligible;
+    const pending = releasingSeat();
     cancel.disabled = pending;
     const status = pending ? "Waiting for the table to confirm your handoff…" :
       eligible ? "" : "The handoff is no longer available. Return to Settings to review the table.";
