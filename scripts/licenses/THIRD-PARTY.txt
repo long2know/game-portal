@@ -23,6 +23,10 @@ David Bellot and contributors, distributed here under LGPL 2.1. See
 Bellot-Courts-NOTICE.txt, Bellot-Courts-LGPL-2.1.txt and
 Bellot-Courts-AUTHORS.txt.
 
+Windward Ledger uses the sea texture by zookeeper and Zabin (CC0 1.0) and
+Tailwind (excerpt) by Alexander Zhelanov (CC BY 4.0). See
+Windward-FreeCol-NOTICE.txt for pinned sources, license links and edits.
+
 When included, Jade Letters uses a modified subset of SCOWL 2020.12.07.
 Copyright 2000-2018 by Kevin Atkinson. See SCOWL-2020.12.07.txt for
 the full redistribution notice, component notices, and disclaimers.

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 
 test.beforeEach(({ baseURL }) => {
@@ -47,7 +48,10 @@ test("a 320px voyage charts fog, works two ports, resumes and earns its original
   page.on("request", request => traffic.add(new URL(request.url()).pathname));
   await page.setViewportSize({ width: 320, height: 730 });
   await page.goto(mount.href);
-  await page.getByRole("link", { name: "Play Windward Ledger", exact: true }).tap();
+  const entry = page.getByRole("link", { name: "Play Windward Ledger", exact: true });
+  await expect(entry).toBeVisible();
+  expect([...traffic].filter(path => /\/assets\/windward-/.test(path))).toEqual([]);
+  await entry.tap();
   await expect(page).toHaveURL(new URL("windward-ledger/", mount).href);
   await expect(page.getByRole("heading", { name: "Windward Ledger", level: 1 })).toBeVisible();
   const { api, cell, chart, control, start, order } = voyage(page, mount.href);
@@ -57,7 +61,16 @@ test("a 320px voyage charts fog, works two ports, resumes and earns its original
   const make = (name: string, value: number) => order(`Make ${name}`, { kind: "assign", value });
   const found = () => order("Establish port", { kind: "found" });
   const deliver = () => order("Deliver cargo", { kind: "deliver" });
+  const sea = page.waitForResponse(response => /\/assets\/windward-sea-[\w-]+\.png$/.test(response.url()));
   await start(true);
+  const texture = await sea;
+  expect(new URL(texture.url()).pathname).toMatch(new RegExp(`^${mount.pathname}assets/windward-sea-[\\w-]+\\.png$`));
+  expect(texture.headers()["content-type"]).toBe("image/png");
+  expect(createHash("sha256").update(await texture.body()).digest("hex"))
+    .toBe("c1e4b9dddf2acb2f11153749212aada489c69c60b062ace69f4170a13137591f");
+  const fill = (label: string) => cell(label).evaluate(node => getComputedStyle(node).backgroundImage);
+  expect(await fill("B4 · Open water")).toContain(texture.url());
+  expect(await fill("B3 · Uncharted")).not.toContain(texture.url());
   await expect(chart.locator("td[data-kind]")).toHaveCount(42);
   await expect(chart.locator("td[data-kind=fog]")).toHaveCount(38);
   await expect(cell("A4 · Lantern Dock · home dock · Cutter here").locator(".windward-cutter path"))
@@ -162,6 +175,138 @@ test("a 320px voyage charts fog, works two ports, resumes and earns its original
     expect.stringMatching(/\/assets\/windward-ledger-[\w-]+\.css$/),
   ]));
   expect([...traffic].filter(path => /\.(wav|mp3|ogg)$/.test(path))).toEqual([]);
+});
+
+test("Tailwind plays the credited excerpt only on tap and pauses across page lifecycle changes", async ({
+  page, baseURL, request,
+}) => {
+  const mount = new URL(baseURL!);
+  const musicKey = `${mount.pathname}court-music`;
+  await page.addInitScript(key => localStorage.setItem(key, "pending-on"), musicKey);
+  const traffic = new Set<string>();
+  page.on("request", r => traffic.add(new URL(r.url()).pathname));
+  await page.setViewportSize({ width: 320, height: 730 });
+  await page.goto(new URL("windward-ledger/", mount).href);
+  const { control, start } = voyage(page, mount.href);
+  const media = page.getByRole("region", { name: "Windward Ledger media" });
+  const title = "Tailwind (excerpt)";
+  const play = control(`Play ${title}`);
+  const pause = control(`Pause ${title}`);
+  const resume = control(`Resume ${title}`);
+  const audio = media.locator("audio");
+  const playback = () => audio.evaluate(node => {
+    const { paused, muted, volume, currentTime, duration, currentSrc } = node as HTMLAudioElement;
+    return { paused, muted, volume, currentTime, duration, currentSrc };
+  });
+  await expect(play).toBeVisible();
+  await expect(page.getByRole("button", { name: "Online lobby", exact: true })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("button", { name: /music/i })).toHaveCount(0);
+  const credits = media.getByText("Media credits", { exact: true });
+  await credits.tap();
+  const pinned = "https://github.com/FreeCol/freecol/blob/7b59d42d54b31388194fba88cd31753aca2820b1/data/default/resources";
+  await expect(media.getByRole("link", { name: title, exact: true })).toHaveAttribute("href", `${pinned}/music/default/tailwind.ogg`);
+  await expect(media.getByRole("link", { name: "Sea texture (center0.png)", exact: true }))
+    .toHaveAttribute("href", `${pinned}/images/terrain/ocean/center0.png`);
+  await expect(media.getByText("by Alexander Zhelanov", { exact: false })).toBeVisible();
+  await expect(media.getByText("by zookeeper and Zabin", { exact: false })).toBeVisible();
+  await expect(media.getByRole("link", { name: "CC BY 4.0", exact: true }))
+    .toHaveAttribute("href", "https://creativecommons.org/licenses/by/4.0/");
+  await expect(media.getByRole("link", { name: "CC0 1.0", exact: true }))
+    .toHaveAttribute("href", "https://creativecommons.org/publicdomain/zero/1.0/");
+  await credits.tap();
+  await start(true);
+  await play.evaluate(node => (node as HTMLButtonElement).click());
+  await expect(play).toBeVisible();
+  await expect(audio).not.toHaveAttribute("src", /.+/);
+  expect([...traffic].filter(path => /\.(mp3|ogg|wav)$/.test(path))).toEqual([]);
+  const { width, height, x } = (await play.boundingBox())!;
+  expect(Math.min(width, height)).toBeGreaterThanOrEqual(44);
+  expect(x + width).toBeLessThanOrEqual(320);
+
+  await play.tap();
+  await expect(pause).toBeVisible();
+  await expect.poll(async () => (await playback()).currentTime).toBeGreaterThan(.25);
+  const playing = await playback();
+  expect(playing).toMatchObject({ paused: false, muted: false, volume: 1 });
+  expect(Math.abs(playing.duration - 25)).toBeLessThan(.15);
+  const clipUrl = new URL(playing.currentSrc);
+  expect(clipUrl.origin).toBe(mount.origin);
+  expect(clipUrl.pathname).toMatch(new RegExp(`^${mount.pathname}assets/windward-tailwind-[\\w-]+\\.mp3$`));
+  expect([...traffic].filter(path => /\.(mp3|ogg|wav)$/.test(path))).toEqual([clipUrl.pathname]);
+  const excerpt = await request.get(playing.currentSrc);
+  expect(excerpt.headers()["content-type"]).toBe("audio/mpeg");
+  const bytes = await excerpt.body();
+  expect(bytes.length).toBeLessThanOrEqual(192 * 1024);
+  expect(createHash("sha256").update(bytes).digest("hex")).toBe("258705835dea28bf605006a76ba7b55c5b5731751f2d39b2924554b8c36c4456");
+
+  const cues = control("Maritime cues");
+  await expect(cues).toHaveAttribute("aria-pressed", "false");
+  await cues.tap();
+  await expect(cues).toHaveAttribute("aria-pressed", "true");
+  await expect(pause).toBeVisible();
+  await cues.tap();
+  await expect(cues).toHaveAttribute("aria-pressed", "false");
+  await pause.tap();
+  await expect(resume).toBeVisible();
+  const stopped = await playback();
+  expect(stopped.paused).toBe(true);
+  await resume.tap();
+  await expect.poll(async () => (await playback()).currentTime).toBeGreaterThan(stopped.currentTime);
+
+  const visibility = (hidden: boolean) => page.evaluate(hidden => {
+    Object.defineProperty(document, "hidden", { configurable: true, value: hidden });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, hidden);
+  await visibility(true);
+  await expect(resume).toBeVisible();
+  const hidden = await playback();
+  expect(hidden.paused).toBe(true);
+  await visibility(false);
+  expect(await playback()).toEqual(hidden);
+
+  await resume.tap();
+  await audio.evaluate(node => {
+    const clip = node as HTMLAudioElement;
+    clip.currentTime = clip.duration - .2;
+  });
+  await control(`Replay ${title}`).tap();
+  await expect.poll(async () => {
+    const { paused, currentTime } = await playback();
+    return !paused && currentTime > 0 && currentTime < 5;
+  }).toBe(true);
+  expect([...traffic].filter(path => /\/ambient-|\/api\/profile$/.test(path))).toEqual([]);
+  expect(await page.evaluate(key => localStorage.getItem(key), musicKey)).toBe("pending-on");
+
+  await page.reload();
+  await expect(play).toBeVisible();
+  await expect(audio).not.toHaveAttribute("src", /.+/);
+  await play.tap();
+  await expect.poll(async () => (await playback()).currentTime).toBeGreaterThan(.25);
+  await audio.evaluate(node => {
+    window.addEventListener("pagehide", () => {
+      sessionStorage.setItem("windward-pagehide-paused", String((node as HTMLAudioElement).paused));
+    }, { once: true });
+  });
+  await page.getByRole("link", { name: "‹ All games", exact: true }).tap();
+  await expect(page).toHaveURL(mount.href);
+  expect(await page.evaluate(() => sessionStorage.getItem("windward-pagehide-paused"))).toBe("true");
+});
+
+test("an unavailable Tailwind excerpt reports its failure and retries on tap", async ({ page, baseURL }) => {
+  let blocked = true;
+  await page.route(/\/assets\/windward-tailwind-[\w-]+\.mp3$/, route =>
+    blocked ? route.fulfill({ status: 404, headers: { "cache-control": "no-store" } }) : route.continue());
+  await page.goto(new URL("windward-ledger/", baseURL!).href);
+  const { control } = voyage(page, baseURL!);
+  const play = control("Play Tailwind (excerpt)");
+  const media = page.getByRole("region", { name: "Windward Ledger media" });
+  await play.tap();
+  await expect(media.getByRole("status")).toHaveText("Tailwind couldn’t play. Try again.");
+  await expect(control("Start voyage")).toBeEnabled();
+  blocked = false;
+  await play.tap();
+  await expect(media.getByRole("status")).toBeEmpty();
+  await expect.poll(() => media.locator("audio").evaluate(node => (node as HTMLAudioElement).currentTime)).toBeGreaterThan(.25);
 });
 
 test.describe("desktop voyage", () => {

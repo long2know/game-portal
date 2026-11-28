@@ -50,7 +50,7 @@ function changeProfile(change: ProfileChange, refresh = false): Promise<Guest> {
   return write;
 }
 
-const music = localPuzzle ? null : new MusicControl(mount, enabled => changeProfile(({ preferences }) => ({
+const music = localPuzzle || route === "windward-ledger" ? null : new MusicControl(mount, enabled => changeProfile(({ preferences }) => ({
   preferences: { ...preferences, music: enabled },
 }), true));
 const brand = link("", mount, "brand");
@@ -61,7 +61,7 @@ mahjong.setAttribute("aria-label", "Mahjong table");
 mahjong.append(el("span", "", "Mahjong", el("span", "wide-nav-label", " table")));
 const socialButton = button("", "button court-lobby-trigger");
 socialButton.append(icon("globe"));
-const nav = el("nav", "site-nav", ...(music ? [music.button, socialButton] : []),
+const nav = el("nav", "site-nav", ...(music ? [music.button] : []), ...(localPuzzle ? [] : [socialButton]),
   localPuzzle || isBoardId(route) || isExpansionId(route) || route === "lantern-run"
   ? link("‹ All games", mount, "button")
   : mahjong);
@@ -109,7 +109,7 @@ if (route === "daily-court") {
 } else if (route === "mahjong-solitaire" || route === "nonograms") {
   const load = route === "nonograms" ? () => import("./games/nonograms") : () => import("./games/mahjong-solitaire");
   void openGame(catalog[route].name, async () => (await load()).mount({ main, mount }));
-} else if (music) {
+} else {
   const onlineGame = isInviteGame(route);
   const localOnly = !onlineGame && route !== "solitaire" && route !== "sudoku";
   const social = onlineLobby(socialButton, { mount, openGuest, saveName: name => changeProfile(() => ({ displayName: name })) }, !onlineGame, localOnly);
@@ -120,7 +120,7 @@ if (route === "daily-court") {
     if (route === "lantern-run") {
       void openGame(catalog[route].name, async () => (await import("./games/lantern-run")).mount(host));
     } else main.append(lobby(mount));
-    if (music.remembered) void openGuest().catch(() => music.preferencesUnavailable());
+    if (music?.remembered) void openGuest().catch(() => music.preferencesUnavailable());
   }
-  music.restorePending();
+  music?.restorePending();
 }

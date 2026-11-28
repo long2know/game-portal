@@ -1,0 +1,18 @@
+Windward Ledger media from FreeCol/freecol
+Revision: 7b59d42d54b31388194fba88cd31753aca2820b1
+
+Sea texture (center0.png) by zookeeper and Zabin — CC0 1.0
+https://creativecommons.org/publicdomain/zero/1.0/
+Source: https://github.com/FreeCol/freecol/blob/7b59d42d54b31388194fba88cd31753aca2820b1/data/default/resources/images/terrain/ocean/center0.png
+Credits: https://opengameart.org/content/the-battle-for-wesnoth-water-animation
+Git blob: ab4263827f99f81b9fc25f853b309dbf60e1a005
+Shipped as windward-sea.png, unmodified; cropped and tinted in CSS.
+
+Tailwind (excerpt) by Alexander Zhelanov — CC BY 4.0
+https://creativecommons.org/licenses/by/4.0/
+Source: https://github.com/FreeCol/freecol/blob/7b59d42d54b31388194fba88cd31753aca2820b1/data/default/resources/music/default/tailwind.ogg
+Credits: https://github.com/FreeCol/freecol/blob/7b59d42d54b31388194fba88cd31753aca2820b1/data/default/resources/music/default/README.md
+Git blob: 614e2251232e8beceaf149d23b41534b17ee698b
+Shipped as windward-tailwind.mp3: first 25 seconds with a 3-second fade-out,
+downmixed to mono and encoded at 44.1 kHz and 56 kb/s. The original does not ship.
+Excerpt SHA-256: 258705835dea28bf605006a76ba7b55c5b5731751f2d39b2924554b8c36c4456

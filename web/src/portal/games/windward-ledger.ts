@@ -1,5 +1,5 @@
 import "./windward-ledger.css";
-import { button, el, svg, text } from "../dom";
+import { button, el, link, svg, text } from "../dom";
 import type { PortalHost } from "../host";
 import { solo, type SoloView } from "./solo";
 
@@ -257,6 +257,58 @@ function maritimeCues() {
   };
 }
 
+function voyageMedia(): HTMLElement {
+  const title = "Tailwind (excerpt)";
+  const audio = el("audio");
+  audio.preload = "none";
+  audio.hidden = true;
+  const control = button(`Play ${title}`, "button secondary");
+  const status = el("p", "windward-note");
+  status.id = "windward-music-status";
+  status.setAttribute("role", "status");
+  control.setAttribute("aria-describedby", status.id);
+  let attempt = 0;
+  const paint = () => {
+    const action = audio.ended ? "Replay" : !audio.paused ? "Pause" : audio.currentTime > 0 ? "Resume" : "Play";
+    text(control, `${action} ${title}`);
+  };
+  const pause = () => {
+    ++attempt;
+    audio.pause();
+    paint();
+  };
+  const failure = () => {
+    pause();
+    text(status, "Tailwind couldn’t play. Try again.");
+  };
+  control.addEventListener("click", event => {
+    if (!event.isTrusted || document.hidden) return;
+    if (!audio.paused) { pause(); return; }
+    const requested = ++attempt;
+    text(status, "");
+    if (!audio.src || audio.error) audio.src = new URL("../assets/windward-tailwind.mp3?no-inline", import.meta.url).href;
+    void audio.play().catch(() => { if (requested === attempt) failure(); });
+    paint();
+  });
+  audio.addEventListener("playing", paint);
+  audio.addEventListener("pause", paint);
+  audio.addEventListener("ended", paint);
+  audio.addEventListener("error", failure);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) pause(); });
+  window.addEventListener("pagehide", pause);
+
+  const source = "https://github.com/FreeCol/freecol/blob/7b59d42d54b31388194fba88cd31753aca2820b1/data/default/resources";
+  const credits = el("details", "windward-rules", el("summary", "", "Media credits"),
+    el("p", "", link("Sea texture (center0.png)", `${source}/images/terrain/ocean/center0.png`),
+      " by zookeeper and Zabin · ", link("CC0 1.0", "https://creativecommons.org/publicdomain/zero/1.0/")),
+    el("p", "", link(title, `${source}/music/default/tailwind.ogg`),
+      " by Alexander Zhelanov · ", link("CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/"),
+      ". Trimmed, faded out, and encoded as mono MP3."));
+  const media = el("section", "feature-panel windward-media", el("div", "", control, status), credits, audio);
+  media.setAttribute("aria-label", "Windward Ledger media");
+  return media;
+}
+
 export function mount(host: PortalHost): void {
   const cues = maritimeCues();
   solo(host, {
@@ -267,4 +319,5 @@ export function mount(host: PortalHost): void {
     view: play => voyage(play, cues.control),
     onAccepted: cues.accepted,
   });
+  host.main.append(voyageMedia());
 }

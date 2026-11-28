@@ -23,7 +23,7 @@
 | Koi-Koi | Original [48-face flower deck](../web/src/portal/games/koi-deck.svg), [month and category indices](../web/src/portal/games/koi-deck.ts), [woven felt](../web/src/portal/games/koi-felt.svg), and [linen stock and copper rail](../web/src/portal/games/koi-koi.css). The setup shows cards from the playable deck; only the compact [table vignette](../web/src/portal/catalog-marks.svg#koi-koi) ships in the cold catalog sheet. |
 | Ink Grids | The original [paper-and-ink clue-grid vignette](../web/src/portal/catalog-marks.svg#nonograms) uses the existing catalog sheet. The puzzle is a separate, lazy browser-local route. |
 | Jade Harbors | Original [ink-and-gouache canal chart, supply seals, and seat flags](../web/src/portal/games/jade-harbors.ts) and [painted paper and timber swatches](../web/src/portal/games/jade-harbors.css). The route draws the board from the server’s site and terrain geometry. Only the small [canal vignette](../web/src/portal/catalog-marks.svg#jade-harbors) is in the existing cold catalog sheet; no third-party art, fonts or game audio ship with the table. |
-| Windward Ledger | Original [cutter and chart symbols, sail and delivery synthesis](../web/src/portal/games/windward-ledger.ts) and [woven chart surfaces](../web/src/portal/games/windward-ledger.css). Only the [cutter vignette](../web/src/portal/catalog-marks.svg#windward-ledger) is in the cold catalog sheet. Gameplay art and cues are lazy; no cue recordings, commercial inputs, or third-party assets are used. See [credits and rules](windward-ledger-rules.md). |
+| Windward Ledger | Original [cutter and chart symbols, sail and delivery synthesis](../web/src/portal/games/windward-ledger.ts) and [woven chart surfaces](../web/src/portal/games/windward-ledger.css), with one [FreeCol sea still and optional score excerpt](#windward-ledger-media). Only the original [cutter vignette](../web/src/portal/catalog-marks.svg#windward-ledger) is in the cold catalog sheet. No cue recordings or commercial inputs are used. |
 
 The flower deck uses twelve seasonal plants, with original muted ink-and-gouache shapes for the Bright and Animal subjects, ribbon silhouettes, and numbered plain variants. The [Edo-Tokyo Museum collection record](https://museumcollection.tokyo/works/6479282/) provided historical context for small-format flower cards. [Pagat](https://www.pagat.com/class/flower.html) and [Yamato’s deck guide](https://yamato.com/en/hanafuda/how-to-play/) were consulted for the traditional months and card subjects, and [Nintendo’s published explanation](https://www.nintendo.com/jp/others/hanafuda_kabufuda/howtoplay/koikoi/index.html) for how to introduce matching and the Bank/Koi-Koi choice. The [Playdate accessibility checklist](https://help.play.date/developer/user-experience-checklist/) informed the readable card indexes, visible start cue and previews from the running game. None of these references supplied shipped artwork, branding, or code.
 
@@ -32,6 +32,41 @@ Koi-Koi's **Last turns** slips reuse the same local, public faces. A fading CSS 
 The original project assets and code are under [GPL-3.0](../LICENSE); the adapted tile marks are CC0. We kept each suit’s painted geometry, including the calligraphed 萬, the bamboo bird and the coin rosettes. We dropped editor metadata and unused definitions, rounded vector coordinates at tile scale, adjusted the inks for ivory tile bodies, and shared repeated paths as internal fragments. There are no honor, bonus or red-five tiles, upstream code, external SVG references, scripts or fonts.
 
 [`web/src/tile-suits.svg`](../web/src/tile-suits.svg) contains all 27 suited faces: `Man` maps to characters, `Sou` to bamboo, and `Pin` to dots. [`web/src/tile.ts`](../web/src/tile.ts) references each symbol from the same app origin. Vite emits one fingerprinted sheet, first requested when the table renders a marked face. The lazy `actors` JS and CSS carry the cast, Hall styling, dial and win scene, and load from that origin on entering the table or its waiting room. The smaller Hall SVGs are bundled into the CSS and the characters are inline. The fingerprinted dragon SVG is requested by that stylesheet only when the playing felt is present. It is static, follows the existing table projection, and sits below the dial and discards even with reduced motion. The landing illustration uses original CSS tile backs and an inline one-dot seal and does not request any of these table assets. Settings loads its optional Fullscreen helper separately. The app can serve its artwork without internet access; there are no reference clips, remote asset services or bundled 3D models. The [renderer fixtures](../web/e2e/fixtures/) and Playwright captures are not included in the published app.
+
+## Windward Ledger media
+
+Only these two sources from `FreeCol/freecol` revision
+`7b59d42d54b31388194fba88cd31753aca2820b1` are used. The pinned
+[ocean credits](https://github.com/FreeCol/freecol/blob/7b59d42d54b31388194fba88cd31753aca2820b1/data/default/resources/images/terrain/ocean/README.txt)
+name zookeeper and Zabin under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/);
+[the original release](https://opengameart.org/content/the-battle-for-wesnoth-water-animation)
+also confirms the public-domain credit. The pinned
+[music credits](https://github.com/FreeCol/freecol/blob/7b59d42d54b31388194fba88cd31753aca2820b1/data/default/resources/music/default/README.md)
+name Alexander Zhelanov under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+| File | Bytes | Git blob | SHA-256 |
+|---|---:|---|---|
+| [FreeCol `center0.png`](https://github.com/FreeCol/freecol/blob/7b59d42d54b31388194fba88cd31753aca2820b1/data/default/resources/images/terrain/ocean/center0.png) and shipped [`windward-sea.png`](../web/src/portal/assets/windward-sea.png), byte-identical | 5,071 | `ab4263827f99f81b9fc25f853b309dbf60e1a005` | `c1e4b9dddf2acb2f11153749212aada489c69c60b062ace69f4170a13137591f` |
+| [FreeCol `tailwind.ogg`](https://github.com/FreeCol/freecol/blob/7b59d42d54b31388194fba88cd31753aca2820b1/data/default/resources/music/default/tailwind.ogg), not shipped | 7,101,933 | `614e2251232e8beceaf149d23b41534b17ee698b` | `6f7845af0f0cbcf1503263288bfdfb064a116562aec8473d7363724acf9e20c1` |
+| [**Tailwind (excerpt)**, `windward-tailwind.mp3`](../web/src/portal/assets/windward-tailwind.mp3) | 175,586 | `6eaba6f068a053d1273ef687cd7976c013cce36f` | `258705835dea28bf605006a76ba7b55c5b5731751f2d39b2924554b8c36c4456` |
+
+The sea is one still frame; CSS centers, crops, and tints it under the original
+open-water symbols. The PNG bytes are unchanged. The score is the first 25
+seconds with a three-second fade-out starting at 22 seconds. It was downmixed
+to mono and encoded at 44.1 kHz and 56 kb/s with FFmpeg `8.0.1-3ubuntu2`:
+
+```bash
+ffmpeg -i tailwind.ogg -t 25 -map_metadata -1 -af 'afade=t=out:st=22:d=3' \
+  -ac 1 -ar 44100 -c:a libmp3lame -b:a 56k windward-tailwind.mp3
+```
+
+Vite fingerprints both files and serves them from the portal's own origin. The
+chart requests the PNG when water is drawn; the first MP3 request waits for
+**Play Tailwind (excerpt)**. The page has its own soundtrack control instead
+of Still Water; it leaves the portal preference and the optional synthesized
+maritime cues alone. See the [game rules](windward-ledger-rules.md) and
+[packaged notice](../scripts/licenses/Windward-FreeCol-NOTICE.txt). No upstream
+code, other recordings, or original commercial game media ship.
 
 ## Mahjong audio
 
@@ -89,10 +124,10 @@ square and move-mark styles load with the board renderer (including Daily
 Xiangqi), not on the lobby. The catalog marks use the existing sheet;
 the game modules and playable art are not requested there.
 
-| Windward Ledger native build, including served HTML | Gzip bytes | Limit |
+| Windward Ledger media build, including served HTML | Gzip bytes | Limit |
 |---|---:|---:|
-| `/portal/` | 24,434 | 24,576 |
-| `/game-portal/` | 24,437 | 24,576 |
+| `/portal/` | 24,440 | 24,576 |
+| `/game-portal/` | 24,443 | 24,576 |
 | `/portal/mahjong/` | 25,162 | 32,768 |
 | `/game-portal/mahjong/` | 25,165 | 32,768 |
 

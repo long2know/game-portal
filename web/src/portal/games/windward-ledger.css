@@ -26,8 +26,12 @@
 .windward-chart tr > :first-child { inline-size: 1.15rem; }
 .windward-chart [data-kind] {
   position: relative; text-align: center; padding: 0; block-size: clamp(28px, 5.3vw, 52px);
-  border: 1px solid #234444; color: #d5e0bf;
-  background: repeating-linear-gradient(154deg, #d6ead115 0 1px, transparent 1px 7px), #326365;
+  border: 1px solid #234444; color: #d5e0bf; background: #326365;
+}
+.windward-chart [data-kind="water"] {
+  background-image: repeating-linear-gradient(154deg, #d6ead115 0 1px, transparent 1px 7px),
+    linear-gradient(#326365a6, #326365a6), url("../assets/windward-sea.png");
+  background-position: center; background-size: auto, auto, 210% 210%; background-repeat: no-repeat;
 }
 .windward-chart [data-kind="fog"] {
   border-color: #7e7055; color: #514638;
@@ -76,4 +80,6 @@
 .windward-rules summary { display: list-item; align-content: center; min-block-size: 44px; cursor: pointer; font-weight: 700; }
 .windward-rules p + p { margin-block-start: .45rem; }
 .windward-cues { justify-self: start; }
+.windward-media { max-inline-size: 64rem; margin: .8rem auto 0; }
+.windward-media [role="status"]:not(:empty) { margin-block-start: .45rem; color: var(--brass); }
 @media (max-width: 680px) { .windward-panels { grid-template-columns: minmax(0, 1fr); } }

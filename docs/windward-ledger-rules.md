@@ -25,11 +25,21 @@ your guest save; **Restart voyage** replaces it only after confirmation.
 - **Maritime cues** are off on arrival. Opt in on the voyage page for quiet
   synthesized sounds on accepted sails and deliveries. The setting is for the
   current page, and the cues make no network requests.
+- **Play Tailwind (excerpt)** starts the optional soundtrack. Pause or resume
+  it with the same button, or replay it after it ends. Hiding or leaving the
+  page pauses it; it never starts again by itself. This control is separate
+  from Maritime cues and does not change your portal music setting.
 
 This is a short, deterministic supply-route puzzle on a fictional coast, not a
 historical settlement simulation. There are no rivals, conquest, labor systems,
-or purchases. Charter points have no cash value. The chart, cutter, textile
-surfaces, catalog vignette and two cues are original to Jade Court.
+or purchases. Charter points have no cash value. The chart design, cutter,
+textile surfaces, catalog vignette and two cues are original to Jade Court.
+The chart uses one still sea texture by zookeeper and Zabin ([CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)).
+**Tailwind (excerpt)** by Alexander Zhelanov ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/))
+is trimmed to 25 seconds, faded out, and encoded as mono MP3. Both are from
+[pinned FreeCol media](assets.md#windward-ledger-media); see **Media credits**
+on the voyage page. Windward Ledger is an original game, not a FreeCol or Amiga remake.
+
 [OpenCol's pinned README](https://github.com/OpenCol/win-port/tree/8a9eb7b22a788a54eb7e5e253785c75293f4987c)
 describes a decompiled Windows port that requires commercial game inputs, not a
 redistributable native web engine. No redistribution rights were verified.

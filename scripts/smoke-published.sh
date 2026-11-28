@@ -37,6 +37,10 @@ case "$portal" in
       echo "Missing or changed Mahjong calls notice: $publish/licenses/Mahjong-Calls-NOTICE.txt" >&2
       exit 1
     fi
+    if ! cmp -s scripts/licenses/Windward-FreeCol-NOTICE.txt "$publish/licenses/Windward-FreeCol-NOTICE.txt"; then
+      echo "Missing or changed Windward media notice: $publish/licenses/Windward-FreeCol-NOTICE.txt" >&2
+      exit 1
+    fi
     runtime=scripts/smoke-portal.mjs
     ;;
   false) runtime=scripts/smoke-runtime.mjs ;;
