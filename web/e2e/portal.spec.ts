@@ -1287,7 +1287,7 @@ test.describe("mounted Jade Court Mahjong", () => {
     const claim = first.getByRole("button", { name: "Take a bot seat at the table hosted by Test First" });
     await expect(join).toBeEnabled();
     await expect(first.getByText("Waiting", { exact: true })).toBeVisible();
-    await expect(first).toContainText("3 / 4 seats · One hand · Two birds (house rules) · 2 bot seats available");
+    await expect(first).toContainText("3 / 4 seats · One hand · Two birds (house rules) · 2 bots seated");
     await expect(list.getByText("In progress", { exact: true })).toBeVisible();
     await search.fill("missing host");
     await expect(list.getByRole("listitem")).toHaveCount(0);
@@ -1333,11 +1333,12 @@ test.describe("mounted Jade Court Mahjong", () => {
     await expect.poll(() => joins[3]?.payload).toEqual({ roomId: row.roomId });
   });
 
-  test("public Mahjong bot claim and confirmed handoff keep the same hand and transfer the host", async ({ page, browser, baseURL }, testInfo) => {
+  test("public Mahjong bot claim and confirmed handoff keep the same hand and transfer the host", async ({ page, browser, baseURL }) => {
     const url = (path: string) => new URL(path, baseURL!).href;
     const host = watchMahjong(page, baseURL!);
-    const hostName = `Test Host ${testInfo.workerIndex}`;
-    const nextHostName = `Test Keeper ${testInfo.workerIndex}`;
+    const tag = crypto.randomUUID().slice(0, 8);
+    const hostName = `Test Host ${tag}`;
+    const nextHostName = `Test Keeper ${tag}`;
     const attempts: Command[] = [];
     let sendStale: (() => void) | undefined;
     let committed: Ack | undefined;
@@ -1488,6 +1489,7 @@ test.describe("mounted Jade Court Mahjong", () => {
       await expect(page.getByRole("button", { name: "Resume your table" })).toHaveCount(0);
       expect(syncs()).toBe(beforeReload);
       const retained = page.getByRole("listitem").filter({ has: page.getByText(`Host: ${nextHostName}`, { exact: true }) });
+      await expect(retained).toHaveAttribute("data-key", before.roomId);
       await expect(retained).toContainText("3 bot seats available");
       await expect(retained.getByText("In progress", { exact: true })).toBeVisible();
       await retained.getByRole("button", { name: /^Take a bot seat/ }).tap();

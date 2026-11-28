@@ -190,17 +190,19 @@ export class HomeScreen {
       const profile = item.rulesVersion && birdProfiles[item.rulesVersion];
       const summary = node.firstElementChild!;
       const playing = item.status === "playing";
+      const openSeat = !playing && item.occupiedSeats < 4;
       const bots = item.botSeats;
       const host = portal && item.hostName ? item.hostName : "";
       const detail = `${item.occupiedSeats} / 4 seats · ${item.matchHands === 1 ? "One hand" : "Four hands"}${profile ? ` · ${profile}` : ""}`;
       if (portal) {
         const [badge, name, counts] = summary.children;
+        const botDetail = bots === undefined ? "" : openSeat ?
+          ` · ${bots} ${bots === 1 ? "bot" : "bots"} seated` : ` · ${bots} bot ${bots === 1 ? "seat" : "seats"} available`;
         text(badge, playing ? "In progress" : "Waiting");
         text(name, host ? `Host: ${host}` : "");
-        text(counts, bots === undefined ? detail : `${detail} · ${bots} bot ${bots === 1 ? "seat" : "seats"} available`);
+        text(counts, detail + botDetail);
       } else text(summary, detail);
 
-      const openSeat = !playing && item.occupiedSeats < 4;
       const takeBot = portal && !openSeat && (bots ?? 0) > 0;
       const control = node.querySelector("button")!;
       control.hidden = portal && !openSeat && !takeBot;
