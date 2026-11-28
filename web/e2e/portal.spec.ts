@@ -1050,8 +1050,9 @@ test.describe("mounted Jade Court Mahjong", () => {
     await create.getByLabel("Who can join?").selectOption("invite");
     await expect(listing).toBeHidden();
     await create.getByRole("button", { name: "Create table" }).tap();
-    await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
-    await expect(page.getByText("Two-tile Kong · Two birds", { exact: true })).toBeVisible();
+    const waiting = page.getByRole("main");
+    await expect(waiting.getByRole("heading", { name: "Take a seat." })).toBeVisible();
+    await expect(waiting.getByText("Two-tile Kong · Two birds", { exact: true })).toBeVisible();
     const defaultPayload = { visibility: "invite", matchHands: 1, fillBots: false, rulesVersion: "changsha-two-tile-kong-v1" };
     expect(created()).toEqual([defaultPayload]);
     expect(latest().room.rulesVersion).toBe("changsha-two-tile-kong-v1");
@@ -1068,7 +1069,7 @@ test.describe("mounted Jade Court Mahjong", () => {
     await tap(page, "Play with friends");
     await rules.selectOption({ label: "Two birds (house rules)" });
     await create.getByRole("button", { name: "Create table" }).tap();
-    await expect(page.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
+    await expect(waiting.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
     expect(created()).toEqual([defaultPayload, { ...defaultPayload, rulesVersion: "changsha-two-bird-v1" }]);
     expect(latest().room.rulesVersion).toBe("changsha-two-bird-v1");
     await tap(page, "Leave table");
