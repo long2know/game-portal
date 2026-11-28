@@ -33,6 +33,11 @@ Mahjong table lifecycle commands use the [authenticated Mahjong WebSocket
 protocol](protocol.md#commands) at `/portal/ws`, not the HTTP table routes below.
 A sole human host can restart a bot match in place or explicitly abandon the room
 without a reservation; an ordinary leave from an ongoing match still reserves the seat.
+The [public Mahjong list](protocol.md#http) also shows full waiting and live public
+tables with a claimable bot. Use `joinRoom` with `takeBot:true` to take one. A human
+who explicitly hands off to a bot with `leaveRoom` and `replaceWithBot:true` loses
+their save for that table; the shared hand continues for its remaining members.
+This does not change private player invite eligibility or acceptance.
 
 ## Continue playing
 

@@ -181,16 +181,24 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
     {
         var now = time.GetUtcNow().UtcTicks;
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        var waiting = await db.Rooms.AsNoTracking()
-            .Where(r => r.IsPublic && r.Waiting && r.OccupiedSeats < 4 && r.ExpiresAtTicks > now)
+        var candidates = db.Rooms.AsNoTracking().Where(r => r.IsPublic && r.ExpiresAtTicks > now);
+        if (!options.PortalEnabled)
+            candidates = candidates.Where(r => r.Waiting && r.OccupiedSeats < 4);
+        var rows = await candidates
             .OrderBy(r => r.Id).Take(RoomLimit)
             .Select(r => new { r.Id, r.OccupiedSeats, r.MatchHands, r.Checkpoint }).ToArrayAsync(cancellationToken);
-        var rooms = waiting.Select(row =>
+        var rooms = new List<PublicRoom>(rows.Length);
+        foreach (var row in rows)
         {
-            var profile = RoomCheckpoint.Read(row.Id, row.Checkpoint).RulesVersion;
-            return new PublicRoom(row.Id, row.OccupiedSeats, row.MatchHands,
-                profile == ChangshaEngine.Profile ? null : profile);
-        }).ToArray();
+            var room = RoomCheckpoint.Read(row.Id, row.Checkpoint);
+            var profile = room.RulesVersion == ChangshaEngine.Profile ? null : room.RulesVersion;
+            if (!options.PortalEnabled)
+                rooms.Add(new(row.Id, row.OccupiedSeats, row.MatchHands, profile));
+            else if (room.Visibility == "public" && (room.Status == "waiting" && OpenSeat(room) >= 0
+                || IsTakeoverPhase(room) && AvailableBotSeat(room) >= 0))
+                rooms.Add(new(row.Id, row.OccupiedSeats, row.MatchHands, profile, room.Status,
+                    room.Seats.Count(chair => chair.IsBot), room.Seats[room.HostSeat].DisplayName ?? "Guest"));
+        }
         return new { rooms };
     }
 
@@ -256,6 +264,7 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
     public async Task CommandAsync(Peer peer, Guid requestId, string? lease, string op, JsonElement payload)
     {
         var intent = Wire.ParseIntent(op, payload);
+        if (!options.PortalEnabled && intent is ({ TakeBot: true } or { ReplaceWithBot: true })) intent = null;
         var fingerprint = Wire.Fingerprint(op, payload, intent);
         try
         {
@@ -327,11 +336,16 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
                     code = Mutate(room, member.Seat, intent, utc);
                 }
                 leave = code is null && intent.Op == "leaveRoom";
-                if (leave && (intent.Flag || room.Status is "waiting" or "complete"))
+                if (leave && (intent.Flag || intent.ReplaceWithBot || room.Status is "waiting" or "complete"))
                 {
                     db.Memberships.Remove(member);
-                    room.ReplaceChair(member.Seat, Chair.Open);
-                    room.ResetReadiness();
+                    room.ReplaceChair(member.Seat, intent.ReplaceWithBot ? Chair.Bot(member.Seat) : Chair.Open);
+                    if (intent.ReplaceWithBot)
+                    {
+                        room.RecordRelease(member.GuestId);
+                        game.RefreshBotSchedule(room, utc);
+                    }
+                    else room.ResetReadiness();
                     room.TouchRevision();
                     var nextHost = Array.FindIndex(room.Seats, chair => chair.GuestId.HasValue);
                     delete = nextHost < 0;
@@ -461,10 +475,16 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
 
     private static int OpenSeat(RoomCheckpoint room) => Array.FindIndex(room.Seats, chair => chair.IsOpen);
 
+    private static bool IsTakeoverPhase(RoomCheckpoint room) =>
+        room.Status == "playing" || room.Status == "waiting" && OpenSeat(room) < 0;
+
+    private static int AvailableBotSeat(RoomCheckpoint room) => room.BotAdmissionCapped()
+        ? -1 : Array.FindIndex(room.Seats, chair => chair.IsBot && !chair.GuestId.HasValue);
+
     private static void SeatHuman(MahjongDb db, RoomCheckpoint room, GuestRow guest, int seat)
     {
         room.ReplaceChair(seat, Chair.Human(guest.Id, guest.DisplayName));
-        room.ResetReadiness();
+        if (room.Status == "waiting") room.ResetReadiness();
         room.TouchRevision();
         db.Memberships.Add(new MembershipRow { GuestId = guest.Id, RoomId = room.Id, Seat = seat });
     }
@@ -478,7 +498,8 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
             var target = intent.InviteCode is { } invite
                 ? await db.Rooms.SingleOrDefaultAsync(r => r.InviteCode == invite)
                 : await db.Rooms.SingleOrDefaultAsync(r => r.Id == intent.RoomId && r.IsPublic);
-            if (target is null || (live = await LoadAsync(db, target.Id, utc)) is null)
+            if (target is null || (live = await LoadAsync(db, target.Id, utc)) is null
+                || intent.TakeBot && live.Checkpoint.Visibility != "public")
                 return ("room_not_found", null, null);
         }
         if (await db.Memberships.FindAsync(guestId) is { } member)
@@ -491,6 +512,16 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
         if (live is not null)
         {
             var room = live.Checkpoint;
+            if (intent.TakeBot)
+            {
+                if (!IsTakeoverPhase(room)) return ("invalid_state", live, null);
+                if (room.ReleasedGuests?.Contains(guestId) == true) return ("seat_released", live, null);
+                var bot = AvailableBotSeat(room);
+                if (bot < 0) return ("room_full", live, null);
+                SeatHuman(db, room, guest, bot);
+                if (room.Status == "playing") game.RefreshBotSchedule(room, utc);
+                return (null, live, bot);
+            }
             if (room.Status != "waiting") return ("invalid_state", live, null);
             var open = OpenSeat(room);
             if (open < 0) return ("room_full", live, null);
@@ -563,8 +594,11 @@ internal sealed class Rooms(IDbContextFactory<MahjongDb> factory, ServerOptions 
             case "restartMatch" when IsRestartableBotRoom(room):
                 game.RestartMatch(room, utc);
                 return null;
-            case "leaveRoom" when !intent.Flag || room.Seats.Count(chair => chair.GuestId.HasValue) == 1:
-                return null;
+            case "leaveRoom":
+                if (intent.ReplaceWithBot)
+                    return room.Status == "playing" && room.Seats.Any(chair =>
+                        chair.GuestId is { } other && other != room.Seats[seat].GuestId) ? null : "invalid_state";
+                return !intent.Flag || room.Seats.Count(chair => chair.GuestId.HasValue) == 1 ? null : "invalid_state";
             default:
                 return "invalid_state";
         }

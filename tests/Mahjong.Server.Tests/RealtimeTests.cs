@@ -258,9 +258,11 @@ public sealed class RealtimeTests
         Assert.Equal(2, listed.Length);
         var classicRow = Assert.Single(listed, row => row.Text("roomId") == classicRoom.Text("roomId"));
         var variantRow = Assert.Single(listed, row => row.Text("roomId") == variantRoom.Text("roomId"));
-        Assert.Equal(new[] { "matchHands", "occupiedSeats", "roomId" }, classicRow.EnumerateObject().Select(p => p.Name).Order());
-        Assert.Equal(new[] { "matchHands", "occupiedSeats", "roomId", "rulesVersion" },
-            variantRow.EnumerateObject().Select(p => p.Name).Order());
+        string[] fields = portalEnabled
+            ? ["botSeats", "hostName", "matchHands", "occupiedSeats", "roomId", "status"]
+            : ["matchHands", "occupiedSeats", "roomId"];
+        Assert.Equal(fields, classicRow.EnumerateObject().Select(p => p.Name).Order());
+        Assert.Equal(fields.Append("rulesVersion").Order(), variantRow.EnumerateObject().Select(p => p.Name).Order());
         Assert.Equal(twoBirds, variantRow.Text("rulesVersion"));
         var notFound = await joiner.Command("joinRoom", new { roomId = privateRoom.Text("roomId") });
         Assert.Equal("room_not_found", notFound.Error());

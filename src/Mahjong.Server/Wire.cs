@@ -36,12 +36,17 @@ internal sealed record Preferences(bool Sound, bool Music, double Volume, bool R
 internal sealed record GuestView(string DisplayName, Preferences Preferences, string? ResumeRoomId);
 internal sealed record ProfileChange(string? DisplayName, Preferences? Preferences);
 internal sealed record PublicRoom(string RoomId, int OccupiedSeats, int MatchHands,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RulesVersion);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RulesVersion,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Status = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? BotSeats = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? HostName = null);
 
 internal sealed record Intent(string Op, string? RoomId = null, string? InviteCode = null,
     string? Visibility = null, int MatchHands = 0, bool Flag = false, int Seat = 0,
     long Revision = 0, string? WindowId = null, string? OptionId = null, string? Text = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RulesVersion = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RulesVersion = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool TakeBot = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool ReplaceWithBot = false);
 
 internal static class Wire
 {
@@ -118,6 +123,9 @@ internal static class Wire
         flag = json.ValueKind == JsonValueKind.True;
         return json.ValueKind is JsonValueKind.True or JsonValueKind.False;
     }
+
+    private static bool OptionalFlag(JsonElement value, out bool flag) =>
+        value.TryFlag(out flag) || value.ValueKind == JsonValueKind.Undefined;
 
     public static bool Int(this JsonElement json, out int result)
     {
@@ -196,7 +204,9 @@ internal static class Wire
                         RulesVersion: profile == ChangshaEngine.Profile ? null : profile) : null;
             case "joinRoom":
                 var inviteCode = payload.Get("inviteCode").AsString();
-                if (Fields(payload, "roomId") && IsLocator(roomId)) return new(op, RoomId: roomId);
+                if (Fields(payload, "roomId", "takeBot") && IsLocator(roomId)
+                    && OptionalFlag(payload.Get("takeBot"), out var takeBot))
+                    return new(op, RoomId: roomId, TakeBot: takeBot);
                 if (Fields(payload, "inviteCode") && IsLocator(inviteCode)) return new(op, InviteCode: inviteCode);
                 return null;
             case "choose":
@@ -216,11 +226,11 @@ internal static class Wire
             return null;
         if (op == "leaveRoom")
         {
-            var abandon = false;
-            var value = payload.Get("abandon");
-            return Fields(payload, "roomId", "expectedRoomRevision", "abandon")
-                && (value.ValueKind == JsonValueKind.Undefined || value.TryFlag(out abandon))
-                ? new(op, roomId, Flag: abandon, Revision: revision) : null;
+            return Fields(payload, "roomId", "expectedRoomRevision", "abandon", "replaceWithBot")
+                && OptionalFlag(payload.Get("abandon"), out var abandon)
+                && OptionalFlag(payload.Get("replaceWithBot"), out var replaceWithBot)
+                && !(abandon && replaceWithBot)
+                ? new(op, roomId, Flag: abandon, Revision: revision, ReplaceWithBot: replaceWithBot) : null;
         }
         if (op is "start" or "nextHand" or "rematch" or "restartMatch")
             return Fields(payload, "roomId", "expectedRoomRevision") ? new(op, roomId, Revision: revision) : null;

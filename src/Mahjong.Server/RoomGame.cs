@@ -21,6 +21,7 @@ internal sealed record ChatPost(Guid GuestId, string MessageId, int Seat, string
 
 internal sealed class RoomCheckpoint
 {
+    private const int BotAdmissionReleaseLimit = 32;
     private int[]? _tableTotals;
 
     public int CheckpointVersion { get; init; } = 1;
@@ -50,6 +51,8 @@ internal sealed class RoomCheckpoint
     }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? NextDealerSeat { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid[]? ReleasedGuests { get; set; }
 
     public DateTimeOffset GameTime(DateTimeOffset utc)
     {
@@ -68,6 +71,11 @@ internal sealed class RoomCheckpoint
         TableTotals[seat] = 0;
         Seats[seat] = chair;
     }
+
+    public bool BotAdmissionCapped() => ReleasedGuests is { Length: >= BotAdmissionReleaseLimit };
+
+    public void RecordRelease(Guid guest) => ReleasedGuests = ReleasedGuests is { } guests
+        ? [.. guests, guest] : [guest];
 
     public void ResetReadiness()
     {
@@ -91,9 +99,20 @@ internal sealed class RoomCheckpoint
             || room.Game is { } game && (game.CheckpointVersion != ChangshaEngine.CheckpointVersion
                 || game.ShuffleVersion != ChangshaEngine.ShuffleVersion || game.Start.Profile != room.RulesVersion)
             || room.Status is not ("waiting" or "playing" or "betweenHands" or "complete")
-            || room.HostSeat is < 0 or > 3 || !room.Seats[room.HostSeat].GuestId.HasValue)
+            || room.HostSeat is < 0 or > 3 || !room.Seats[room.HostSeat].GuestId.HasValue
+            || !room.ValidReleasedGuests())
             throw new InvalidOperationException("Unsupported or inconsistent room checkpoint.");
         return room;
+    }
+
+    private bool ValidReleasedGuests()
+    {
+        if (ReleasedGuests is not { Length: > 0 } guests) return true;
+        // When the cap is reached at most three humans remain, and the last cannot release.
+        return guests.Length <= BotAdmissionReleaseLimit + 2 && Game is not null && Status != "waiting"
+            && (!BotAdmissionCapped() || guests.Length + Seats.Count(chair => chair.GuestId.HasValue) <= BotAdmissionReleaseLimit + 3)
+            && guests.Distinct().Count() == guests.Length && !guests.Contains(Guid.Empty)
+            && !Seats.Any(chair => chair.GuestId is { } guest && guests.Contains(guest));
     }
 
     public void Store(RoomRow row)
@@ -119,6 +138,7 @@ internal sealed class RoomGame(ServerOptions options, ILogger<RoomGame> log)
         var game = ChangshaEngine.StartHand(
             new HandStart(number, dealer, seed, room.RulesVersion, options.TurnLimit, options.ClaimLimit), gameTime);
         room.NextDealerSeat = null;
+        room.ReleasedGuests = null;
         SetGame(room, game, gameTime, previous);
     }
 
@@ -184,6 +204,7 @@ internal sealed class RoomGame(ServerOptions options, ILogger<RoomGame> log)
         room.AutoResumeAtUtc = null;
         room.PausedTicks = 0;
         room.Totals = new int[4];
+        room.ReleasedGuests = null;
     }
 
     public long DueTicks(RoomRow row, RoomCheckpoint room)
@@ -259,6 +280,17 @@ internal sealed class RoomGame(ServerOptions options, ILogger<RoomGame> log)
         return false;
     }
 
+    public void RefreshBotSchedule(RoomCheckpoint room, DateTimeOffset utc)
+    {
+        if (room.Game is not { } game || !HasLegalBot(room, game))
+            room.NextBotGameTime = null;
+        else
+            room.NextBotGameTime ??= room.GameTime(utc) + options.BotDelay;
+    }
+
+    private static bool HasLegalBot(RoomCheckpoint room, GameState game) => room.Seats
+        .Select((seat, index) => seat.IsBot && !ChangshaEngine.ViewSeat(game, index).LegalOptions.IsEmpty).Any(legal => legal);
+
     private void SetGame(RoomCheckpoint room, GameState game, DateTimeOffset gameTime, PublicView? previous)
     {
         var table = ChangshaEngine.ViewPublic(game);
@@ -266,8 +298,7 @@ internal sealed class RoomGame(ServerOptions options, ILogger<RoomGame> log)
         room.AdvanceGameRevision();
         room.WindowAnchor = table.Window is null ? null
             : previous?.Window?.WindowId == table.Window.WindowId ? room.WindowAnchor : room.GameRevision;
-        room.NextBotGameTime = table.Window is not null && room.Seats
-            .Select((seat, index) => seat.IsBot && !ChangshaEngine.ViewSeat(game, index).LegalOptions.IsEmpty).Any(legal => legal)
+        room.NextBotGameTime = table.Window is not null && HasLegalBot(room, game)
             ? gameTime + options.BotDelay : null;
 
         var nextStatus = table.Settlement is null ? "playing"
