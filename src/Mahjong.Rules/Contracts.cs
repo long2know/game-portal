@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace Mahjong.Rules;
 
@@ -38,7 +39,14 @@ public sealed record PublicWindow(string WindowId, string Reason, DateTimeOffset
 
 public sealed record PublicTrigger(int Seat, ImmutableArray<string> Faces);
 
-public sealed record PublicKongRoll(int Seat, ImmutableArray<int> Dice, int LowerDie);
+public sealed record PublicKongRoll(int Seat, ImmutableArray<int> Dice, int LowerDie)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StackCount { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? StackMethod { get; init; }
+}
 
 public sealed record PublicSettlement(string Reason, int NextDealerSeat, int? SourceSeat,
     ImmutableArray<PublicWinner> Winners, ImmutableArray<string> Birds, ImmutableArray<SeatResult> SeatResults,
@@ -52,7 +60,11 @@ public sealed record PublicWinningHand(ImmutableArray<string> ConcealedTiles, Im
 public sealed record PublicWinningMeld(string Kind, string? Method, int? FromSeat, ImmutableArray<string> Tiles);
 
 public sealed record SeatView(int Seat, ImmutableArray<HandTile> Hand, string? DrawnTileId,
-    ImmutableArray<LegalOption> LegalOptions);
+    ImmutableArray<LegalOption> LegalOptions)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImmutableArray<HandTile>? KongReplacements { get; init; }
+}
 
 public sealed record HandTile(string TileId, string Face);
 

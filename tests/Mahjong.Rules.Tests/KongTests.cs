@@ -10,13 +10,15 @@ public sealed class KongTests
     private const string AddedReadyHand = "b5 d1 d2 d3 c1 c2 c3 b6 b7 b8 d5";
     private const string CanRob = "b3 b4 c4 c5 c6 d4 d5 d6 d7 d8 d9 c5 c5";
 
-    [Fact]
-    public void OpenBuTakesTheDiscardAndOneTailTileWithoutRequiringReadyShape()
+    [Theory]
+    [InlineData(ChangshaEngine.Profile)]
+    [InlineData(ChangshaEngine.TwoTileKongProfile)]
+    public void OpenBuTakesTheDiscardAndOneTailTileWithoutRequiringReadyShape(string profile)
     {
         var state = AtTurn(
         [
             "b7", "", "b7 b7 b7 b1 b2 b3 c1 c2 c3 d1 d2 d3 c9", ""
-        ], "d7 c7 d9");
+        ], "d7 c7 d9", profile: profile);
         var offered = Select(state, 0, "discard", "b7");
         Assert.True(Has(offered, 2, "bu"));
         Assert.False(Has(offered, 2, "gang"));
@@ -33,15 +35,19 @@ public sealed class KongTests
         Assert.DoesNotContain(offered.Window!.Trigger!.Value, done.Seats[0].Discards);
         Assert.Equal(DecisionKind.Turn, done.Window!.Kind);
         Assert.Equal(2, done.Window.Seat);
+        Assert.Null(ChangshaEngine.ViewPublic(done).KongRoll);
+        Assert.Null(ChangshaEngine.ViewSeat(done, 2).KongReplacements);
     }
 
-    [Fact]
-    public void OpenReadyGangCannotBeRobbedAndUsesRolledSupplement()
+    [Theory]
+    [InlineData(ChangshaEngine.Profile)]
+    [InlineData(ChangshaEngine.TwoTileKongProfile)]
+    public void OpenReadyGangCannotBeRobbedAndUsesRolledSupplement(string profile)
     {
         var state = AtTurn(
         [
             "b7", "", "b7 b7 b7 b1 b2 b3 c1 c2 c3 d1 d2 d3 c5", ""
-        ], "c9 c5");
+        ], "c9 c5", profile: profile);
         var offered = Select(state, 0, "discard", "b7");
         Assert.Contains("b7", Option(offered, 2, "gang").Faces);
         var done = Select(offered, 2, "gang");
@@ -51,8 +57,16 @@ public sealed class KongTests
         Assert.Equal(DrawKind.RolledSupplement, done.Window.DrawKind);
         Assert.Equal("gang", Assert.Single(done.Seats[2].Melds).Kind);
         Assert.Equal("open", Assert.Single(done.Seats[2].Melds).Method);
-        Assert.Equal("c5", Tiles.Face(done.Seats[2].Drawn!.Value));
-        Assert.True(Has(done, 2, "hu"));
+        var own = ChangshaEngine.ViewSeat(done, 2);
+        if (profile == ChangshaEngine.TwoTileKongProfile)
+        {
+            Assert.Null(own.DrawnTileId);
+            Assert.Equal(new[] { "c5", "c9" }, own.KongReplacements!.Value.Select(tile => tile.Face));
+            Assert.Equal(new[] { "hu", "discardKong" }, own.LegalOptions.Select(option => option.Kind));
+        }
+        else
+            Assert.Equal("c5", Tiles.Face(done.Seats[2].Drawn!.Value));
+        Assert.Equal("c5", Assert.Single(Option(done, 2, "hu").Faces));
         Assert.Equal(2, ChangshaEngine.ViewPublic(done).KongRoll!.Seat);
     }
 
@@ -128,6 +142,8 @@ public sealed class KongTests
     [InlineData("gang", "robKong", ChangshaEngine.Profile, "d5", 6)]
     [InlineData("bu", "plain", ChangshaEngine.TwoBirdProfile, "d5 c4", 2)]
     [InlineData("gang", "robKong", ChangshaEngine.TwoBirdProfile, "d5 c4", 12)]
+    [InlineData("bu", "plain", ChangshaEngine.TwoTileKongProfile, "d5 c4", 2)]
+    [InlineData("gang", "robKong", ChangshaEngine.TwoTileKongProfile, "d5 c4", 12)]
     public void RobbingAnAddedKongKeepsOriginalPengAndOnlyTakesTheAddedTile(string kind, string code,
         string profile, string birds, int points)
     {
@@ -138,6 +154,7 @@ public sealed class KongTests
         var view = ChangshaEngine.ViewPublic(pending);
         Assert.Null(view.Settlement);
         Assert.Null(view.KongRoll);
+        Assert.Null(ChangshaEngine.ViewSeat(pending, 0).KongReplacements);
         Assert.Equal("kong", view.Window!.Reason);
         Assert.Equal("b5", Assert.Single(view.Window.Trigger!.Faces));
         Assert.Equal("peng", Assert.Single(view.Seats[0].Melds).Kind);
@@ -172,11 +189,13 @@ public sealed class KongTests
     }
 
     [Theory]
-    [InlineData("bu", "c9")]
-    [InlineData("gang", "c2")]
-    public void AddedKongFinishesAfterPassAndRetainsSourceOfTheOriginalMeld(string kind, string replacement)
+    [InlineData("bu", "c9", ChangshaEngine.Profile)]
+    [InlineData("gang", "c2", ChangshaEngine.Profile)]
+    [InlineData("bu", "c9", ChangshaEngine.TwoTileKongProfile)]
+    [InlineData("gang", "d6 c8", ChangshaEngine.TwoTileKongProfile)]
+    public void AddedKongFinishesAfterPassAndRetainsSourceOfTheOriginalMeld(string kind, string replacement, string profile)
     {
-        var pending = Select(Added(), 0, kind, "b5");
+        var pending = Select(Added(profile), 0, kind, "b5");
         Assert.Null(ChangshaEngine.ViewPublic(pending).KongRoll);
         var done = Expire(pending);
         Assert.Equal(Checkpoint(done), Checkpoint(Expire(RoundTrip(pending))));
@@ -186,8 +205,15 @@ public sealed class KongTests
         Assert.Equal("added", meld.Method);
         Assert.Equal(3, meld.FromSeat);
         Assert.Equal(new[] { "b5", "b5", "b5", "b5" }, meld.Tiles);
-        Assert.Equal(replacement, Tiles.Face(done.Seats[0].Drawn!.Value));
         Assert.Equal(DecisionKind.Turn, done.Window!.Kind);
+        if (kind == "gang" && profile == ChangshaEngine.TwoTileKongProfile)
+        {
+            Assert.Null(done.Seats[0].Drawn);
+            Assert.Equal(replacement.Split(' '), ChangshaEngine.ViewSeat(done, 0).KongReplacements!.Value.Select(tile => tile.Face));
+            Assert.Equal(new[] { "d5", "c2", "d7", "c9" }, done.Wall.Select(tile => Tiles.Face(tile.Tile)));
+        }
+        else
+            Assert.Equal(replacement, Tiles.Face(done.Seats[0].Drawn!.Value));
         if (kind == "gang")
         {
             var roll = Assert.IsType<PublicKongRoll>(view.KongRoll);
@@ -207,13 +233,15 @@ public sealed class KongTests
         Assert.False(Has(state, 0, "gang"));
     }
 
-    [Fact]
-    public void SeededDiceChooseTheReplacementStackAndScoreKongBloom()
+    [Theory]
+    [InlineData(ChangshaEngine.Profile, 14, -3, -8)]
+    [InlineData(ChangshaEngine.TwoBirdProfile, 24, -6, -12)]
+    public void SeededDiceChooseTheReplacementStackAndScoreKongBloom(string profile, int win, int other, int dealer)
     {
         var state = AtTurn(
         [
             "b9 b9 b9 b9 b1 b2 b3 c1 c2 c3 d1 d2 d3 c5", "", "", ""
-        ], "b5 d7 d8 c5 b7 b8", dealer: 2, seed: RolledSeed);
+        ], "b5 d7 d8 c5 b7 b8", dealer: 2, seed: RolledSeed, profile: profile);
         Assert.Null(ChangshaEngine.ViewPublic(state).KongRoll);
         var rolledAt = Now.AddSeconds(3);
         var after = Select(state, 0, "gang", "b9", now: rolledAt);
@@ -226,7 +254,13 @@ public sealed class KongTests
         Assert.Equal(new[] { "dice", "lowerDie", "seat" }, roll.EnumerateObject().Select(field => field.Name).Order());
         Assert.Equal(rolledAt + state.Start.TurnLimit, view.Window!.ClosesAtGameTime);
         Assert.Null(view.Window.Trigger);
-        Assert.DoesNotContain("\"kongRoll\"", Checkpoint(after));
+        var checkpoint = Checkpoint(after);
+        Assert.DoesNotContain("\"kongRoll\"", checkpoint);
+        Assert.DoesNotContain("\"kongTiles\"", checkpoint);
+        Assert.DoesNotContain("\"kongStackCount\"", checkpoint);
+        Assert.DoesNotContain("\"claimedKongWinTiles\"", checkpoint);
+        Assert.DoesNotContain("\"unchosenKongTile\"", checkpoint);
+        Assert.DoesNotContain("\"kongReplacements\"", Checkpoint(ChangshaEngine.ViewSeat(after, 0)));
         Assert.Equal(json.GetRawText(), Checkpoint(ChangshaEngine.ViewPublic(RoundTrip(after))));
 
         Assert.Equal("c5", Tiles.Face(after.Seats[0].Drawn!.Value));
@@ -236,7 +270,7 @@ public sealed class KongTests
         Assert.Null(ChangshaEngine.ViewPublic(won).KongRoll);
         var settle = won.Settlement!;
         Assert.Equal("kongBloom", Assert.Single(Assert.Single(settle.Winners).Patterns).Code);
-        AssertBalanced(settle, 14, -3, -8, -3);
+        AssertBalanced(settle, win, other, dealer, other);
     }
 
     [Fact]
@@ -309,6 +343,7 @@ public sealed class KongTests
         Assert.Equal("c7", Assert.Single(Assert.Single(complete.Settlement.Winners).WinningTiles));
     }
 
-    private static GameState Added() => AtTurn([AddedReadyHand, CanRob, "", ""], "d5 c2 c8 d6 d7 c9",
-        dealer: 2, drawn: "b5", melds: [new(0, "peng", "b5 b5 b5", 3)]);
+    private static GameState Added(string profile = ChangshaEngine.Profile) =>
+        AtTurn([AddedReadyHand, CanRob, "", ""], "d5 c2 c8 d6 d7 c9",
+            dealer: 2, drawn: "b5", melds: [new(0, "peng", "b5 b5 b5", 3)], profile: profile);
 }

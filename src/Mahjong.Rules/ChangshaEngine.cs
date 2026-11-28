@@ -2,14 +2,15 @@ using System.Collections.Immutable;
 
 namespace Mahjong.Rules;
 
-public static class ChangshaEngine
+public static partial class ChangshaEngine
 {
     public const string Profile = "changsha-v1";
     public const string TwoBirdProfile = "changsha-two-bird-v1";
+    public const string TwoTileKongProfile = "changsha-two-tile-kong-v1";
     public const int CheckpointVersion = 1;
     public const int ShuffleVersion = Determinism.ShuffleVersion;
 
-    public static bool SupportsProfile(string? profile) => profile is Profile or TwoBirdProfile;
+    public static bool SupportsProfile(string? profile) => profile is Profile or TwoBirdProfile or TwoTileKongProfile;
 
     public static GameState StartHand(HandStart input, DateTimeOffset gameNow)
     {
@@ -106,6 +107,8 @@ public static class ChangshaEngine
         state = state with { AdvancedAtGameTime = at };
         if (window.Kind == DecisionKind.Turn)
         {
+            if (window.KongTiles is not null)
+                return OnKongTurn(state, window, window.Decisions[0].Options.Single(option => option.Kind == "discardKong"), at);
             var discard = window.Decisions[0].Options.Where(option => option.Kind == "discard").ToArray();
             var drawn = state.Seats[window.Seat].Drawn;
             return OnTurn(state, window,
@@ -121,6 +124,9 @@ public static class ChangshaEngine
 
     private static GameState ResolveResponses(GameState state, DecisionWindow window, DateTimeOffset at)
     {
+        if (window.Kind == DecisionKind.KongDiscard)
+            return ResolveKongDiscard(state, window, at);
+
         var responses = window.Decisions.Select(entry =>
             (entry.Seat, Option: entry.Options.Single(option => option.Id == entry.Response))).ToArray();
         if (window.Kind == DecisionKind.Opening)
@@ -177,6 +183,9 @@ public static class ChangshaEngine
 
     private static GameState OnTurn(GameState state, DecisionWindow window, DecisionOption option, DateTimeOffset at)
     {
+        if (window.KongTiles is not null)
+            return OnKongTurn(state, window, option, at);
+
         var seat = window.Seat;
         var holder = state.Seats[seat];
         if (option.Kind == "hu")
@@ -237,6 +246,9 @@ public static class ChangshaEngine
 
     private static GameState Supplement(GameState state, int seat, string kind, DateTimeOffset at)
     {
+        if (kind == "gang" && state.Start.Profile == TwoTileKongProfile)
+            return BeginKongReplacement(state, seat, at);
+
         if (state.Wall.Length == 1)
             state = state with { LastTileSeat = seat };
         var tail = state.Wall.Length - 1;
@@ -304,7 +316,7 @@ public static class ChangshaEngine
         {
             var holder = state.Seats[seat];
             var options = ImmutableArray.CreateBuilder<DecisionOption>();
-            if (!holder.PassedWinFaces.Contains(face) && Winning.IsWinning(holder, face))
+            if (CanClaimHu(holder, face))
                 options.Add(Option("hu", preview: [trigger]));
 
             if (!huOnly && !holder.FrozenAfterGang)
@@ -331,6 +343,9 @@ public static class ChangshaEngine
         }
         return decisions.ToImmutable();
     }
+
+    private static bool CanClaimHu(SeatState holder, int face) =>
+        !holder.PassedWinFaces.Contains(face) && Winning.IsWinning(holder, face);
 
     private static void AddKongOptions(ImmutableArray<DecisionOption>.Builder options, SeatState holder,
         DecisionOption bu, PhysicalTile? claimed, int? source)
@@ -369,7 +384,8 @@ public static class ChangshaEngine
 
     private static GameState OpenWindow(GameState state, DecisionKind kind, int seat, DateTimeOffset at,
         ImmutableArray<SeatDecision> decisions, PhysicalTile? trigger = null, DrawKind drawKind = DrawKind.None,
-        int lastTileOffers = 0, string? pendingKongKind = null)
+        int lastTileOffers = 0, string? pendingKongKind = null, ImmutableArray<PhysicalTile>? kongTiles = null,
+        int? kongStackCount = null)
     {
         var sequence = checked(state.WindowNumber + 1);
         var bound = decisions.Select(decision => decision with
@@ -385,6 +401,10 @@ public static class ChangshaEngine
             WindowNumber = sequence,
             Window = new(Determinism.WindowId(state.Start, sequence), kind, seat, at + duration,
                 trigger, lastTileOffers, drawKind, pendingKongKind, bound)
+            {
+                KongTiles = kongTiles,
+                KongStackCount = kongStackCount
+            }
         };
     }
 
@@ -452,17 +472,29 @@ public static class ChangshaEngine
         return new(state.Start.HandNumber, state.Start.DealerSeat,
             window is null ? "settled" : turn ? "turn" : "claim", turn ? window!.Seat : null, state.Wall.Length,
             seats, window is null ? null : new(window.Id, Reason(window), window.ClosesAt,
-                window.Trigger is { } tile ? new(window.Seat, [Tiles.Face(tile)]) : null),
+                ProjectTrigger(window)),
             window is null && state.Settlement is { } settlement ? ProjectSettlement(state, settlement) : null,
             window is { Kind: DecisionKind.Turn, DrawKind: DrawKind.RolledSupplement }
-                ? ProjectKongRoll(state, window.Seat) : null);
+                ? ProjectKongRoll(state, window) : null);
     }
 
-    private static PublicKongRoll ProjectKongRoll(GameState state, int seat)
+    private static PublicTrigger? ProjectTrigger(DecisionWindow window) => window.Kind switch
+    {
+        DecisionKind.KongDiscard => new(window.Seat, [.. window.KongTiles!.Value.Select(Tiles.Face)]),
+        _ when window.Trigger is { } tile => new(window.Seat, [Tiles.Face(tile)]),
+        _ => null
+    };
+
+    private static PublicKongRoll ProjectKongRoll(GameState state, DecisionWindow window)
     {
         // The supplement draw opens exactly one window, so the roll used the preceding sequence.
         var (first, second) = Determinism.RollDice(state.Start, state.WindowNumber - 1);
-        return new(seat, [first, second], Math.Min(first, second));
+        var roll = new PublicKongRoll(window.Seat, [first, second], Math.Min(first, second));
+        return window.KongStackCount is { } count ? roll with
+        {
+            StackCount = count,
+            StackMethod = count == first + second ? "sum" : count == roll.LowerDie ? "lower" : "tail"
+        } : roll;
     }
 
     private static PublicMeld ProjectMeld(Meld meld) => new(meld.Kind, meld.FromSeat,
@@ -507,7 +539,7 @@ public static class ChangshaEngine
     private static string Reason(DecisionWindow window) => window.Kind switch
     {
         DecisionKind.Opening => "opening",
-        DecisionKind.RobKong => "kong",
+        DecisionKind.RobKong or DecisionKind.KongDiscard => "kong",
         DecisionKind.LastTileOffer => "lastTile",
         _ when window.DrawKind == DrawKind.LastTile => "lastTile",
         DecisionKind.Discard when window.DrawKind == DrawKind.RolledSupplement => "kong",
@@ -522,11 +554,16 @@ public static class ChangshaEngine
             throw new ArgumentOutOfRangeException(nameof(seat));
         var holder = state.Seats[seat];
         string Id(PhysicalTile tile) => Determinism.TileId(state.Start, seat, tile);
-        var hand = holder.Hand.Select(tile => new HandTile(Id(tile), Tiles.Face(tile))).ToImmutableArray();
+        HandTile Project(PhysicalTile tile) => new(Id(tile), Tiles.Face(tile));
+        var hand = holder.Hand.Select(Project).ToImmutableArray();
         var decision = state.Window?.Decisions.FirstOrDefault(entry => entry.Seat == seat && entry.Response is null);
         var options = decision is null ? [] : decision.Options.Select(option =>
             new LegalOption(option.Id, option.Kind, [.. option.OwnTiles.Select(Id)], [.. option.Preview.Select(Tiles.Face)]))
             .ToImmutableArray();
-        return new(seat, hand, holder.Drawn is { } drawn && state.Window is not null ? Id(drawn) : null, options);
+        return new(seat, hand, holder.Drawn is { } drawn && state.Window is not null ? Id(drawn) : null, options)
+        {
+            KongReplacements = state.Window is { Kind: DecisionKind.Turn, KongTiles: { } candidates } window &&
+                window.Seat == seat ? candidates.Select(Project).ToImmutableArray() : null
+        };
     }
 }

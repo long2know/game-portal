@@ -52,16 +52,18 @@ public sealed class ContractTests
         Assert.NotEqual(state.Window.Id, ChangshaEngine.StartHand(Start(seed: new(18, 30)), Now).Window!.Id);
     }
 
-    [Fact]
-    public void TwoBirdProfileChangesNeitherSeededDealNorPendingCheckpointShape()
+    [Theory]
+    [InlineData(ChangshaEngine.TwoBirdProfile)]
+    [InlineData(ChangshaEngine.TwoTileKongProfile)]
+    public void AlternateProfileChangesNeitherSeededDealNorPendingCheckpointShape(string profile)
     {
         var settings = Start(3, seed: new(17, 29));
         var classic = ChangshaEngine.StartHand(settings, Now);
-        var twoBird = ChangshaEngine.StartHand(settings with { Profile = ChangshaEngine.TwoBirdProfile }, Now);
-        Assert.Equal(Checkpoint(classic with { Start = twoBird.Start }), Checkpoint(twoBird));
-        var recovered = RoundTrip(twoBird);
-        Assert.Equal(ChangshaEngine.TwoBirdProfile, recovered.Start.Profile);
-        Assert.Equal(Checkpoint(Expire(twoBird)), Checkpoint(Expire(recovered)));
+        var alternate = ChangshaEngine.StartHand(settings with { Profile = profile }, Now);
+        Assert.Equal(Checkpoint(classic with { Start = alternate.Start }), Checkpoint(alternate));
+        var recovered = RoundTrip(alternate);
+        Assert.Equal(profile, recovered.Start.Profile);
+        Assert.Equal(Checkpoint(Expire(alternate)), Checkpoint(Expire(recovered)));
     }
 
     [Fact]

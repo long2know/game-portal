@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace Mahjong.Rules;
 
@@ -7,7 +8,14 @@ public sealed record GameState(int CheckpointVersion, int ShuffleVersion, HandSt
     ImmutableArray<WallTile> Wall, ImmutableArray<SeatState> Seats,
     DecisionWindow? Window, int WindowNumber, DateTimeOffset AdvancedAtGameTime,
     int DiscardCount, int? LastTileSeat, PhysicalTile? ClaimedWinTile,
-    ImmutableArray<PhysicalTile> Birds, Settlement? Settlement);
+    ImmutableArray<PhysicalTile> Birds, Settlement? Settlement)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImmutableArray<PhysicalTile>? ClaimedKongWinTiles { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PhysicalTile? UnchosenKongTile { get; init; }
+}
 
 public readonly record struct WallTile(PhysicalTile Tile, int Slot);
 
@@ -27,7 +35,15 @@ public sealed record OpeningAward(string Code, ImmutableArray<PhysicalTile> Evid
 
 public sealed record DecisionWindow(string Id, DecisionKind Kind, int Seat, DateTimeOffset ClosesAt,
     PhysicalTile? Trigger, int LastTileOffers, DrawKind DrawKind, string? PendingKongKind,
-    ImmutableArray<SeatDecision> Decisions);
+    ImmutableArray<SeatDecision> Decisions)
+{
+    // Owns the replacements in a turn; references the river in a KongDiscard window.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImmutableArray<PhysicalTile>? KongTiles { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? KongStackCount { get; init; }
+}
 
 public enum DecisionKind
 {
@@ -35,7 +51,8 @@ public enum DecisionKind
     Turn = 2,
     Discard = 3,
     RobKong = 4,
-    LastTileOffer = 5
+    LastTileOffer = 5,
+    KongDiscard = 6
 }
 
 public enum DrawKind

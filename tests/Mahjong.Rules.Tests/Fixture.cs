@@ -107,11 +107,18 @@ internal static class Fixture
             .Concat(state.Birds);
         if (state.ClaimedWinTile is { } claimed)
             owned = owned.Append(claimed);
+        if (state.ClaimedKongWinTiles is { } caught)
+            owned = owned.Concat(caught);
+        if (state.UnchosenKongTile is { } unused)
+            owned = owned.Append(unused);
+        if (state.Window is { Kind: DecisionKind.Turn, KongTiles: { } candidates })
+            owned = owned.Concat(candidates);
         Assert.Equal(Enumerable.Range(0, 108), owned.Select(tile => tile.Number).Order());
         var extraTileSeat = state.Window?.Kind switch
         {
             DecisionKind.Opening => state.Start.DealerSeat,
-            DecisionKind.Turn or DecisionKind.RobKong => state.Window.Seat,
+            DecisionKind.Turn when state.Window.KongTiles is null => state.Window.Seat,
+            DecisionKind.RobKong => state.Window.Seat,
             _ => state.Settlement is { Reason: "win", SourceSeat: null } win ? win.Winners[0].Seat : (int?)null
         };
         for (var index = 0; index < state.Seats.Length; index++)

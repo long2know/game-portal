@@ -13,14 +13,19 @@ internal enum WinContext
     RobBu
 }
 
+internal readonly record struct WinClaim(int Seat, PhysicalTile Tile);
+
 internal static class Scoring
 {
     internal static GameState Settle(GameState state, ImmutableArray<int> winningSeats,
-        PhysicalTile winningTile, int? source, WinContext context)
+        PhysicalTile winningTile, int? source, WinContext context) =>
+        Settle(state, [.. winningSeats.Select(seat => new WinClaim(seat, winningTile))], source, context);
+
+    internal static GameState Settle(GameState state, ImmutableArray<WinClaim> claims, int? source, WinContext context)
     {
-        var winners = winningSeats.Select(seat => Classify(state, seat, winningTile, source, context)).ToImmutableArray();
-        var revealCount = state.Start.Profile == ChangshaEngine.TwoBirdProfile ? 2 : 1;
-        ImmutableArray<PhysicalTile> birds = context == WinContext.LastTile ? [winningTile] :
+        var winners = claims.Select(claim => Classify(state, claim.Seat, claim.Tile, source, context)).ToImmutableArray();
+        var revealCount = state.Start.Profile is ChangshaEngine.TwoBirdProfile or ChangshaEngine.TwoTileKongProfile ? 2 : 1;
+        ImmutableArray<PhysicalTile> birds = context == WinContext.LastTile ? [claims[0].Tile] :
             [.. state.Wall.Take(revealCount).Select(entry => entry.Tile)];
         if (context != WinContext.LastTile && !birds.IsEmpty)
             state = state with { Wall = state.Wall.RemoveRange(0, birds.Length), Birds = birds };

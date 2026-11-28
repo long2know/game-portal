@@ -4,7 +4,7 @@ namespace Mahjong.Rules;
 
 public static class BotPolicy
 {
-    private static readonly string[] Immediate = ["hu", "reveal", "draw", "gang"];
+    private static readonly string[] Immediate = ["hu", "discardKong", "reveal", "draw", "gang"];
 
     public static string? Pick(PublicView table, SeatView seat)
     {

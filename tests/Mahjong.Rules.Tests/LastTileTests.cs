@@ -8,6 +8,7 @@ public sealed class LastTileTests
     [Theory]
     [InlineData(ChangshaEngine.Profile)]
     [InlineData(ChangshaEngine.TwoBirdProfile)]
+    [InlineData(ChangshaEngine.TwoTileKongProfile)]
     public void FourSeabedPassesDrawAndGiveDealerToFirstOfferedSeat(string profile)
     {
         var state = Offer(AtTurn(["", "", "", "b9"], "c5", seat: 3, dealer: 2, profile: profile), 3);
@@ -36,6 +37,7 @@ public sealed class LastTileTests
     [Theory]
     [InlineData(ChangshaEngine.Profile)]
     [InlineData(ChangshaEngine.TwoBirdProfile)]
+    [InlineData(ChangshaEngine.TwoTileKongProfile)]
     public void SeabedSelfDrawUsesTheSamePhysicalTileAsPublicBird(string profile)
     {
         var state = Offer(AtTurn(["b9", "", "b1 b2 b3 b4 b5 b6 c1 c2 c3 d7 d8 d9 c5", ""], "c5", profile: profile), 0);
@@ -61,6 +63,7 @@ public sealed class LastTileTests
     [Theory]
     [InlineData(ChangshaEngine.Profile)]
     [InlineData(ChangshaEngine.TwoBirdProfile)]
+    [InlineData(ChangshaEngine.TwoTileKongProfile)]
     public void SeabedMissForcesThatTileAndAllowsMultipleHuButNoMelds(string profile)
     {
         var state = Offer(AtTurn(
@@ -99,6 +102,7 @@ public sealed class LastTileTests
     [Theory]
     [InlineData(ChangshaEngine.Profile)]
     [InlineData(ChangshaEngine.TwoBirdProfile)]
+    [InlineData(ChangshaEngine.TwoTileKongProfile)]
     public void LastTileTakenByBuIsNotSeabedAndCannotEnableAnotherKong(string profile)
     {
         const string hand = "b9 b9 b9 b9 b1 b2 b3 c1 c2 c3 d1 d2 d3 c5";
