@@ -604,7 +604,7 @@ test("Changsha PCM follows fresh commits only and falls back to table cues while
 });
 
 test("a real published Mahjong game speaks a committed call", async ({ page, baseURL, browserName }, info) => {
-  test.setTimeout(80000);
+  test.setTimeout(105000);
   const viewport = browserName === "chromium" ? { width: 320, height: 730 } : { width: 740, height: 320 };
   await page.setViewportSize(viewport);
   if (viewport.width === 740) {
@@ -644,24 +644,35 @@ test("a real published Mahjong game speaks a committed call", async ({ page, bas
   await expect(page.locator(online)).toBeVisible();
   const selected = browserName === "chromium" ? "lower" : "higher";
   await setVoice(page, selected);
-  await button(page, "Play with bots").tap();
+  await button(page, "Play with friends").tap();
+  const create = page.getByRole("dialog", { name: "Create a table" });
+  await create.getByLabel("Match length").selectOption({ label: "Four hands" });
+  await create.getByLabel("Fill the other three seats with bots").check();
+  await button(page, "Create table").tap();
   await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
-  await expect(page.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
-  expect(current?.room.rulesVersion).toBe("changsha-two-bird-v1");
+  await expect(page.getByRole("main").getByText("Two birds (house rules)", { exact: true })).toBeVisible();
+  expect(current?.room).toMatchObject({ rulesVersion: "changsha-two-bird-v1", matchHands: 4 });
   const ready = button(page, "Mark ready");
   if (await ready.isVisible()) await ready.tap();
   await button(page, "Start match").tap();
   await expect.poll(async () => new Set((await read()).decoded)).toEqual(new Set(voiceClips(selected)));
   const handled = new Set<string>();
-  const deadline = Date.now() + 40000;
+  const deadline = Date.now() + 65000;
   let result: Playback | undefined;
   const exposed = () => current?.game?.seats.find(row => row.seat !== current?.self.seat &&
     row.melds.some(meld => meld.method !== "concealed" && meld.tiles.some(face => face !== null)));
-  const priority = ["hu", "reveal", "peng", "chi", "draw", "discard", "pass"];
+  // Give the opponents the claim opportunities, even when the guest could claim or win.
+  const priority = ["reveal", "draw", "discard", "pass"];
   while (Date.now() < deadline) {
     result ??= (await read()).playback[0];
-    const decision = current?.game?.window;
     if ((result && exposed()) || current?.room.status === "complete") break;
+    if (current?.room.status === "betweenHands") {
+      const hand = current.game!.handNumber;
+      await page.getByRole("dialog", { name: "Hand results" }).getByRole("button", { name: "Next hand" }).tap();
+      await expect.poll(() => current?.game?.handNumber).toBe(hand + 1);
+      continue;
+    }
+    const decision = current?.game?.window;
     if (decision && !handled.has(decision.windowId)) {
       const option = current!.self.legalOptions.filter(option => priority.includes(option.kind))
         .sort((a, b) => priority.indexOf(a.kind) - priority.indexOf(b.kind))[0];
@@ -690,14 +701,14 @@ test("a real published Mahjong game speaks a committed call", async ({ page, bas
 
   if (current?.room.status === "playing") {
     await button(page, "Pause").tap();
-    await expect.poll(() => current?.room.paused || current?.room.status === "complete").toBe(true);
+    await expect.poll(() => current?.room.paused || current?.room.status !== "playing").toBe(true);
   }
-  if (current?.room.status === "complete") {
-    await expect(page.getByRole("dialog", { name: "Match results" })).toBeVisible();
+  if (current?.room.status === "complete" || current?.room.status === "betweenHands") {
+    await expect(page.getByRole("dialog", { name: current.room.status === "complete" ? "Match results" : "Hand results" })).toBeVisible();
     await button(page, "Close dialog").tap();
   }
   const row = exposed();
-  expect(row, "an actual committed opponent meld").toBeDefined();
+  expect(row, `An actual committed opponent meld in hand ${current?.game?.handNumber ?? "unknown"}`).toBeDefined();
   const meld = row!.melds.find(candidate => candidate.method !== "concealed" && candidate.tiles.some(face => face !== null))!;
   const face = meld.tiles.find(Boolean);
   const switcher = page.getByRole("button", { name: /^Exposed tiles/ });
