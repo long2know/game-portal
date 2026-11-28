@@ -1,5 +1,72 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import type { Guest, Snapshot } from "../src/protocol";
+
+test("the published Mahjong hero paints exact playable bamboo faces without covering the controls", async ({ page, baseURL }) => {
+  const mount = new URL(baseURL!);
+  const portal = /^\/(?:game-)?portal\/$/.test(mount.pathname);
+  await page.goto(new URL(portal ? "mahjong/" : "./", mount).href);
+  await expect(page.locator(".connection")).toHaveAttribute("data-status", "online");
+  await expect(page.getByRole("heading", { name: "Find your fourth.", exact: true })).toBeVisible();
+  const decoration = page.locator(".hero-art");
+  await expect(decoration).toHaveAttribute("aria-hidden", "true");
+  await expect(decoration).toHaveCSS("pointer-events", "none");
+  const art = decoration.locator("svg");
+  await expect(art).toBeVisible();
+  const subset = await art.evaluate((svg, source) => {
+    const parse = (markup: string) => new DOMParser().parseFromString(markup, "image/svg+xml");
+    const played = parse(source);
+    const definitions = [...parse(svg.outerHTML).querySelectorAll('[id^="lt-"]')];
+    return {
+      copied: definitions.map(node => node.id),
+      altered: definitions.filter(node => node.outerHTML !== played.getElementById(node.id)?.outerHTML).map(node => node.id),
+      faces: [...svg.querySelectorAll<SVGUseElement>('use[href^="#lt-b"]')].map(use => {
+        const { width, height } = use.getBBox();
+        return { href: use.getAttribute("href"), painted: width > 0 && height > 0 };
+      }),
+    };
+  }, readFileSync(new URL("../src/tile-suits.svg", import.meta.url), "utf8"));
+  expect(subset).toEqual({
+    copied: ["lt-ink0", "lt-ink1", "lt-ink2", "lt-ink3", "lt-ink4", "lt-b2", "lt-b3", "lt-b4"],
+    altered: [],
+    faces: ["#lt-b2", "#lt-b3", "#lt-b4"].map(href => ({ href, painted: true })),
+  });
+
+  const name = page.getByRole("textbox", { name: "Display name", exact: true });
+  const friends = page.getByRole("button", { name: "Play with friends", exact: true });
+  const bots = page.getByRole("button", { name: "Play with bots", exact: true });
+  for (const [width, height] of [[320, 640], [390, 780], [740, 320], [1920, 1080]]) {
+    await page.setViewportSize({ width, height });
+    await expect(art).toBeVisible();
+    const layout = await art.evaluate(svg => {
+      const bounds = svg.getBoundingClientRect();
+      const hero = svg.closest(".hero")!;
+      const panel = hero.getBoundingClientRect();
+      const text = [...hero.querySelectorAll(".hero-copy :is(p:not([hidden]), h1)")].flatMap(node => {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return [...range.getClientRects()];
+      });
+      const controls = [...hero.querySelectorAll(".hero-copy :is(label, button:not([hidden]))")]
+        .map(node => node.getBoundingClientRect());
+      const encloses = (outer: DOMRect, inner: DOMRect) => inner.left >= outer.left && inner.right <= outer.right &&
+        inner.top >= outer.top && inner.bottom <= outer.bottom;
+      const marks = [...svg.querySelectorAll('use[href^="#lt-b"]')].map(use => use.getBoundingClientRect());
+      return {
+        clipped: !encloses(panel, bounds) || marks.some(mark => !encloses(bounds, mark)),
+        overlap: [...text, ...controls].some(rect => bounds.left < rect.right && bounds.right > rect.left &&
+          bounds.top < rect.bottom && bounds.bottom > rect.top),
+      };
+    });
+    expect(layout, `Hero artwork at ${width}×${height}`).toEqual({ clipped: false, overlap: false });
+    await name.focus();
+    await page.keyboard.press("Tab");
+    await expect(friends).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(bots).toBeFocused();
+    for (const control of [name, friends, bots]) await control.click({ trial: true });
+  }
+});
 
 test("the published Jade Court shell shares one local tile emblem with the browser tab", async ({
   page, baseURL, request,

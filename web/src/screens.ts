@@ -1,4 +1,7 @@
+/// <reference types="vite/client" />
+
 import { button, el, icon, reconcile, text, winds } from "./dom";
+import heroTiles from "./hero-tiles.svg?raw";
 import { birdProfiles } from "./mahjong-profile";
 import type { Guest, PublicRoom, RoomSeat, Seat, Snapshot } from "./protocol";
 
@@ -87,10 +90,9 @@ export class HomeScreen {
       el("div", "hero-actions", this.resume, this.create, this.quick), this.intro);
     form.addEventListener("submit", event => { event.preventDefault(); hooks.quick(); });
 
-    const tiles = el("div", "sample-tiles", ...[0, 1, 2].map(index =>
-      el("span", "tile-target", el("span", "tile-face tile-back", ...(index === 1 ? [icon("dot")] : [])))));
-    const decoration = el("div", "hero-art", tiles);
+    const decoration = el("div", "hero-art");
     decoration.setAttribute("aria-hidden", "true");
+    decoration.innerHTML = heroTiles;
     const hero = el("div", "panel hero", form, decoration);
 
     this.refresh = iconButton("refresh", "Refresh public tables", hooks.refresh);

@@ -101,19 +101,15 @@ a.brand::before { content: "‹"; color: var(--gold); }
 .hero .field { max-width: 340px; }
 .hero-actions, .row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .hero-art {
-  display: grid; place-items: center; position: relative; min-height: 240px; color: #efd29d60; pointer-events: none;
+  display: grid; place-items: center; position: relative; z-index: 0; min-width: 0; min-height: 240px;
+  color: #efd29d60; pointer-events: none;
 }
 .hero-art::before, .hero-art::after {
   content: ""; position: absolute; width: min(82%, 335px); aspect-ratio: 1; border-radius: 50%; border: 1px solid currentColor;
   transform: scaleY(.79) rotate(-17deg);
 }
 .hero-art::after { width: min(65%, 262px); border-style: dashed; color: #efd29d52; }
-.sample-tiles { z-index: 1; display: flex; gap: 7px; transform: perspective(600px) rotateX(23deg) rotateZ(-14deg); }
-.sample-tiles .tile-target { width: clamp(36px, 6vw, 77px); height: clamp(55px, 8vw, 99px); }
-.sample-tiles .tile-target:nth-child(2) { transform: translateY(-17%); }
-.sample-tiles .tile-target:nth-child(3) { transform: translateY(-34%); }
-.sample-tiles .tile-back { border-color: #9ca780; color: #ffd393; }
-.sample-tiles .icon { width: 58%; height: auto; }
+.hero-art > svg { z-index: 1; display: block; width: min(94%, 320px); height: auto; }
 .panel-heading { display: flex; align-items: start; justify-content: space-between; gap: 8px; margin-bottom: 11px; }
 .panel-heading h2 { font-size: clamp(1.62rem, 3vw, 2.19rem); margin-top: 4px; }
 .form { display: grid; gap: 13px; }
@@ -471,7 +467,9 @@ a.brand::before { content: "‹"; color: var(--gold); }
 @media (max-width: 630px) {
   .home { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .hero { display: block; min-height: 230px; }
-  .hero-art { position: absolute; right: -24px; top: 1px; width: 165px; min-height: 120px; opacity: .76; }
+  .hero-art { position: absolute; top: 40px; right: 16px; width: min(160px, calc(60% - 76px)); min-height: 0; }
+  .hero-art::before, .hero-art::after { display: none; }
+  .hero-art > svg { width: 100%; }
   .hero .detail { max-width: 31ch; }
   .hero h1 { max-width: 9ch; }
   .hero .field { max-width: 300px; }
@@ -497,6 +495,10 @@ a.brand::before { content: "‹"; color: var(--gold); }
   .turn-ident { flex-wrap: wrap; gap: 2px; }
   [data-portal-mahjong] .site-header:has([aria-label="Table chat"]:not([hidden])) .brand-symbol,
   [data-portal-mahjong] .site-header:has([aria-label="Table chat"]:not([hidden])) .brand::before { display: none; }
+}
+
+@media (max-width: 310px) {
+  .hero-art { display: none; }
 }
 
 @media (min-width: 900px) and (min-height: 521px) {

@@ -31,7 +31,9 @@ Koi-Koi's **Last turns** slips reuse the same local, public faces. A fading CSS 
 
 The original project assets and code are under [GPL-3.0](../LICENSE); the adapted tile marks are CC0. We kept each suit’s painted geometry, including the calligraphed 萬, the bamboo bird and the coin rosettes. We dropped editor metadata and unused definitions, rounded vector coordinates at tile scale, adjusted the inks for ivory tile bodies, and shared repeated paths as internal fragments. There are no honor, bonus or red-five tiles, upstream code, external SVG references, scripts or fonts.
 
-[`web/src/tile-suits.svg`](../web/src/tile-suits.svg) contains all 27 suited faces: `Man` maps to characters, `Sou` to bamboo, and `Pin` to dots. [`web/src/tile.ts`](../web/src/tile.ts) references each symbol from the same app origin. Vite emits one fingerprinted sheet, first requested when the table renders a marked face. The lazy `actors` JS and CSS carry the cast, Hall styling, dial and win scene, and load from that origin on entering the table or its waiting room. The smaller Hall SVGs are bundled into the CSS and the characters are inline. The fingerprinted dragon SVG is requested by that stylesheet only when the playing felt is present. It is static, follows the existing table projection, and sits below the dial and discards even with reduced motion. The landing illustration uses original CSS tile backs and an inline one-dot seal and does not request any of these table assets. Settings loads its optional Fullscreen helper separately. The app can serve its artwork without internet access; there are no reference clips, remote asset services or bundled 3D models. The [renderer fixtures](../web/e2e/fixtures/) and Playwright captures are not included in the published app.
+[`web/src/tile-suits.svg`](../web/src/tile-suits.svg) contains all 27 suited faces: `Man` maps to characters, `Sou` to bamboo, and `Pin` to dots. [`web/src/tile.ts`](../web/src/tile.ts) references each symbol from the same app origin. Vite emits one fingerprinted sheet, first requested when the table renders a marked face. The lazy `actors` JS and CSS carry the cast, Hall styling, dial and win scene, and load from that origin on entering the table or its waiting room. The smaller Hall SVGs are bundled into the CSS and the characters are inline. The fingerprinted dragon SVG is requested by that stylesheet only when the playing felt is present. It is static, follows the existing table projection, and sits below the dial and discards even with reduced motion. Settings loads its optional Fullscreen helper separately. The app can serve its artwork without internet access; there are no reference clips, remote asset services or bundled 3D models. The [renderer fixtures](../web/e2e/fixtures/) and Playwright captures are not included in the published app.
+
+The static [Changsha Mahjong home illustration](../web/src/hero-tiles.svg) uses original ivory and jade bodies with the exact CC0 playable `lt-b2`, `lt-b3` and `lt-b4` marks (Sou2–Sou4) and only their five shared ink paths. It is inlined in the Mahjong entry and does not request the suited sheet or other table assets.
 
 ## Windward Ledger media
 
@@ -123,6 +125,13 @@ The budgets below include the served HTML at each mount. Board-lattice,
 square and move-mark styles load with the board renderer (including Daily
 Xiangqi), not on the lobby. The catalog marks use the existing sheet;
 the game modules and playable art are not requested there.
+
+| Changsha Mahjong home artwork build, including served HTML | Gzip bytes | Limit |
+|---|---:|---:|
+| `/portal/` | 24,440 | 24,576 |
+| `/game-portal/` | 24,443 | 24,576 |
+| `/portal/mahjong/` | 27,366 | 32,768 |
+| `/game-portal/mahjong/` | 27,370 | 32,768 |
 
 | Windward Ledger media build, including served HTML | Gzip bytes | Limit |
 |---|---:|---:|

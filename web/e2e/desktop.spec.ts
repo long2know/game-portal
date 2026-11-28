@@ -96,7 +96,7 @@ test("all 27 suited tiles paint from one passive local sheet requested only at t
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(origin);
   expect((await page.locator(".shell").boundingBox())!.width).toBe(1120);
-  await expect(page.locator(".sample-tiles .tile-back")).toHaveCount(3);
+  await expect(page.locator('.hero-art use[href^="#lt-b"]')).toHaveCount(3);
   expect([...sheets]).toEqual([]);
   const painted = (selector: string) => page.locator(selector).evaluateAll(nodes => nodes.map(node => {
     const { width, height } = (node as SVGGraphicsElement).getBBox();
