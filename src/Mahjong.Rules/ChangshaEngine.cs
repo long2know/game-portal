@@ -295,11 +295,17 @@ public static partial class ChangshaEngine
                 var tiles = group.ToImmutableArray();
                 AddKongOptions(options, holder, Option("bu", tiles, tiles, "concealed"), null, null);
             }
-            var peng = holder.Melds.FirstOrDefault(meld => meld.Kind == "peng" && meld.Tiles[0].FaceIndex == drawn.FaceIndex);
-            if (peng is not null)
+            var additions = state.Start.Profile == TwoTileKongProfile ? holder.Hand : [drawn];
+            foreach (var peng in holder.Melds.Where(meld => meld.Kind == "peng"))
             {
-                var added = Option("bu", [drawn], Tiles.Sort(peng.Tiles.Add(drawn)), "added");
-                AddKongOptions(options, holder, added, null, null);
+                foreach (var fourth in additions)
+                {
+                    if (fourth.FaceIndex != peng.Tiles[0].FaceIndex)
+                        continue;
+                    var added = Option("bu", [fourth], Tiles.Sort(peng.Tiles.Add(fourth)), "added");
+                    AddKongOptions(options, holder, added, null, null);
+                    break;
+                }
             }
         }
         return OpenWindow(state, DecisionKind.Turn, seat, at, [new(seat, options.ToImmutable(), null)], drawKind: draw);
@@ -417,9 +423,9 @@ public static partial class ChangshaEngine
 
     private static SeatState Upgrade(SeatState holder, DecisionOption option)
     {
-        var drawn = option.OwnTiles[0];
-        var peng = holder.Melds.Single(meld => meld.Kind == "peng" && meld.Tiles[0].FaceIndex == drawn.FaceIndex);
-        var complete = peng with { Kind = option.Kind, Method = "added", Tiles = Tiles.Sort(peng.Tiles.Add(drawn)) };
+        var fourth = option.OwnTiles[0];
+        var peng = holder.Melds.Single(meld => meld.Kind == "peng" && meld.Tiles[0].FaceIndex == fourth.FaceIndex);
+        var complete = peng with { Kind = option.Kind, Method = "added", Tiles = Tiles.Sort(peng.Tiles.Add(fourth)) };
         return RemoveFromHand(holder, option.OwnTiles) with { Melds = holder.Melds.Replace(peng, complete) };
     }
 
