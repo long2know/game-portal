@@ -15,7 +15,7 @@
 .kong-release { grid-area: release; }
 .kong-release .choose { width: 100%; min-width: 44px; max-width: 9rem; }
 
-.kong-discards { display: grid; gap: 3px; justify-items: center; }
+.kong-discards { display: grid; grid-template-areas: "title" "tiles"; gap: 3px; justify-items: center; }
 .board-center > .kong-discards {
   position: absolute; left: calc(100% + 4px); top: 50%; transform: translateY(-50%);
   pointer-events: none; padding: 4px 5px 5px; background: #1b3229;

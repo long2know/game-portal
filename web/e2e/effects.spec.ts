@@ -416,6 +416,9 @@ for (const [width, height, faces, label] of [
     await page.setViewportSize({ width, height });
     const turn = kongCandidate(40, "sum", 3);
     const wire = await open(page, turn, true);
+    if (width === 320) {
+      await page.addStyleTag({ content: ".turn-title { font-family: monospace; letter-spacing: .12rem; }" });
+    }
     await expect(page.locator(".hall-dial-roll")).toHaveText("Sum #7");
     await expect(page.getByRole("group", { name: "Kong replacements" })).toHaveCount(0);
     await expect(page.locator(".center-trigger .tile-target, .kong-discards .tile-target")).toHaveCount(0);
@@ -437,6 +440,9 @@ for (const [width, height, faces, label] of [
     await assertKongArt(choices.locator("button .tile-art"), [...faces], 24, 28);
     await expect(choices.getByRole("button", { name: "Pass", exact: true })).toBeEnabled();
     expect(await rack.boundingBox()).toEqual(dock);
+    const title = (await discards.getByText("Kong discards", { exact: true }).boundingBox())!;
+    const firstTile = (await discards.locator(".tile-art").first().boundingBox())!;
+    expect(title.y + title.height).toBeLessThanOrEqual(firstTile.y);
     const selected = choices.getByRole("button", { name: label, exact: true });
     const dimensions = (await selected.boundingBox())!;
     expect(Math.min(dimensions.height, dimensions.width)).toBeGreaterThanOrEqual(44);

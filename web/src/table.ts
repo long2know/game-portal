@@ -360,13 +360,13 @@ export class TableView {
     text(this.tableCaption, `Hand ${game.handNumber} / ${room.matchHands}`);
     text(this.gameInfo, `${wind(self.seat, game.dealerSeat)}${self.seat === game.dealerSeat ? " · Dealer" : ""}`);
     if (this.hooks.portal) text(this.profile, rulesProfile(room.rulesVersion).label);
-    text(this.phase, this.phaseText(game, room.seats, self.seat, room.paused));
     const trigger = game.window?.trigger;
     const twoTile = room.rulesVersion === twoTileKongRules;
     const river = trigger && game.seats.find(item => item.seat === trigger.seat)?.discards;
     // A Kong response can be a rob offer, which has no committed river tiles.
     const residue = twoTile && game.phase === "claim" && game.window?.reason === "kong" && trigger?.faces.length &&
       river && trigger.faces.every((face, i) => face === river.at(i - trigger.faces.length)) ? trigger : null;
+    text(this.phase, residue && !room.paused ? "Kong claim" : this.phaseText(game, room.seats, self.seat, room.paused));
     const ordinaryTrigger = residue ? null : trigger;
     reconcile(this.trigger, ordinaryTrigger?.faces ?? [], (face, i) => `${i}:${face}`, face => tileLabel(face));
     this.trigger.setAttribute("aria-label", ordinaryTrigger ? `${wind(ordinaryTrigger.seat, game.dealerSeat)} played` : "");
