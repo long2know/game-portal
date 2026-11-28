@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Page, WebSocketRoute } from "@playwright/test";
-import type { ClientMessage, Guest, Meld, Seat, Snapshot } from "../src/protocol";
+import type { ClientMessage, Guest, Meld, Payloads, Seat, Snapshot } from "../src/protocol";
 
 const online = '.connection[data-status="online"]';
 const clipPattern = /\/(cha-english|(?:chi|peng|hu)-(?:lower|higher))-[\w-]+\.mp3$/;
@@ -618,11 +618,16 @@ test("a real published Mahjong game speaks a committed call", async ({ page, bas
   }
   const read = await observeCalls(page);
   let current: Snapshot | undefined;
+  const creates: Payloads["createRoom"][] = [];
   const commits: { kind: string; seat: Seat; bot: boolean; revision: number }[] = [];
   const record = (frame: Snapshot, kind: string, seat: Seat) =>
     commits.push({ kind, seat, bot: frame.room.seats.some(player => player.seat === seat && player.kind === "bot"), revision: frame.gameRevision });
   page.on("websocket", socket => {
     if (!new URL(socket.url()).pathname.endsWith("/ws")) return;
+    socket.on("framesent", ({ payload }) => {
+      const command = JSON.parse(payload.toString()) as ClientMessage;
+      if (command.type === "command" && command.op === "createRoom") creates.push(command.payload);
+    });
     socket.on("framereceived", ({ payload }) => {
       const frame = JSON.parse(payload.toString()) as Snapshot;
       if (frame.type !== "snapshot") return;
@@ -650,8 +655,9 @@ test("a real published Mahjong game speaks a committed call", async ({ page, bas
   await create.getByLabel("Fill the other three seats with bots").check();
   await button(page, "Create table").tap();
   await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
-  await expect(page.getByRole("main").getByText("Two birds (house rules)", { exact: true })).toBeVisible();
-  expect(current?.room).toMatchObject({ rulesVersion: "changsha-two-bird-v1", matchHands: 4 });
+  await expect(page.getByRole("main").getByText("Two-tile Kong · Two birds", { exact: true })).toBeVisible();
+  expect(current?.room).toMatchObject({ rulesVersion: "changsha-two-tile-kong-v1", matchHands: 4 });
+  expect(creates).toEqual([{ visibility: "invite", matchHands: 4, fillBots: true, rulesVersion: "changsha-two-tile-kong-v1" }]);
   const ready = button(page, "Mark ready");
   if (await ready.isVisible()) await ready.tap();
   await button(page, "Start match").tap();
@@ -662,7 +668,7 @@ test("a real published Mahjong game speaks a committed call", async ({ page, bas
   const exposed = () => current?.game?.seats.find(row => row.seat !== current?.self.seat &&
     row.melds.some(meld => meld.method !== "concealed" && meld.tiles.some(face => face !== null)));
   // Give the opponents the claim opportunities, even when the guest could claim or win.
-  const priority = ["reveal", "draw", "discard", "pass"];
+  const priority = ["reveal", "draw", "discard", "discardKong", "pass"];
   while (Date.now() < deadline) {
     result ??= (await read()).playback[0];
     if ((result && exposed()) || current?.room.status === "complete") break;

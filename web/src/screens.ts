@@ -2,7 +2,7 @@
 
 import { button, el, icon, reconcile, text, winds } from "./dom";
 import heroTiles from "./hero-tiles.svg?raw";
-import { birdProfiles } from "./mahjong-profile";
+import { rulesProfile } from "./mahjong-profile";
 import type { Guest, PublicRoom, RoomSeat, Seat, Snapshot } from "./protocol";
 
 export function iconButton(name: Parameters<typeof icon>[0], label: string, run: () => void): HTMLButtonElement {
@@ -189,7 +189,7 @@ export class HomeScreen {
     reconcile(this.list, items, item => item.roomId, () => el("li", "room-row",
       portal ? el("div", "small room-summary", el("span", "chip"), el("p"), el("p")) : el("span", "small"),
       button("Join table", "btn secondary")), (node, item) => {
-      const profile = item.rulesVersion && birdProfiles[item.rulesVersion];
+      const profile = item.rulesVersion && rulesProfile(item.rulesVersion).label;
       const summary = node.firstElementChild!;
       const playing = item.status === "playing";
       const openSeat = !playing && item.occupiedSeats < 4;
@@ -270,7 +270,7 @@ export class WaitingRoom {
     const allReady = full && room.seats.every(seat => seat.ready || seat.kind === "bot");
     text(this.visibility, room.visibility === "invite" ? "Invite only" : "Public");
     text(this.match, room.matchHands === 1 ? "One hand" : "Four hands");
-    text(this.profile, birdProfiles[room.rulesVersion]);
+    text(this.profile, rulesProfile(room.rulesVersion).label);
     const dealer = room.nextDealerSeat;
     this.nextDealer.hidden = dealer == null;
     text(this.nextDealer, dealer == null ? "" :

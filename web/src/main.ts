@@ -4,6 +4,7 @@ import type { AudioChoices } from "./audio";
 import { Modal } from "./dialog";
 import { button, el, text } from "./dom";
 import type { ChatPanel } from "./mahjong-forms";
+import { twoTileKongRules } from "./mahjong-profile";
 import { appPath } from "./paths";
 import { rememberTable, tableEntry } from "./portal/invite-handoff";
 import { onlineLobby } from "./portal/social-entry";
@@ -22,7 +23,7 @@ const connectionText: Record<Connection, string> = {
 const nonDiscard = /[\u0000-\u001f\u007f-\u009f]/u;
 const mahjongPath = `${appPath}mahjong/`;
 const fromPortal = document.querySelector("#app")!.hasAttribute("data-portal-mahjong") && location.pathname.startsWith(mahjongPath);
-const newTableRules = fromPortal ? "changsha-two-bird-v1" : undefined;
+const newTableRules = fromPortal ? twoTileKongRules : undefined;
 const handoffError = "Couldn’t verify the accepted Mahjong seat. Try again, or ask your friend for their full invite link.";
 
 class LanternTable {
@@ -94,7 +95,7 @@ class LanternTable {
       brand.setAttribute("aria-label", "Back to all games in Jade Court");
     }
     const rulesButton = iconButton("book", "Changsha rules", () => void this.openForm(({ rulesContent }) =>
-      this.modal.show("rules", "Changsha rules", rulesContent(this.session.snapshot?.room.rulesVersion), rulesButton)));
+      this.modal.show("rules", "Changsha rules", rulesContent(this.session.snapshot?.room.rulesVersion, fromPortal), rulesButton)));
     const actions = el("div", "header-actions", this.connection, rulesButton, this.chatButton, this.settingsButton);
     if (fromPortal) {
       const control = iconButton("globe", "Online lobby", () => {});
@@ -372,6 +373,7 @@ class LanternTable {
     try {
       const { TableView } = await import("./table");
       this.table = new TableView({
+        portal: fromPortal,
         choose: option => {
           const state = this.session.snapshot;
           const window = state?.game?.window;

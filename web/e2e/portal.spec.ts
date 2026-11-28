@@ -1007,17 +1007,13 @@ test.describe("mounted Jade Court Mahjong", () => {
     const copied = await observeClipboard(page);
     const assets = new Set<string>();
     const sockets = new Set<string>();
-    let snapshot: Snapshot | undefined;
+    const { sent, latest } = watchMahjong(page, baseURL!);
+    const created = () => sent.filter(message => message.type === "command" && message.op === "createRoom")
+      .map(command => command.payload);
     page.on("request", request => {
       if (new URL(request.url()).pathname.startsWith(`${mount.pathname}assets/`)) assets.add(request.url());
     });
-    page.on("websocket", socket => {
-      sockets.add(new URL(socket.url()).pathname);
-      socket.on("framereceived", ({ payload }) => {
-        const message = JSON.parse(payload.toString()) as ServerMessage;
-        if (message.type === "snapshot") snapshot = message;
-      });
-    });
+    page.on("websocket", socket => { sockets.add(new URL(socket.url()).pathname); });
     const html = (await page.goto(address))!;
     await expect(page).toHaveTitle("Jade Court · Changsha Mahjong");
     await expect(page.locator("#app")).toHaveAttribute("data-base", mount.pathname);
@@ -1042,7 +1038,10 @@ test.describe("mounted Jade Court Mahjong", () => {
 
     await tap(page, "Play with friends");
     const create = page.getByRole("dialog", { name: "Create a table" });
-    await expect(create.getByLabel("Birds")).toHaveValue("changsha-two-bird-v1");
+    const rules = create.getByLabel("Table rules");
+    await expect(rules).toHaveValue("changsha-two-tile-kong-v1");
+    await expect(rules.locator("option")).toHaveText(["One bird (classic)", "Two birds (house rules)", "Two-tile Kong · Two birds"]);
+    await expect(rules).toHaveAccessibleDescription(/up to two replacements.*one replacement.*up to one bird.*up to two/);
     const listing = create.getByText(/Public listings show the host’s display name/);
     await expect(listing).toBeHidden();
     await create.getByLabel("Who can join?").selectOption("public");
@@ -1052,7 +1051,10 @@ test.describe("mounted Jade Court Mahjong", () => {
     await expect(listing).toBeHidden();
     await create.getByRole("button", { name: "Create table" }).tap();
     await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
-    expect(snapshot?.room.rulesVersion).toBe("changsha-two-bird-v1");
+    await expect(page.getByText("Two-tile Kong · Two birds", { exact: true })).toBeVisible();
+    const defaultPayload = { visibility: "invite", matchHands: 1, fillBots: false, rulesVersion: "changsha-two-tile-kong-v1" };
+    expect(created()).toEqual([defaultPayload]);
+    expect(latest().room.rulesVersion).toBe("changsha-two-tile-kong-v1");
     await tap(page, "Invite friends");
     expect(await copied()).toEqual([]);
     await tap(page, "Copy invite link");
@@ -1060,6 +1062,16 @@ test.describe("mounted Jade Court Mahjong", () => {
     const link = new URL(invitation);
     expect(link.origin + link.pathname + link.search).toBe(address);
     expect(link.hash).toMatch(/^#invite=[\w-]{16}$/);
+
+    await tap(page, "Close dialog");
+    await tap(page, "Leave table");
+    await tap(page, "Play with friends");
+    await rules.selectOption({ label: "Two birds (house rules)" });
+    await create.getByRole("button", { name: "Create table" }).tap();
+    await expect(page.getByText("Two birds (house rules)", { exact: true })).toBeVisible();
+    expect(created()).toEqual([defaultPayload, { ...defaultPayload, rulesVersion: "changsha-two-bird-v1" }]);
+    expect(latest().room.rulesVersion).toBe("changsha-two-bird-v1");
+    await tap(page, "Leave table");
   });
 
   test("a resumed Mahjong bot host can cancel, start a new game in place, or quit without a saved seat", async ({ page, baseURL }) => {
@@ -1123,18 +1135,19 @@ test.describe("mounted Jade Court Mahjong", () => {
     await page.goto(url("mahjong/"));
     await tap(page, "Play with friends");
     const create = dialog("Create a table");
-    await create.getByLabel("Birds").selectOption({ label: "One bird (classic)" });
+    await create.getByLabel("Table rules").selectOption({ label: "One bird (classic)" });
     await create.getByLabel("Fill the other three seats with bots").check();
     await create.getByRole("button", { name: "Create table" }).tap();
     const waiting = page.getByRole("main");
     await expect(waiting.getByText("One bird (classic)", { exact: true })).toBeVisible();
     expect(latest().room.rulesVersion).toBe("changsha-v1");
+    expect(commands.find(command => command.op === "createRoom")?.payload).toEqual({ visibility: "invite", matchHands: 1, fillBots: true });
     const selectedDealer = latest().room.nextDealerSeat;
     expect(selectedDealer).toEqual(expect.any(Number));
     await expect(waiting.getByText(`Next dealer: ${latest().room.seats[selectedDealer!].displayName}`, { exact: true })).toBeVisible();
     await tap(page, "Changsha rules");
     await expect(dialog("Changsha rules").getByText("This table: One bird (classic). Local variations exist.")).toBeVisible();
-    await expect(dialog("Changsha rules").getByText(/Create a new table to change bird rules/)).toBeVisible();
+    await expect(dialog("Changsha rules").getByText(/Create a new table to change table rules/)).toBeVisible();
     await expect(dialog("Changsha rules").getByText(/Cha makes a sequence/)).toBeVisible();
     await tap(page, "Close dialog");
     await tap(page, "Mark ready");
@@ -1248,10 +1261,11 @@ test.describe("mounted Jade Court Mahjong", () => {
     await tap(page, "Play with bots");
     await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
     expect(latest().roomId).not.toBe(paused.roomId);
-    expect(latest().room.rulesVersion).toBe("changsha-two-bird-v1");
+    expect(latest().room.rulesVersion).toBe("changsha-two-tile-kong-v1");
+    await expect(waiting.getByText("Two-tile Kong · Two birds", { exact: true })).toBeVisible();
     expect(latest().room.seats.map(seat => seat.kind)).toEqual(["human", "bot", "bot", "bot"]);
     expect(commands.at(-1)?.payload).toEqual({
-      visibility: "invite", matchHands: 1, fillBots: true, rulesVersion: "changsha-two-bird-v1",
+      visibility: "invite", matchHands: 1, fillBots: true, rulesVersion: "changsha-two-tile-kong-v1",
     });
     await tap(page, "Leave table");
   });
@@ -1387,12 +1401,14 @@ test.describe("mounted Jade Court Mahjong", () => {
       await expect(page.getByText("Table paused", { exact: true })).toBeVisible();
       const paused = host.latest();
       expect(paused.room.seats.map(seat => seat.kind)).toEqual(["human", "bot", "bot", "bot"]);
+      expect(paused.room.rulesVersion).toBe("changsha-two-tile-kong-v1");
 
       await peer.goto(url("mahjong/"));
       await peer.getByLabel("Display name").fill("Test Guest");
       await peer.getByRole("searchbox", { name: "Search by host name" }).fill(hostName.toLowerCase());
       const listing = peer.getByRole("listitem").filter({ has: peer.getByText(`Host: ${hostName}`, { exact: true }) });
       await expect(listing).toContainText("In progress");
+      await expect(listing).toContainText("Two-tile Kong · Two birds");
       await expect(listing).toContainText("3 bot seats available");
       await listing.getByRole("button", { name: /^Take a bot seat/ }).tap();
       const table = peer.getByRole("region", { name: "Mahjong table" });
@@ -1401,7 +1417,13 @@ test.describe("mounted Jade Court Mahjong", () => {
         op: "joinRoom", payload: { roomId: paused.roomId, takeBot: true },
       });
       expect(guest.latest()).toMatchObject({ roomId: paused.roomId, gameRevision: paused.gameRevision,
+        room: { rulesVersion: "changsha-two-tile-kong-v1" },
         self: { seat: 1 }, game: { window: { windowId: paused.game!.window!.windowId } } });
+      await tap(peer, "Changsha rules");
+      const help = peer.getByRole("dialog", { name: "Changsha rules" });
+      await expect(help.getByText("This table: Two-tile Kong · Two birds. Local variations exist.")).toBeVisible();
+      await expect(help.getByText(/Each replacement is a separate choice for Hu/)).toContainText("one Kong Cannon win each");
+      await tap(peer, "Close dialog");
 
       const beforeReserve = guest.latest();
       await tap(peer, "Settings");

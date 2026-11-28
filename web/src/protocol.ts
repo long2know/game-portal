@@ -6,9 +6,9 @@ export type Rank = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 export type Face = `${Suit}${Rank}`;
 export type Visibility = "public" | "invite";
 export type MatchHands = 1 | 4;
-export type RulesVersion = "changsha-v1" | "changsha-two-bird-v1";
+export type RulesVersion = "changsha-v1" | "changsha-two-bird-v1" | "changsha-two-tile-kong-v1";
 export type RoomStatus = "waiting" | "playing" | "betweenHands" | "complete";
-export type OptionKind = "discard" | "draw" | "chi" | "peng" | "gang" | "bu" | "hu" | "pass" | "reveal";
+export type OptionKind = "discard" | "discardKong" | "draw" | "chi" | "peng" | "gang" | "bu" | "hu" | "pass" | "reveal";
 
 export interface Preferences {
   sound: boolean;
@@ -80,6 +80,7 @@ export interface Self {
   inviteCode: string | null;
   hand: Tile[];
   drawnTileId: string | null;
+  kongReplacements?: Tile[] | null;
   legalOptions: Option[];
 }
 
@@ -128,7 +129,13 @@ export interface Game {
   dealerSeat: Seat;
   phase: "turn" | "claim" | "settled";
   turnSeat: Seat | null;
-  kongRoll?: { seat: Seat; dice: [number, number]; lowerDie: number } | null;
+  kongRoll?: {
+    seat: Seat;
+    dice: [number, number];
+    lowerDie: number;
+    stackCount?: number;
+    stackMethod?: "sum" | "lower" | "tail";
+  } | null;
   wallCount: number;
   seats: GameSeat[];
   window: DecisionWindow | null;

@@ -2,11 +2,11 @@ import "./dial.css";
 import { el, places, svg, text, wind } from "./dom";
 import type { Seat, Snapshot } from "./protocol";
 
-type KongRoll = { seat: Seat; dice: readonly [number, number]; lowerDie: number };
-type DialGame = NonNullable<Snapshot["game"]> & { kongRoll?: KongRoll };
-
 const pipFaces = [[4], [0, 8], [0, 4, 8], [0, 2, 6, 8], [0, 2, 4, 6, 8], [0, 2, 3, 5, 6, 8]];
 const isDie = (value: number) => Number.isInteger(value) && value >= 1 && value <= 6;
+const stackLabels = {
+  sum: ["Sum", "Dice sum"], lower: ["Low", "Lower die"], tail: ["Rear", "Rear fallback"],
+};
 
 export class HallDial {
   private readonly plate = el("div", "hall-dial-plate");
@@ -26,12 +26,13 @@ export class HallDial {
     this.plate.setAttribute("aria-hidden", "true");
     this.results.setAttribute("aria-hidden", "true");
     this.results.hidden = true;
+    this.description.setAttribute("role", "status");
     center.classList.add("board-center--dial");
     center.append(this.plate, this.results, this.description);
   }
 
   present(state: Snapshot, liveMotion = false): void {
-    const game = state.game as DialGame | null;
+    const game = state.game;
     const current = game?.turnSeat ?? game?.window?.trigger?.seat;
     const offset = current === undefined ? -1 : (current - state.self.seat + 4) % 4;
     this.plate.dataset.lit = places[offset] ?? "";
@@ -58,8 +59,12 @@ export class HallDial {
 
     this.dice.forEach((face, i) => face.replaceChildren(...pipFaces[roll.dice[i] - 1].map(pip =>
       svg("circle", { cx: 4 + pip % 3 * 4, cy: 4 + Math.floor(pip / 3) * 4, r: 1.2 }))));
-    text(this.low, `Low ${roll.lowerDie}`);
-    text(this.description, `Kong roll: ${roll.dice.join(" and ")}. Lower die: ${roll.lowerDie}.`);
+    const method = roll.stackMethod && stackLabels[roll.stackMethod];
+    const stack = roll.stackCount;
+    text(this.low, method && stack ? `${method[0]} #${stack}` : `Low ${roll.lowerDie}`);
+    text(this.description, `Kong roll: ${roll.dice.join(" and ")}. ${method && stack
+      ? `${method[1]} selects stack ${stack} from the tail.`
+      : `Lower die: ${roll.lowerDie}.`}`);
     if (liveMotion && !still) {
       this.animation = this.dice.map((die, i) => die.animate([
         { transform: `translateY(-3px) rotate(${i ? 42 : -38}deg) scale(.8)` },

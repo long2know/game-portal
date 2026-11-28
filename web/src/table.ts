@@ -1,8 +1,9 @@
 import "./phone-claims.css";
+import "./kong.css";
 import type { ActorMoment, SeatCast } from "./actors";
 import { button, el, places, reconcile, text, wind } from "./dom";
 import { center, seatSpot, TableEffects } from "./effects";
-import { canManageMatch, tableScore } from "./mahjong-profile";
+import { canManageMatch, rulesProfile, tableScore, twoTileKongRules } from "./mahjong-profile";
 import { meldKey, meldNames, publicMelds, setMelds } from "./melds";
 import { MeldViewer } from "./meld-viewer";
 import type { Game, GameSeat, Meld, Option, OptionKind, RoomSeat, Seat, Snapshot, Tile } from "./protocol";
@@ -10,7 +11,7 @@ import { faceName, tileFace, tileLabel } from "./tile";
 
 const optionNames: Record<OptionKind, string> = {
   discard: "Discard", draw: "Draw", chi: "Cha", peng: "Peng", gang: "Roll for Kong", bu: "Supplement",
-  hu: "Hu · Win", pass: "Pass", reveal: "Reveal",
+  hu: "Hu · Win", pass: "Pass", reveal: "Reveal", discardKong: "Discard replacements",
 };
 const choiceOrder: OptionKind[] = ["hu", "reveal", "gang", "bu", "peng", "chi", "draw", "pass"];
 const windowNames = {
@@ -68,7 +69,7 @@ function blocks(parent: HTMLElement, count: number): void {
 
 function updateLane(
   lane: Lane, lobby: RoomSeat, game: GameSeat, self: Seat, dealer: Seat,
-  active: boolean, wall: number, latest: boolean, total: number,
+  active: boolean, wall: number, latest: number, total: number,
 ): void {
   const own = lobby.seat === self;
   const direction = wind(lobby.seat, dealer);
@@ -91,26 +92,28 @@ function updateLane(
   }
   reconcile(lane.river, game.discards, (face, i) => `${i}:${face}`, face =>
     el("li", "river-tile", tileLabel(face)), (node, _, i) =>
-    node.classList.toggle("last-discard", latest && i === game.discards.length - 1));
+    node.classList.toggle("last-discard", i >= game.discards.length - latest));
   reconcile(lane.reveals, game.revealedTiles, (face, i) => `${i}:${face}`, face => tileLabel(face));
 }
 
-function optionButton(option: Option, choose: (optionId: string) => void): HTMLButtonElement {
+function optionButton(option: Option, choose: (optionId: string) => void, ordinal?: number): HTMLButtonElement {
   const important = option.kind === "hu" || option.kind === "draw";
+  const label = optionNames[option.kind] + (ordinal ? ` · Tile ${ordinal}` : "");
   const node = button("", `btn ${important ? "primary" : "secondary"} choose`, () => choose(option.optionId));
   node.dataset.option = option.kind;
-  node.append(el("span", "", optionNames[option.kind]));
+  node.append(el("span", "", ordinal ? `Hu ${ordinal}` : label));
   if (option.faces.length) {
     const previews = el("span", "choice-tiles");
     previews.append(...option.faces.slice(0, 4).map(face => tileLabel(face)));
     if (option.faces.length > 4) previews.append(el("small", "", `+${option.faces.length - 4}`));
     node.append(previews);
-    node.setAttribute("aria-label", `${optionNames[option.kind]}: ${option.faces.map(faceName).join(", ")}`);
+    node.setAttribute("aria-label", `${label}: ${option.faces.map(faceName).join(", ")}`);
   }
   return node;
 }
 
 export interface TableHooks {
+  portal?: boolean;
   choose: (option: Option) => void;
   selected: () => void;
   results: () => void;
@@ -130,9 +133,12 @@ export class TableView {
   private readonly wallText = el("strong", "wall-count");
   private readonly tableCaption = el("span", "table-caption");
   private readonly trigger = el("div", "center-trigger");
+  private readonly discardTiles = el("div", "kong-tiles");
+  private readonly kongDiscards = el("div", "kong-discards", el("strong", "kong-title", "Kong discards"), this.discardTiles);
   private readonly handTitle = el("span", "rack-title");
   private readonly phase = el("strong", "turn-title");
   private readonly gameInfo = el("span", "game-info");
+  private readonly profile = el("span", "game-info table-profile");
   private readonly timer = el("strong", "timer");
   private readonly hint = el("p", "action-hint");
   private readonly choiceOptions = el("div", "choice-options");
@@ -142,6 +148,10 @@ export class TableView {
   private readonly claimContext = el("div", "claim-context", this.claimTitle, this.claimTime);
   private readonly choices = el("div", "choice-list", this.choiceOptions,
     el("div", "choice-footer", this.claimContext, this.choicePass));
+  private readonly replacementTiles = el("div", "kong-tiles");
+  private readonly release = el("div", "kong-release");
+  private readonly replacements = el("div", "kong-replacements", el("strong", "kong-title", "Kong replacements"),
+    this.replacementTiles, this.release);
   private readonly discard = button("Discard tile", "btn primary discard-confirm", () => this.confirm());
   private readonly resultButton: HTMLButtonElement;
   private readonly pauseButton: HTMLButtonElement;
@@ -172,7 +182,8 @@ export class TableView {
       marker.setAttribute("aria-hidden", "true");
       return marker;
     });
-    const center = el("div", "board-center", this.tableCaption, el("div", "center-wall", this.wallText, " wall"), this.trigger);
+    const center = el("div", "board-center", this.tableCaption, el("div", "center-wall", this.wallText, " wall"),
+      this.trigger, this.kongDiscards);
     this.plane.prepend(well, ...corners);
     this.plane.append(center);
     this.stage.prepend(this.plane);
@@ -183,8 +194,14 @@ export class TableView {
     this.optionsButton.title = "Table options";
     this.optionsButton.setAttribute("aria-label", "Table options");
     this.optionsButton.setAttribute("aria-haspopup", "dialog");
-    const status = el("div", "turnbar", el("div", "turn-ident", this.phase, this.gameInfo),
+    const status = el("div", "turnbar", el("div", "turn-ident", this.phase, this.gameInfo, this.profile),
       el("div", "turn-tools", this.timer, this.pauseButton, this.optionsButton));
+    this.profile.hidden = !hooks.portal;
+    for (const [group, label] of [[this.replacements, "Kong replacements"], [this.kongDiscards, "Kong discards"]] as const) {
+      group.setAttribute("role", "group");
+      group.setAttribute("aria-label", label);
+      group.hidden = true;
+    }
     this.timer.setAttribute("role", "timer");
     this.timer.setAttribute("aria-live", "off");
     this.phase.setAttribute("role", "status");
@@ -195,7 +212,7 @@ export class TableView {
     rack.setAttribute("aria-label", "Your tiles");
     this.hand.setAttribute("aria-label", "Concealed hand");
     this.melds.setAttribute("aria-label", "Your melds");
-    this.actions = el("div", "table-actions", this.hint, this.choices, this.discard, this.resultButton);
+    this.actions = el("div", "table-actions", this.hint, this.replacements, this.choices, this.discard, this.resultButton);
     this.hint.setAttribute("aria-live", "polite");
     this.root.append(status, this.stage, rack, this.actions, this.exposed.root, this.effects.root);
     const stopMotion = () => {
@@ -342,10 +359,20 @@ export class TableView {
     text(this.wallText, game.wallCount);
     text(this.tableCaption, `Hand ${game.handNumber} / ${room.matchHands}`);
     text(this.gameInfo, `${wind(self.seat, game.dealerSeat)}${self.seat === game.dealerSeat ? " · Dealer" : ""}`);
+    if (this.hooks.portal) text(this.profile, rulesProfile(room.rulesVersion).label);
     text(this.phase, this.phaseText(game, room.seats, self.seat, room.paused));
     const trigger = game.window?.trigger;
-    reconcile(this.trigger, trigger?.faces ?? [], (face, i) => `${i}:${face}`, face => tileLabel(face));
-    this.trigger.setAttribute("aria-label", trigger ? `${wind(trigger.seat, game.dealerSeat)} played` : "");
+    const twoTile = room.rulesVersion === twoTileKongRules;
+    const river = trigger && game.seats.find(item => item.seat === trigger.seat)?.discards;
+    // A Kong response can be a rob offer, which has no committed river tiles.
+    const residue = twoTile && game.phase === "claim" && game.window?.reason === "kong" && trigger?.faces.length &&
+      river && trigger.faces.every((face, i) => face === river.at(i - trigger.faces.length)) ? trigger : null;
+    const ordinaryTrigger = residue ? null : trigger;
+    reconcile(this.trigger, ordinaryTrigger?.faces ?? [], (face, i) => `${i}:${face}`, face => tileLabel(face));
+    this.trigger.setAttribute("aria-label", ordinaryTrigger ? `${wind(ordinaryTrigger.seat, game.dealerSeat)} played` : "");
+    reconcile(this.discardTiles, residue?.faces ?? [], (face, i) => `${i}:${face}`, face => tileLabel(face));
+    this.kongDiscards.hidden = !residue;
+    this.choices.classList.toggle("kong-claim", !!residue);
     this.pauseButton.hidden = room.status !== "playing" || self.seat !== room.hostSeat;
     this.pauseButton.disabled = !canAct;
     this.optionsButton.hidden = !this.hooks.manage || !canManageMatch(state);
@@ -355,6 +382,7 @@ export class TableView {
     const discards: { lane: Lane; seat: Seat; face: Tile["face"]; own: boolean }[] = [];
     const calls: { lane: Lane; seat: Seat; kind: Meld["kind"] | "reveal" }[] = [];
     const scores: { lane: Lane; seat: Seat; delta: number; cause: string }[] = [];
+    let kongDiscard = false;
     this.lanes.forEach((lane, i) => {
       const seat = ((self.seat + i) % 4) as Seat;
       const lobby = room.seats.find(item => item.seat === seat);
@@ -365,12 +393,15 @@ export class TableView {
       const count = Math.floor(blocksLeft / 4) + (seat < blocksLeft % 4 ? 1 : 0);
       // An added-kong trigger uses the matching Peng and the drawn fourth copy,
       // so no matching face can still be in the river during a robbery offer.
-      const pendingDiscard = game.phase === "claim" && trigger?.seat === seat &&
-        trigger.faces.length === 1 && trigger.faces[0] === table.discards.at(-1);
+      const recent = residue?.seat === seat ? residue.faces.length : Number(game.phase === "claim" && trigger?.seat === seat &&
+        trigger.faces.length === 1 && trigger.faces[0] === table.discards.at(-1));
       updateLane(lane, lobby, table, self.seat, game.dealerSeat,
-        game.turnSeat === seat && game.phase === "turn", count, pendingDiscard, tableScore(state, seat));
-      if (before && table.discards.length === before.discards.length + 1) {
-        discards.push({ lane, seat, face: table.discards.at(-1)!, own: seat === self.seat });
+        game.turnSeat === seat && game.phase === "turn", count, recent, tableScore(state, seat));
+      if (before && table.discards.length > before.discards.length) {
+        if (twoTile && (residue?.seat === seat || priorGame?.kongRoll?.seat === seat)) kongDiscard = true;
+        else if (table.discards.length === before.discards.length + 1) {
+          discards.push({ lane, seat, face: table.discards.at(-1)!, own: seat === self.seat });
+        }
       }
       if (seat === self.seat) {
         setMelds(this.melds, table.melds, game.dealerSeat, true);
@@ -406,16 +437,52 @@ export class TableView {
       node.classList.toggle("is-drawn", isDrawn);
       node.setAttribute("aria-label", `${faceName(tile.face)}${isDrawn ? ", drawn tile" : ""}`);
     });
-    const nonDiscards = self.legalOptions.filter(option => option.kind !== "discard")
+    const candidates = twoTile && game.phase === "turn" && game.window?.reason === "turn" &&
+      game.window.trigger === null && game.turnSeat === self.seat
+      ? self.kongReplacements ?? [] : [];
+    const nonDiscards = self.legalOptions.filter(option => option.kind !== "discard" && option.kind !== "discardKong" &&
+      (!candidates.length || option.kind !== "hu"))
       .sort((a, b) => choiceOrder.indexOf(a.kind) - choiceOrder.indexOf(b.kind));
     const roomId = state.roomId;
     const windowId = game.window?.windowId;
     const key = (option: Option) => `${roomId}:${windowId}:${option.optionId}`;
-    const control = (option: Option) => optionButton(option, id => {
+    const choose = (id: string) => {
       if (this.state?.roomId === roomId && this.state.game?.window?.windowId === windowId) this.choose(id);
-    });
+    };
+    const control = (option: Option) => {
+      const face = option.faces[0];
+      let ordinal: number | undefined;
+      if (option.kind === "hu" && residue?.faces.length === 2 && residue.faces.every(item => item === face)) {
+        // Same-face claims are distinct offers, in the engine's public trigger order.
+        ordinal = nonDiscards.filter(item => item.kind === "hu" && item.faces[0] === face).indexOf(option) + 1;
+      }
+      return optionButton(option, choose, ordinal);
+    };
     reconcile(this.choiceOptions, nonDiscards.filter(option => option.kind !== "pass"), key, control);
     reconcile(this.choicePass, nonDiscards.filter(option => option.kind === "pass"), key, control);
+    const replacements = candidates.map(tile => ({
+      tile, hu: self.legalOptions.find(option => option.kind === "hu" && option.tileIds.length === 1 &&
+        option.tileIds[0] === tile.tileId && option.faces.length === 1 && option.faces[0] === tile.face),
+    }));
+    reconcile(this.replacementTiles, replacements,
+      ({ tile, hu }) => `${roomId}:${windowId}:${tile.tileId}:${hu?.optionId ?? ""}`, ({ tile, hu }, i) => {
+        const face = tileLabel(tile.face);
+        if (!hu) return el("div", "kong-candidate", face);
+        const action = button("", "btn primary choose kong-candidate", () => choose(hu.optionId));
+        action.dataset.option = "hu";
+        const duplicate = candidates.some(other => other.tileId !== tile.tileId && other.face === tile.face);
+        action.setAttribute("aria-label", `${optionNames.hu}: ${faceName(tile.face)}${duplicate ? `, replacement ${i + 1}` : ""}`);
+        action.append(face, el("span", "", duplicate ? `Hu ${i + 1}` : "Hu"));
+        return action;
+      });
+    const release = candidates.length ? self.legalOptions.filter(option => option.kind === "discardKong") : [];
+    reconcile(this.release, release, key, option => {
+      const label = candidates.length === 2 ? "Discard both" : "Discard replacement";
+      const action = button(label, "btn secondary choose", () => choose(option.optionId));
+      action.dataset.option = option.kind;
+      return action;
+    });
+    this.replacements.hidden = candidates.length === 0;
     if (newWindow) this.choiceOptions.scrollTop = 0;
     this.resultButton.hidden = !game.settlement;
     text(this.resultButton, room.status === "complete" ? "Match results" : "Hand results");
@@ -478,7 +545,7 @@ export class TableView {
       return kind === "chi" || kind === "peng" ? kind : "call";
     }
     if (newDraw) return "draw";
-    if (discards.length) return "discard";
+    if (discards.length || kongDiscard) return "discard";
     if (live && game.turnSeat === self.seat && game.turnSeat !== priorGame?.turnSeat) return "turn";
   }
 
@@ -530,7 +597,9 @@ export class TableView {
       tile.setAttribute("aria-pressed", String(id === this.selection));
       tile.setAttribute("aria-disabled", String(!this.open || !this.discardOptions.has(id)));
     }
-    for (const option of this.choices.querySelectorAll("button")) option.disabled = !this.open;
+    for (const group of [this.choices, this.replacements]) {
+      for (const option of group.querySelectorAll("button")) option.disabled = !this.open;
+    }
     const reason = game?.window?.reason;
     // The last-tile draw offer and the player's resulting turn also use "lastTile".
     const response = (reason === "discard" || reason === "kong" || reason === "lastTile") && this.options.length > 0 &&
@@ -553,6 +622,9 @@ export class TableView {
       text(this.claimTitle, windowNames[reason]);
       text(this.claimTime, this.timer.textContent ?? "");
     }
+    if (centered && !this.kongDiscards.hidden) {
+      if (this.kongDiscards.parentElement !== this.choices) this.choices.prepend(this.kongDiscards);
+    } else if (this.kongDiscards.parentElement === this.choices) this.trigger.after(this.kongDiscards);
     const selected = self?.hand.find(tile => tile.tileId === this.selection);
     this.discard.hidden = this.discardOptions.size === 0;
     this.discard.disabled = !this.open || !selected;
@@ -561,9 +633,12 @@ export class TableView {
     if (game?.settlement) message = room?.status === "complete" ? "Match finished. See the final scores." : "Review the scores, then start the next hand.";
     else if (room?.paused) message = "Decisions are frozen until the timer ends or you resume.";
     else if (this.discardOptions.size) message = selected ? "Confirm your discard." : "Select a tile, then confirm.";
+    else if (!this.replacements.hidden) message = this.open
+      ? "Win on an offered replacement or discard all replacements." : "Waiting for the table to resolve the replacements.";
     else if (this.options.length && (!phoneResponse || centered)) message = "Choose one of the available actions.";
     else message = game?.phase === "claim" ? "Waiting for eligible players to respond." : "Waiting for the next turn.";
     text(this.hint, message);
+    this.hint.classList.toggle("sr-only", !this.replacements.hidden || !this.kongDiscards.hidden && this.options.length > 0);
   }
 
   private choose(optionId: string): void {

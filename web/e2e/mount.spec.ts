@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import type { Guest, Snapshot } from "../src/protocol";
+import type { ClientMessage, Guest, Payloads, Snapshot } from "../src/protocol";
 
 test("the published Mahjong hero paints exact playable bamboo faces without covering the controls", async ({ page, baseURL }) => {
   const mount = new URL(baseURL!);
@@ -120,6 +120,7 @@ test("a mounted guest can copy an invite, start a live hand, and reload into the
   const engraving = () => [...responses].find(([path]) => /\/assets\/hall-dragon-[\w-]{8,}\.svg$/.test(path));
   const sockets = new Set<string>();
   const errors: string[] = [];
+  const creates: Payloads["createRoom"][] = [];
   let snapshot: Snapshot | undefined;
   page.on("pageerror", error => errors.push(error.message));
   page.on("response", response => {
@@ -130,6 +131,10 @@ test("a mounted guest can copy an invite, start a live hand, and reload into the
   });
   page.on("websocket", socket => {
     sockets.add(socket.url());
+    socket.on("framesent", ({ payload }) => {
+      const command = JSON.parse(payload.toString()) as ClientMessage;
+      if (command.type === "command" && command.op === "createRoom") creates.push(command.payload);
+    });
     socket.on("framereceived", ({ payload }) => {
       const message = JSON.parse(payload.toString());
       if (message.type === "snapshot") snapshot = message;
@@ -163,10 +168,13 @@ test("a mounted guest can copy an invite, start a live hand, and reload into the
   await fits("Play with friends");
   await tap("Play with friends");
   const create = page.getByRole("dialog", { name: "Create a table" });
-  await expect(create.getByLabel("Birds")).toHaveValue("changsha-v1");
+  const birds = create.getByLabel("Birds");
+  await expect(birds).toHaveValue("changsha-v1");
+  await expect(birds.locator("option")).toHaveText(["One bird (classic)", "Two birds (house rules)"]);
   await create.getByRole("button", { name: "Create table" }).tap();
   await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
   expect(snapshot?.room.rulesVersion).toBe("changsha-v1");
+  expect(creates).toEqual([{ visibility: "invite", matchHands: 1, fillBots: false }]);
   await expect(inviteDialog).toHaveCount(0);
   await fits("Invite friends");
   await page.setViewportSize({ width: 740, height: 320 });

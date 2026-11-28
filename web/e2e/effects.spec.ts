@@ -237,6 +237,230 @@ function phoneHuResponse(prior: Snapshot, reason: "kong" | "lastTile"): Snapshot
   return state;
 }
 
+const kongFaces: Tile[] = [{ tileId: "private-rear", face: "c3" }, { tileId: "private-front", face: "c6" }];
+
+function kongCandidate(revision: number, method: "sum" | "lower" | "tail", seat: Seat = 0): Snapshot {
+  const state = frame(revision, 1, false);
+  state.room.rulesVersion = "changsha-two-tile-kong-v1";
+  const game = state.game!;
+  game.turnSeat = seat;
+  game.wallCount = { sum: 40, lower: 4, tail: 0 }[method];
+  game.kongRoll = { seat, dice: [2, 5], lowerDie: 2, stackMethod: method, stackCount: { sum: 7, lower: 2, tail: 1 }[method] };
+  game.seats[seat].melds = [{ kind: "gang", method: "open", fromSeat: 2, tiles: ["d3", "d3", "d3", "d3"] }];
+  state.self.hand = (seat === 0
+    ? ["b1", "b2", "b3", "b4", "b5", "b6", "c1", "c2", "d2", "d2"]
+    : ["b1", "b2", "b3", "b4", "b5", "b6", "c4", "c5", "d2", "d2", "d7", "d8", "d9"]
+  ).map((face, i) => ({ tileId: `kong-held-${i}`, face: face as Face }));
+  game.seats[seat].concealedCount = 10;
+  game.seats[0].concealedCount = state.self.hand.length;
+  if (seat === 0) {
+    const replacements = state.self.kongReplacements = method === "tail" ? kongFaces.slice(1) : kongFaces;
+    state.self.legalOptions = [
+      ...(method === "tail" ? [] : [{ kind: "hu" as const, optionId: "own-hu", tileIds: ["private-rear"], faces: ["c3" as const] }]),
+      { kind: "discardKong", optionId: "own-discard", tileIds: replacements.map(tile => tile.tileId), faces: replacements.map(tile => tile.face) },
+    ];
+  }
+  return state;
+}
+
+function kongBatch(prior: Snapshot, faces: Face[], eligible: boolean): Snapshot {
+  const state = advance(prior);
+  const game = state.game!;
+  const seat = game.turnSeat!;
+  game.seats[seat].discards.push(...faces);
+  game.phase = "claim";
+  game.turnSeat = game.kongRoll = null;
+  game.window = { ...game.window!, windowId: `kong-${state.gameRevision}`, anchorGameRevision: state.gameRevision, reason: "kong",
+    trigger: { seat, faces } };
+  delete state.self.kongReplacements;
+  state.self.legalOptions = eligible ? [
+    ...faces.map((face, i) => ({ kind: "hu" as const, optionId: `cannon-${i + 1}`, tileIds: [], faces: [face] })),
+    { kind: "pass", optionId: "pass-cannon", tileIds: [], faces: [] },
+  ] : [];
+  return state;
+}
+
+function kongChoice(snapshot: Snapshot, optionId: string) {
+  const { windowId, anchorGameRevision } = snapshot.game!.window!;
+  return { op: "choose", payload: { roomId: snapshot.roomId, windowId, anchorGameRevision, optionId } };
+}
+
+async function assertKongArt(tiles: Locator, faces: Face[], width: number, height: number) {
+  await expect(tiles).toHaveCount(faces.length);
+  for (const [i, face] of faces.entries()) {
+    const tile = tiles.nth(i);
+    const use = tile.locator("use");
+    await expect(use).toHaveAttribute("href", new RegExp(`#lt-${face}$`));
+    await expect.poll(() => use.evaluate(node => (node as SVGGraphicsElement).getBBox().width)).toBeGreaterThan(0);
+    await expect(tile).toBeInViewport({ ratio: 1 });
+    const box = (await tile.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(width);
+    expect(box.height).toBeGreaterThanOrEqual(height);
+  }
+}
+
+for (const [width, height, method, label, roll] of [
+  [320, 730, "sum", "Hu · Win: 3 characters", "Dice sum selects stack 7"],
+  [740, 320, "lower", "Discard both", "Lower die selects stack 2"],
+  [1280, 720, "sum", "Hu · Win: 3 characters, replacement 2", "Dice sum selects stack 7"],
+] as const) {
+  test(`Kong replacement controls commit one current choice at ${width}×${height} (controlled snapshots)`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height });
+    const offer = kongCandidate(31, method);
+    const sameFace = width === 1280;
+    if (sameFace) {
+      offer.self.kongReplacements = [kongFaces[0], { ...kongFaces[1], face: "c3" }];
+      offer.self.legalOptions.push({ kind: "hu", optionId: "own-hu-front", tileIds: ["private-front"], faces: ["c3"] });
+      offer.self.legalOptions.find(option => option.kind === "discardKong")!.faces = ["c3", "c3"];
+    }
+    const before = structuredClone(offer);
+    before.gameRevision--;
+    before.game!.window!.windowId = "before-replacements";
+    before.self.kongReplacements = undefined;
+    before.self.legalOptions = [];
+    before.game!.kongRoll = null;
+    const wire = await open(page, before);
+    if (width === 740) await page.addStyleTag({ content: ":root { --safe-t: 10px; --safe-r: 22px; --safe-b: 13px; --safe-l: 25px; }" });
+    await expect(page.locator(".seat-cast .seat-actor")).toHaveCount(4);
+    const rack = page.locator(".rack");
+    const dock = await rack.boundingBox();
+    const tiles = await rack.locator(".hand-tile").evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.tileId));
+    wire.publish(offer);
+    const replacements = page.getByRole("group", { name: "Kong replacements" });
+    await expect(replacements).toBeVisible();
+    await expect(page.locator(".hall-dial-roll")).toHaveText(method === "sum" ? "Sum #7" : "Low #2");
+    await expect(page.locator(".board-center [role=status]")).toHaveText(`Kong roll: 2 and 5. ${roll} from the tail.`);
+    await assertKongArt(replacements.locator(".tile-art"), ["c3", sameFace ? "c3" : "c6"], 30, 36);
+    await expect(replacements.getByRole("img", { name: "6 characters" })).toHaveCount(sameFace ? 0 : 1);
+    await expect(replacements.getByRole("button")).toHaveCount(sameFace ? 3 : 2);
+    await expect(replacements.getByRole("button", {
+      name: sameFace ? "Hu · Win: 3 characters, replacement 1" : "Hu · Win: 3 characters", exact: true,
+    })).toBeEnabled();
+    await expect(replacements.getByRole("button", { name: "Discard both", exact: true })).toBeEnabled();
+    await expect(page.locator(".center-trigger .tile-target, .river .last-discard, .hand-tile.is-drawn, .discard-confirm:visible")).toHaveCount(0);
+    expect(await rack.locator(".hand-tile").evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.tileId))).toEqual(tiles);
+    expect(await rack.boundingBox()).toEqual(dock);
+    for (const control of [...await replacements.getByRole("button").all(),
+      page.getByRole("button", { name: "Pause", exact: true }), page.getByRole("button", { name: "Table options" })]) {
+      await expect(control).toBeInViewport({ ratio: 1 });
+      const box = (await control.boundingBox())!;
+      expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+      expect(await control.evaluate(node => {
+        const { x, y, width, height } = node.getBoundingClientRect();
+        return node.contains(document.elementFromPoint(x + width / 2, y + height / 2));
+      })).toBe(true);
+    }
+    expect(await page.evaluate(() => [document.documentElement.scrollWidth, scrollY])).toEqual([width, 0]);
+    await page.screenshot({ path: info.outputPath(`kong-replacements-${width}x${height}.png`), animations: "disabled" });
+
+    const settings = page.getByRole("button", { name: "Settings" });
+    await settings.tap();
+    await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(settings).toBeFocused();
+    expect(wire.commands).toHaveLength(0);
+    const choice = replacements.getByRole("button", { name: label, exact: true });
+    if (method === "sum") await choice.press("Enter");
+    else await choice.tap();
+    await expect(choice).toBeDisabled();
+    await choice.dispatchEvent("click");
+    await expect(replacements.locator(".tile-art")).toHaveCount(2);
+    await expect(page.locator(".last-discard")).toHaveCount(0);
+    expect(await rack.boundingBox()).toEqual(dock);
+    await expect.poll(() => wire.commands.map(({ op, payload }) => ({ op, payload })))
+      .toEqual([kongChoice(offer, sameFace ? "own-hu-front" : method === "sum" ? "own-hu" : "own-discard")]);
+    if (method === "lower") {
+      wire.publish(kongBatch(offer, ["c3", "c6"], false), wire.commands[0]);
+      await expect(replacements).toBeHidden();
+      await expect(page.locator(".hall-dial-roll")).toBeHidden();
+      await assertKongArt(page.getByRole("group", { name: "Kong discards" }).locator(".tile-art"), ["c3", "c6"], 24, 28);
+      await expect(page.locator(".river--near .last-discard")).toHaveCount(2);
+      expect(wire.commands).toHaveLength(1);
+    }
+  });
+}
+
+test("short-wall Kong shows one real replacement and never submits after expiry or on reconnect (controlled snapshots)", async ({ page }) => {
+  const offer = kongCandidate(25, "tail");
+  const wire = await open(page, offer, true);
+  await page.clock.install();
+  const replacements = page.getByRole("group", { name: "Kong replacements" });
+  const discard = replacements.getByRole("button", { name: "Discard replacement", exact: true });
+  await expect(discard).toBeEnabled();
+  await expect(replacements.getByRole("button")).toHaveCount(1);
+  await assertKongArt(replacements.locator(".tile-art"), ["c6"], 30, 36);
+  await expect(page.locator(".hall-dial-roll")).toHaveText("Rear #1");
+  await expect(page.locator(".board-center [role=status]")).toHaveText("Kong roll: 2 and 5. Rear fallback selects stack 1 from the tail.");
+  await discard.focus();
+  await page.keyboard.press("Escape");
+  await page.clock.fastForward(31_000);
+  await expect(page.getByRole("timer")).toHaveText("0s");
+  await expect(discard).toBeDisabled();
+  await discard.dispatchEvent("click");
+  expect(wire.commands).toHaveLength(0);
+
+  const committed = kongBatch(offer, ["c6"], false);
+  wire.reconnect(committed);
+  await expect(replacements).toBeHidden();
+  await assertKongArt(page.getByRole("group", { name: "Kong discards" }).locator(".tile-art"), ["c6"], 24, 28);
+  await expect(page.locator(".hall-dial-roll")).toBeHidden();
+  await expect(page.locator(".effect-flight")).toHaveCount(0);
+  expect(wire.commands).toHaveLength(0);
+});
+
+for (const [width, height, faces, label] of [
+  [320, 730, ["c3", "c6"], "Hu · Win: 6 characters"],
+  [1280, 720, ["c6", "c6"], "Hu · Win · Tile 2: 6 characters"],
+] as const) {
+  test(`Kong Cannon uses one offered tile at ${width}×${height} (controlled snapshots)`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    const turn = kongCandidate(40, "sum", 3);
+    const wire = await open(page, turn, true);
+    await expect(page.locator(".hall-dial-roll")).toHaveText("Sum #7");
+    await expect(page.getByRole("group", { name: "Kong replacements" })).toHaveCount(0);
+    await expect(page.locator(".center-trigger .tile-target, .kong-discards .tile-target")).toHaveCount(0);
+    await expect(page.locator(".choice-list button")).toHaveCount(0);
+    const rack = page.locator(".rack");
+    const dock = await rack.boundingBox();
+    const offer = kongBatch(turn, [...faces], true);
+    wire.publish(offer);
+    const choices = page.getByRole("group", { name: "Available table actions" });
+    const discards = page.getByRole("group", { name: "Kong discards" });
+    await expect(choices).toHaveClass(width === 320 ? /phone-claim/ : "choice-list kong-claim");
+    await expect(page.locator(".hall-dial-roll")).toBeHidden();
+    await assertKongArt(discards.locator(".tile-art"), [...faces], 24, 28);
+    const river = page.locator(".river--left .last-discard");
+    await expect(river).toHaveCount(2);
+    for (const [i, face] of faces.entries()) await expect(river.nth(i).locator("use")).toHaveAttribute("href", new RegExp(`#lt-${face}$`));
+    const controls = choices.getByRole("button");
+    await expect(controls).toHaveCount(3);
+    await assertKongArt(choices.locator("button .tile-art"), [...faces], 24, 28);
+    await expect(choices.getByRole("button", { name: "Pass", exact: true })).toBeEnabled();
+    expect(await rack.boundingBox()).toEqual(dock);
+    const selected = choices.getByRole("button", { name: label, exact: true });
+    const dimensions = (await selected.boundingBox())!;
+    expect(Math.min(dimensions.height, dimensions.width)).toBeGreaterThanOrEqual(44);
+    if (width === 320) await selected.tap();
+    else await selected.press("Enter");
+    await expect.poll(() => wire.commands.map(({ op, payload }) => ({ op, payload })))
+      .toEqual([kongChoice(offer, "cannon-2")]);
+
+    const result = settled(offer, [0]);
+    result.game!.wallCount = 0;
+    result.game!.settlement!.sourceSeat = 3;
+    result.game!.settlement!.winners[0].winningTiles = ["c6"];
+    result.game!.settlement!.winners[0].patterns = [{ code: "kongCannon", label: "Kong Cannon", points: 6 }];
+    result.game!.settlement!.birds = ["d5"];
+    wire.publish(result, wire.commands[0]);
+    const results = page.getByRole("dialog", { name: "Hand results" });
+    await expect(results.getByText("Two-tile Kong · Two birds", { exact: true })).toBeVisible();
+    const winning = results.getByRole("group", { name: "Winning tile" }).getByRole("img");
+    await expect(winning).toHaveCount(1);
+    await expect(winning).toHaveAccessibleName("6 characters");
+    await expect(results.getByText("Only one wall tile remained after the win.")).toBeVisible();
+  });
+}
+
 const claimLabels = [
   "Hu · Win: 5 bamboo", "Peng: 5 bamboo, 5 bamboo, 5 bamboo",
   "Cha: 3 bamboo, 4 bamboo, 5 bamboo", "Cha: 4 bamboo, 5 bamboo, 6 bamboo", "Cha: 5 bamboo, 6 bamboo, 7 bamboo", "Pass",
