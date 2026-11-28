@@ -11,6 +11,7 @@ const errors: Record<string, string> = {
   room_not_found: "That table or invitation is no longer available.",
   room_full: "That table just filled up. Try another one.",
   already_seated: "You already have a seat. Resume it before joining another table.",
+  seat_released: "You gave up your seat and can’t rejoin this hand.",
   invalid_state: "The table has moved on. Review the current state and try again.",
   not_ready: "Wait until all four seats are filled and ready.",
   stale_room: "The room changed while you were acting. Checking the latest state.",
@@ -30,7 +31,7 @@ export function errorMessage(code: string): string {
 
 interface Hooks {
   change: (event?: { snapshot: true; effects: boolean }) => void;
-  notice: (message: string) => void;
+  notice: (message: string, command?: Command) => void;
   committed: (command: Command) => void;
   guestRefresh: (guest: Guest) => void;
 }
@@ -83,6 +84,10 @@ export class TableSession {
 
   get now(): number { return this.epoch + performance.now(); }
 
+  get releasingSeat(): boolean {
+    return this.intent?.message.op === "leaveRoom" && !!this.intent.message.payload.replaceWithBot;
+  }
+
   get available(): boolean {
     return this.status === "online" && !this.intent && !this.expected &&
       !!this.lease && Date.parse(this.lease.expiresAtUtc) > this.now;
@@ -120,7 +125,7 @@ export class TableSession {
     this.intent = {
       message: { ...action, v: 1, type: "command", requestId: requestId(), lease: this.lease.lease },
       expiresAt: Date.parse(this.lease.expiresAtUtc),
-      reserveOnLeave: action.op === "leaveRoom" && !action.payload.abandon &&
+      reserveOnLeave: action.op === "leaveRoom" && !action.payload.abandon && !action.payload.replaceWithBot &&
         (this.snapshot?.room.status === "playing" || this.snapshot?.room.status === "betweenHands"),
       deliveries: 0,
     };
@@ -153,7 +158,7 @@ export class TableSession {
         case "ack": this.receiveAck(message); break;
         case "snapshot": this.receiveSnapshot(message); break;
         case "error":
-          if (message.error.code === "room_not_found") {
+          if (message.error.code === "room_not_found" || message.error.code === "seat_released") {
             this.clearRoom();
             if (this.lease) this.online();
           }
@@ -263,7 +268,7 @@ export class TableSession {
       } else {
         const code = ack.error?.code ?? "unavailable";
         this.sync = null;
-        if (code === "room_not_found" || code === "forbidden") {
+        if (code === "room_not_found" || code === "forbidden" || code === "seat_released") {
           // A committed leave can delete membership before its ack is delivered.
           if (this.intent?.message.op === "leaveRoom") this.roomId = null;
           else {
@@ -286,7 +291,9 @@ export class TableSession {
     if (ack.status === "error") {
       const code = ack.error?.code ?? "unavailable";
       if (!this.roomId && intent.message.op === "leaveRoom") this.clearRoom();
-      this.hooks.notice(errorMessage(code));
+      const botGone = intent.message.op === "joinRoom" && intent.message.payload.takeBot &&
+        (code === "room_full" || code === "room_not_found" || code === "invalid_state");
+      this.hooks.notice(botGone ? "That bot seat is no longer available. Try a current listing." : errorMessage(code), intent.message);
       const next = expectation(ack);
       if (next && this.roomId === next.roomId && (!this.snapshot || !atLeast(this.snapshot, next.revisions!))) {
         this.waitForSnapshot(next, 340);

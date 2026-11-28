@@ -6,7 +6,7 @@ import type { Action, ChatMessage, Face, Payloads, RulesVersion, Seat, Snapshot 
 import { field, submit, toggle } from "./screens";
 import { tileLabel } from "./tile";
 
-export function showCreate(modal: Modal, initialBirds: RulesVersion | undefined,
+export function showCreate(modal: Modal, initialBirds: RulesVersion | undefined, portal: boolean,
   enter: (payload: Payloads["createRoom"]) => void): HTMLButtonElement {
   const visibility = el("select", "", new Option("Invite only", "invite"), new Option("Public", "public"));
   const hands = el("select", "", el("option", "", "One hand"), el("option", "", "Four hands"));
@@ -15,7 +15,14 @@ export function showCreate(modal: Modal, initialBirds: RulesVersion | undefined,
   const bots = toggle("Fill the other three seats with bots", false);
   const create = submit("Create table");
   const form = el("form", "form", field("Who can join?", visibility), field("Match length", hands), field("Birds", birds), bots.field,
-    el("p", "note", "Bird rules stay with this table. You can add or remove bots in the waiting room."), el("div", "row-actions", create));
+    el("p", "note", "Bird rules stay with this table. You can add or remove bots in the waiting room."));
+  if (portal) {
+    const listing = el("p", "note", "Public listings show the host’s display name. Players can replace eligible bots, even during a hand.");
+    listing.hidden = true;
+    visibility.addEventListener("change", () => { listing.hidden = visibility.value !== "public"; });
+    form.append(listing);
+  }
+  form.append(el("div", "row-actions", create));
   form.addEventListener("submit", event => {
     event.preventDefault();
     enter({ visibility: visibility.selectedIndex === 0 ? "invite" : "public",

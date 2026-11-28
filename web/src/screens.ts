@@ -54,6 +54,9 @@ export class HomeScreen {
   private readonly invite = el("input");
   private readonly list = el("ul", "public-list");
   private readonly listStatus = el("p", "empty small");
+  private readonly search?: HTMLInputElement;
+  private publicRooms: PublicRoom[] = [];
+  private roomState: RoomList["kind"] = "loading";
   private readonly intro = el("p", "note");
   private readonly inviteStatus = el("p", "note");
   private readonly quick = submit("Play with bots", "btn secondary");
@@ -64,14 +67,14 @@ export class HomeScreen {
   private ready = false;
   private guestName = "";
 
-  constructor(hooks: {
+  constructor(private readonly hooks: {
     quick: () => void;
     create: () => void;
     resume: () => void;
     join: (code: string) => void;
-    publicJoin: (id: string) => void;
+    publicJoin: (id: string, takeBot: boolean) => void;
     refresh: () => void;
-  }) {
+  }, portal: boolean) {
     const form = el("form", "hero-copy");
     const headline = el("h1", "", "Find your ", el("em", "", "fourth."));
     const lead = el("p", "detail", "A place for Changsha mahjong. Bring friends, take an open seat, or call in three bots.");
@@ -95,7 +98,18 @@ export class HomeScreen {
     this.list.setAttribute("aria-label", "Joinable public tables");
     const publicPanel = el("section", "panel",
       panelHeading("Walk in", "Public tables", this.refresh),
-      el("p", "detail", "Only tables with an open seat are listed."), this.listStatus, this.list);
+      el("p", "detail", portal ? "Find a waiting table or take over a bot seat in an ongoing game." : "Only tables with an open seat are listed."));
+    if (portal) {
+      this.list.setAttribute("role", "list");
+      this.search = el("input");
+      this.search.type = "search";
+      this.search.autocomplete = "off";
+      this.search.addEventListener("input", () => this.showRooms());
+      const search = field("Search by host name", this.search);
+      search.classList.add("public-search");
+      publicPanel.append(search);
+    }
+    publicPanel.append(this.listStatus, this.list);
 
     this.invite.autocomplete = "off";
     this.invite.spellcheck = false;
@@ -124,10 +138,7 @@ export class HomeScreen {
       panelHeading("By invitation", "Join friends"),
       el("p", "detail", "An invite-only table won’t appear in the public list."), inviteForm, this.inviteStatus);
     this.root.append(hero, ...(fragment ? [privatePanel, publicPanel] : [publicPanel, privatePanel]));
-    this.publicJoin = hooks.publicJoin;
   }
-
-  private readonly publicJoin: (id: string) => void;
 
   identity(guest: Guest): void {
     if (this.name.value === this.guestName) this.name.value = guest.displayName === "Guest" ? "" : guest.displayName;
@@ -149,25 +160,57 @@ export class HomeScreen {
     this.refresh.disabled = !hasGuest;
     this.intro.hidden = !message;
     text(this.intro, message);
-    this.list.querySelectorAll("button").forEach(control => { control.disabled = !this.ready; });
+    this.list.querySelectorAll("button").forEach(control => {
+      control.disabled = !this.ready || this.roomState !== "ready";
+    });
   }
 
   rooms(state: RoomList): void {
-    const items = state.kind === "ready" ? state.items : [];
-    const description = state.kind === "loading" ? "Looking for open tables…" : state.kind === "error" ?
-      "Couldn’t load the list. Use Refresh public tables to try again." : "No open public tables. Create one or use an invitation.";
-    this.listStatus.hidden = items.length > 0;
+    this.roomState = state.kind;
+    if (state.kind === "ready") this.publicRooms = state.items;
+    this.showRooms();
+  }
+
+  private showRooms(): void {
+    const portal = !!this.search;
+    const query = this.search?.value.trim().toLowerCase();
+    const rooms = this.roomState === "ready" || portal ? this.publicRooms : [];
+    const items = rooms.filter(item => !query || item.hostName?.toLowerCase().includes(query));
+    const description = this.roomState === "loading" ?
+      (items.length ? "Refreshing public tables…" : portal ? "Looking for public tables…" : "Looking for open tables…") :
+      this.roomState === "error" ? (items.length ? "Couldn’t refresh the list. These results may be out of date; refresh before joining." :
+        "Couldn’t load the list. Use Refresh public tables to try again.") :
+      items.length ? "" : query ? "No public tables match that host name. Try another name or clear the search." :
+      portal ? "No joinable public tables. Create one or use an invitation." : "No open public tables. Create one or use an invitation.";
+    this.listStatus.hidden = !portal && !description;
     text(this.listStatus, description);
-    reconcile(this.list, items, item => item.roomId, item => {
-      const summary = el("span", "small");
-      const control = button("Join table", "btn secondary", () => this.publicJoin(item.roomId));
-      return el("li", "room-row", summary, control);
-    }, (node, item) => {
+    reconcile(this.list, items, item => item.roomId, () => el("li", "room-row",
+      portal ? el("div", "small room-summary", el("span", "chip"), el("p"), el("p")) : el("span", "small"),
+      button("Join table", "btn secondary")), (node, item) => {
       const profile = item.rulesVersion && birdProfiles[item.rulesVersion];
-      text(node.firstElementChild!, `${item.occupiedSeats} / 4 seats · ${item.matchHands === 1 ? "One hand" : "Four hands"}${profile ? ` · ${profile}` : ""}`);
+      const summary = node.firstElementChild!;
+      const playing = item.status === "playing";
+      const bots = item.botSeats;
+      const host = portal && item.hostName ? item.hostName : "";
+      const detail = `${item.occupiedSeats} / 4 seats · ${item.matchHands === 1 ? "One hand" : "Four hands"}${profile ? ` · ${profile}` : ""}`;
+      if (portal) {
+        const [badge, name, counts] = summary.children;
+        text(badge, playing ? "In progress" : "Waiting");
+        text(name, host ? `Host: ${host}` : "");
+        text(counts, bots === undefined ? detail : `${detail} · ${bots} bot ${bots === 1 ? "seat" : "seats"} available`);
+      } else text(summary, detail);
+
+      const openSeat = !playing && item.occupiedSeats < 4;
+      const takeBot = portal && !openSeat && (bots ?? 0) > 0;
       const control = node.querySelector("button")!;
-      control.disabled = !this.ready;
-      control.setAttribute("aria-label", `Join public table with ${item.occupiedSeats} of 4 seats, ${item.matchHands === 1 ? "one hand" : "four hands"}${profile ? `, ${profile}` : ""}`);
+      control.hidden = portal && !openSeat && !takeBot;
+      control.disabled = !this.ready || this.roomState !== "ready";
+      text(control, takeBot ? "Take a bot seat" : "Join table");
+      control.setAttribute("aria-label", takeBot ? `Take a bot seat${host ? ` at the table hosted by ${host}` : ""}` :
+        `Join public table with ${item.occupiedSeats} of 4 seats, ${item.matchHands === 1 ? "one hand" : "four hands"}${profile ? `, ${profile}` : ""}${host ? `, hosted by ${host}` : ""}`);
+      control.onclick = () => {
+        if (this.ready && this.roomState === "ready" && !control.hidden) this.hooks.publicJoin(item.roomId, takeBot);
+      };
     });
   }
 }

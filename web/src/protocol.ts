@@ -28,6 +28,9 @@ export interface PublicRoom {
   occupiedSeats: number;
   matchHands: MatchHands;
   rulesVersion?: RulesVersion;
+  status?: "waiting" | "playing";
+  botSeats?: number;
+  hostName?: string;
 }
 
 export interface RoomSeat {
@@ -154,14 +157,14 @@ interface RoomRevision {
 
 export interface Payloads {
   createRoom: { visibility: Visibility; matchHands: MatchHands; fillBots?: boolean; rulesVersion?: RulesVersion };
-  joinRoom: { roomId: string; inviteCode?: never } | { inviteCode: string; roomId?: never };
+  joinRoom: { roomId: string; inviteCode?: never; takeBot?: true } | { inviteCode: string; roomId?: never; takeBot?: never };
   setReady: RoomRevision & { ready: boolean };
   setBot: RoomRevision & { seat: Seat; enabled: boolean };
   start: RoomRevision;
   setPaused: RoomRevision & { paused: boolean };
   choose: { roomId: string; windowId: string; anchorGameRevision: number; optionId: string };
   nextHand: RoomRevision;
-  leaveRoom: RoomRevision & { abandon?: boolean };
+  leaveRoom: RoomRevision & ({ abandon?: boolean; replaceWithBot?: never } | { abandon?: never; replaceWithBot: true });
   rematch: RoomRevision;
   restartMatch: RoomRevision;
   chat: { roomId: string; text: string };

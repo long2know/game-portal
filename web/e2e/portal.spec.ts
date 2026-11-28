@@ -1,7 +1,7 @@
 import { gzipSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
-import type { Ack, ClientMessage, Command, Guest, ServerMessage, Snapshot } from "../src/protocol";
+import type { Ack, ClientMessage, Command, Guest, PublicRoom, ServerMessage, Snapshot } from "../src/protocol";
 import type { MoveReply, Table } from "../src/portal/api";
 import { checkLattice, paintedUses } from "./east-court-support";
 import { fitsPhone, observeMotion, projected, receive, state, tap, urls } from "./portal-support";
@@ -971,6 +971,30 @@ test.describe("mounted Jade Court portal", () => {
     });
 });
 
+function watchMahjong(page: Page, mount: string) {
+  const path = new URL("ws", mount).pathname;
+  const sent: ClientMessage[] = [];
+  let latest: Snapshot | undefined;
+  page.on("websocket", socket => {
+    if (new URL(socket.url()).pathname !== path) return;
+    socket.on("framesent", ({ payload }) => { sent.push(JSON.parse(payload.toString()) as ClientMessage); });
+    socket.on("framereceived", ({ payload }) => {
+      const frame = JSON.parse(payload.toString()) as ServerMessage;
+      if (frame.type === "snapshot") latest = frame;
+    });
+  });
+  return { sent, latest: () => latest! };
+}
+
+async function createMahjong(page: Page, visibility: "public" | "invite", fillBots = false) {
+  await tap(page, "Play with friends");
+  const form = page.getByRole("dialog", { name: "Create a table" });
+  await form.getByLabel("Who can join?").selectOption(visibility);
+  if (fillBots) await form.getByLabel("Fill the other three seats with bots").check();
+  await form.getByRole("button", { name: "Create table" }).tap();
+  await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
+}
+
 test.describe("mounted Jade Court Mahjong", () => {
   test.beforeEach(({ baseURL }) => {
     test.skip(!baseURL || !/^\/(?:portal|game-portal)\/$/.test(new URL(baseURL).pathname),
@@ -1019,6 +1043,13 @@ test.describe("mounted Jade Court Mahjong", () => {
     await tap(page, "Play with friends");
     const create = page.getByRole("dialog", { name: "Create a table" });
     await expect(create.getByLabel("Birds")).toHaveValue("changsha-two-bird-v1");
+    const listing = create.getByText(/Public listings show the host’s display name/);
+    await expect(listing).toBeHidden();
+    await create.getByLabel("Who can join?").selectOption("public");
+    await expect(listing).toContainText("Players can replace eligible bots, even during a hand.");
+    await expect(listing).toBeVisible();
+    await create.getByLabel("Who can join?").selectOption("invite");
+    await expect(listing).toBeHidden();
     await create.getByRole("button", { name: "Create table" }).tap();
     await expect(page.getByRole("heading", { name: "Take a seat." })).toBeVisible();
     expect(snapshot?.room.rulesVersion).toBe("changsha-two-bird-v1");
@@ -1223,5 +1254,290 @@ test.describe("mounted Jade Court Mahjong", () => {
       visibility: "invite", matchHands: 1, fillBots: true, rulesVersion: "changsha-two-bird-v1",
     });
     await tap(page, "Leave table");
+  });
+
+  test("public Mahjong search survives automatic refresh and a retained row sends its current join action", async ({ page, baseURL }) => {
+    const url = (path: string) => new URL(path, baseURL!).href;
+    const row: PublicRoom = { roomId: "a".repeat(22), occupiedSeats: 3, matchHands: 1, rulesVersion: "changsha-two-bird-v1",
+      status: "waiting", botSeats: 2, hostName: "Test First" };
+    const second: PublicRoom = { ...row, roomId: "b".repeat(22), occupiedSeats: 4, status: "playing", hostName: "Test Second" };
+    let rooms = [row, second];
+    let failed = false;
+    const joins: Command[] = [];
+    await page.route(url("api/rooms"), route => route.fulfill(failed ? { status: 503 } : { json: { rooms } }));
+    await page.routeWebSocket("**/ws", route => {
+      route.onMessage(payload => {
+        const command = JSON.parse(payload.toString()) as ClientMessage;
+        if (command.type === "command" && command.op === "joinRoom") {
+          joins.push(command);
+          route.send(JSON.stringify({ v: 1, type: "ack", status: "error", requestId: command.requestId,
+            error: { code: "room_full" }, roomId: null, roomRevision: null, gameRevision: null } satisfies Ack));
+        }
+      });
+      route.send(JSON.stringify({ v: 1, type: "lease", lease: "fixture-lease",
+        serverTimeUtc: new Date().toISOString(), expiresAtUtc: new Date(Date.now() + 600_000).toISOString() }));
+    });
+    await page.clock.install();
+    await page.setViewportSize({ width: 320, height: 730 });
+    await page.goto(url("mahjong/"));
+    const search = page.getByRole("searchbox", { name: "Search by host name" });
+    const list = page.getByRole("list", { name: "Joinable public tables" });
+    const first = list.getByRole("listitem").filter({ hasText: "Host: Test First" });
+    const join = first.getByRole("button", { name: "Join public table with 3 of 4 seats, one hand, Two birds (house rules), hosted by Test First" });
+    const claim = first.getByRole("button", { name: "Take a bot seat at the table hosted by Test First" });
+    await expect(join).toBeEnabled();
+    await expect(first.getByText("Waiting", { exact: true })).toBeVisible();
+    await expect(first).toContainText("3 / 4 seats · One hand · Two birds (house rules) · 2 bot seats available");
+    await expect(list.getByText("In progress", { exact: true })).toBeVisible();
+    await search.fill("missing host");
+    await expect(list.getByRole("listitem")).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: "No public tables match that host name." })).toBeVisible();
+    await search.fill("  teST fiR  ");
+    await expect(list.getByRole("listitem")).toHaveCount(1);
+    await first.evaluate(node => { node.classList.add("test-same-row"); });
+
+    rooms = [{ ...row, status: "playing", occupiedSeats: 4, botSeats: 3 }, second];
+    await page.clock.fastForward(15_000);
+    await expect(search).toHaveValue("  teST fiR  ");
+    await expect(search).toBeFocused();
+    await expect(first).toHaveClass(/test-same-row/);
+    await expect(first.getByText("In progress", { exact: true })).toBeVisible();
+    await expect(first).toContainText("3 bot seats available");
+    await fitsPhone(page);
+    failed = true;
+    await claim.tap();
+    await expect.poll(() => joins[0]?.payload).toEqual({ roomId: row.roomId, takeBot: true });
+    await expect(page.getByText("That bot seat is no longer available. Try a current listing.")).toBeVisible();
+    await expect(page.getByText(/These results may be out of date/)).toBeVisible();
+    await expect(claim).toBeDisabled();
+    failed = false;
+    rooms = [{ ...row, occupiedSeats: 4, botSeats: 1 }, second];
+    await tap(page, "Refresh public tables");
+    await expect(first).toContainText("1 bot seat available");
+    await expect(first.getByText("Waiting", { exact: true })).toBeVisible();
+    await expect(claim).toBeEnabled();
+    rooms = [row, second];
+    await claim.tap();
+    await expect.poll(() => joins[1]?.payload).toEqual({ roomId: row.roomId, takeBot: true });
+    await expect(join).toBeEnabled();
+    await expect(first).toHaveClass(/test-same-row/);
+
+    rooms = [{ roomId: row.roomId, occupiedSeats: 2, matchHands: 4 }];
+    await join.tap();
+    await expect.poll(() => joins[2]?.payload).toEqual({ roomId: row.roomId });
+    await expect(page.getByText(/No public tables match that host name/)).toBeVisible();
+    await search.fill("");
+    const legacy = list.getByRole("button", { name: "Join public table with 2 of 4 seats, four hands", exact: true });
+    await expect(legacy).toBeEnabled();
+    await legacy.tap();
+    await expect.poll(() => joins[3]?.payload).toEqual({ roomId: row.roomId });
+  });
+
+  test("public Mahjong bot claim and confirmed handoff keep the same hand and transfer the host", async ({ page, browser, baseURL }, testInfo) => {
+    const url = (path: string) => new URL(path, baseURL!).href;
+    const host = watchMahjong(page, baseURL!);
+    const hostName = `Test Host ${testInfo.workerIndex}`;
+    const nextHostName = `Test Keeper ${testInfo.workerIndex}`;
+    const attempts: Command[] = [];
+    let sendStale: (() => void) | undefined;
+    let committed: Ack | undefined;
+    let replay: Ack | undefined;
+    let deliverReplay: (() => void) | undefined;
+    await page.routeWebSocket("**/ws", route => {
+      const server = route.connectToServer();
+      route.onMessage(payload => {
+        const message = JSON.parse(payload.toString()) as ClientMessage;
+        if (message.type === "command" && message.op === "leaveRoom" && message.payload.replaceWithBot) {
+          attempts.push(message);
+          if (attempts.length === 1) {
+            sendStale = () => server.send(payload);
+            return;
+          }
+        }
+        server.send(payload);
+      });
+      server.onMessage(payload => {
+        const message = JSON.parse(payload.toString()) as ServerMessage;
+        if (message.type === "ack" && message.status === "ok" && message.requestId === attempts[1]?.requestId) {
+          if (!committed) {
+            committed = message;
+            route.close({ code: 1012, reason: "test lost handoff ack" });
+          } else {
+            replay = message;
+            deliverReplay = () => { route.send(payload); route.send(payload); };
+          }
+          return;
+        }
+        route.send(payload);
+      });
+    });
+    const viewport = { width: 320, height: 730 };
+    await page.setViewportSize(viewport);
+    const other = await browser.newContext({ baseURL, viewport, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+    try {
+      const peer = await other.newPage();
+      const guest = watchMahjong(peer, baseURL!);
+      await page.goto(url("mahjong/"));
+      await page.getByLabel("Display name").fill(hostName);
+      await createMahjong(page, "public", true);
+      await tap(page, "Mark ready");
+      await tap(page, "Start match");
+      await tap(page, "Pause");
+      await expect(page.getByText("Table paused", { exact: true })).toBeVisible();
+      const paused = host.latest();
+      expect(paused.room.seats.map(seat => seat.kind)).toEqual(["human", "bot", "bot", "bot"]);
+
+      await peer.goto(url("mahjong/"));
+      await peer.getByLabel("Display name").fill("Test Guest");
+      await peer.getByRole("searchbox", { name: "Search by host name" }).fill(hostName.toLowerCase());
+      const listing = peer.getByRole("listitem").filter({ has: peer.getByText(`Host: ${hostName}`, { exact: true }) });
+      await expect(listing).toContainText("In progress");
+      await expect(listing).toContainText("3 bot seats available");
+      await listing.getByRole("button", { name: /^Take a bot seat/ }).tap();
+      const table = peer.getByRole("region", { name: "Mahjong table" });
+      await expect(table).toBeVisible();
+      expect(guest.sent.find(message => message.type === "command" && message.op === "joinRoom")).toMatchObject({
+        op: "joinRoom", payload: { roomId: paused.roomId, takeBot: true },
+      });
+      expect(guest.latest()).toMatchObject({ roomId: paused.roomId, gameRevision: paused.gameRevision,
+        self: { seat: 1 }, game: { window: { windowId: paused.game!.window!.windowId } } });
+
+      const beforeReserve = guest.latest();
+      await tap(peer, "Settings");
+      await tap(peer, "Back to lobby");
+      await expect(peer.getByRole("button", { name: "Resume your table" })).toBeEnabled();
+      const ordinary = guest.sent.find(message => message.type === "command" && message.op === "leaveRoom") as Command;
+      expect(ordinary.payload).toEqual({ roomId: paused.roomId, expectedRoomRevision: beforeReserve.roomRevision });
+      await peer.reload();
+      await expect(table).toHaveCount(0);
+      await tap(peer, "Resume your table");
+      await expect(table).toBeVisible();
+      expect(guest.latest()).toMatchObject({ roomId: paused.roomId, self: { seat: 1 },
+        game: { window: { windowId: paused.game!.window!.windowId } } });
+
+      const label = "Leave and let a bot play";
+      const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+      const confirmation = page.getByRole("dialog", { name: `${label}?`, exact: true });
+      const confirm = confirmation.getByRole("button", { name: label, exact: true });
+      const cancel = confirmation.getByRole("button", { name: "Cancel", exact: true });
+      await tap(page, "Settings");
+      const name = settings.getByLabel("Display name");
+      await name.fill("Unsaved test name");
+      const handoff = settings.getByRole("button", { name: label, exact: true });
+      await handoff.tap();
+      await expect(cancel).toBeFocused();
+      await expect(cancel).toBeInViewport({ ratio: 1 });
+      await expect(confirm).toBeInViewport({ ratio: 1 });
+      await expect(confirm).toHaveAccessibleDescription(/other players keep playing.*won’t be reserved.*can’t rejoin this hand/);
+      expect((await confirm.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      await fitsPhone(page);
+      await cancel.tap();
+      await expect(handoff).toBeFocused();
+      await expect(name).toHaveValue("Unsaved test name");
+      expect(attempts).toHaveLength(0);
+
+      await tap(peer, "Settings");
+      await tap(peer, label);
+      const peerConfirm = peer.getByRole("dialog", { name: `${label}?`, exact: true });
+      await handoff.tap();
+      const beforeStale = host.latest();
+      await confirm.tap();
+      await expect.poll(() => !!sendStale).toBe(true);
+      await expect(confirm).toBeDisabled();
+      await expect(cancel).toBeDisabled();
+      const origin = new URL(baseURL!).origin;
+      const renamed = await peer.request.patch(url("api/profile"), { headers: { Origin: origin }, data: { displayName: nextHostName } });
+      expect(renamed.ok()).toBe(true);
+      await expect.poll(() => host.latest().roomRevision).toBe(beforeStale.roomRevision + 1);
+      sendStale!();
+      await expect(confirmation.getByText(/The room changed while you were acting/)).toBeVisible();
+      await expect(confirm).toBeEnabled();
+      const before = host.latest();
+      await confirm.tap();
+      await expect.poll(() => !!deliverReplay).toBe(true);
+      await expect(confirm).toBeDisabled();
+      expect(attempts.map(({ payload }) => payload)).toEqual([
+        { roomId: before.roomId, expectedRoomRevision: beforeStale.roomRevision, replaceWithBot: true },
+        { roomId: before.roomId, expectedRoomRevision: before.roomRevision, replaceWithBot: true },
+        { roomId: before.roomId, expectedRoomRevision: before.roomRevision, replaceWithBot: true },
+      ]);
+      expect(JSON.stringify(attempts[1]) === JSON.stringify(attempts[2])).toBe(true);
+      expect(JSON.stringify(replay) === JSON.stringify(committed)).toBe(true);
+      await expect.poll(() => guest.latest().roomRevision).toBe(before.roomRevision + 1);
+      expect(guest.latest()).toMatchObject({ roomId: before.roomId, gameRevision: before.gameRevision,
+        room: { hostSeat: 1, status: "playing", paused: true }, game: { handNumber: before.game!.handNumber,
+          dealerSeat: before.game!.dealerSeat, window: { windowId: before.game!.window!.windowId } } });
+      expect(guest.latest().room.seats.map(seat => seat.kind)).toEqual(["bot", "human", "bot", "bot"]);
+      await expect(peerConfirm.getByRole("button", { name: label })).toBeDisabled();
+      await expect(peerConfirm.getByText(/The handoff is no longer available/)).toBeVisible();
+      await peerConfirm.getByRole("button", { name: "Cancel" }).tap();
+      await expect(peer.getByRole("button", { name: label })).toHaveCount(0);
+      await tap(peer, "Close dialog");
+      deliverReplay!();
+
+      const play = page.getByRole("button", { name: "Play with bots" });
+      await expect(play).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Resume your table" })).toHaveCount(0);
+      const membership = await page.request.post(url("api/guest"), { headers: { Origin: origin }, data: {} });
+      expect(await membership.json()).toMatchObject({ resumeRoomId: null });
+      expect(await page.evaluate(() => history.state?.courtTable ?? null)).toBeNull();
+      const syncs = () => host.sent.filter(message => message.type === "sync").length;
+      const beforeReload = syncs();
+      await page.reload();
+      await expect(play).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Resume your table" })).toHaveCount(0);
+      expect(syncs()).toBe(beforeReload);
+      const retained = page.getByRole("listitem").filter({ has: page.getByText(`Host: ${nextHostName}`, { exact: true }) });
+      await expect(retained).toContainText("3 bot seats available");
+      await expect(retained.getByText("In progress", { exact: true })).toBeVisible();
+      await retained.getByRole("button", { name: /^Take a bot seat/ }).tap();
+      await expect(page.getByText("You gave up your seat and can’t rejoin this hand.")).toBeVisible();
+      await tap(peer, "Resume");
+      await expect.poll(() => guest.latest().room.paused).toBe(false);
+      expect(guest.latest()).toMatchObject({ roomId: before.roomId, game: { handNumber: before.game!.handNumber } });
+    } finally { await other.close(); }
+  });
+
+  test("a nonhost can hand off during private Mahjong play without making the room public", async ({ page, browser, baseURL }) => {
+    const url = (path: string) => new URL(path, baseURL!).href;
+    const host = watchMahjong(page, baseURL!);
+    const other = await browser.newContext({ baseURL, isMobile: true, hasTouch: true, deviceScaleFactor: 1,
+      viewport: { width: 320, height: 730 } });
+    try {
+      await page.goto(url("mahjong/"));
+      await createMahjong(page, "invite");
+      const peer = await other.newPage();
+      const guest = watchMahjong(peer, baseURL!);
+      await peer.goto(url("mahjong/"));
+      await peer.getByLabel("Invitation", { exact: true }).fill(host.latest().self.inviteCode!);
+      await tap(peer, "Join");
+      await expect(peer.getByRole("heading", { name: "Take a seat." })).toBeVisible();
+      const join = guest.sent.find(message => message.type === "command" && message.op === "joinRoom") as Command;
+      expect(Object.keys(join.payload)).toEqual(["inviteCode"]);
+      await tap(page, "Add bot to West seat");
+      await tap(page, "Add bot to North seat");
+      await tap(page, "Mark ready");
+      await tap(peer, "Mark ready");
+      await tap(page, "Start match");
+      await tap(page, "Pause");
+      await expect(peer.getByText("Table paused", { exact: true })).toBeVisible();
+      const before = guest.latest();
+      const label = "Leave and let a bot play";
+      await tap(peer, "Settings");
+      await tap(peer, label);
+      await tap(peer, label);
+      await expect(peer.getByRole("button", { name: "Play with friends" })).toBeEnabled();
+      await expect(peer.getByRole("button", { name: "Resume your table" })).toHaveCount(0);
+      expect(guest.sent.at(-1)).toMatchObject({ op: "leaveRoom", payload: {
+        roomId: before.roomId, expectedRoomRevision: before.roomRevision, replaceWithBot: true,
+      } });
+      await expect.poll(() => host.latest().roomRevision).toBe(before.roomRevision + 1);
+      expect(host.latest()).toMatchObject({ roomId: before.roomId, gameRevision: before.gameRevision,
+        room: { visibility: "invite", status: "playing", hostSeat: 0 },
+        game: { window: { windowId: before.game!.window!.windowId } } });
+      expect(host.latest().room.seats.map(seat => seat.kind)).toEqual(["human", "bot", "bot", "bot"]);
+      const listed = await peer.request.get(url("api/rooms"));
+      expect((await listed.json()).rooms.some((room: PublicRoom) => room.roomId === before.roomId)).toBe(false);
+    } finally { await other.close(); }
   });
 });

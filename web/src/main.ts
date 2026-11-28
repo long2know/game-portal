@@ -45,9 +45,9 @@ class LanternTable {
     create: () => this.openCreate(),
     resume: () => this.session.resume(),
     join: inviteCode => void this.enter({ op: "joinRoom", payload: { inviteCode } }),
-    publicJoin: roomId => void this.enter({ op: "joinRoom", payload: { roomId } }),
+    publicJoin: (roomId, takeBot) => void this.enter({ op: "joinRoom", payload: takeBot ? { roomId, takeBot: true } : { roomId } }),
     refresh: () => void this.refresh(),
-  });
+  }, fromPortal);
   private readonly waiting = new WaitingRoom({
     ready: ready => { const room = this.bound(); if (room) this.command({ op: "setReady", payload: { ...room, ready } }); },
     bot: (seat, enabled) => { const room = this.bound(); if (room) this.command({ op: "setBot", payload: { ...room, seat, enabled } }); },
@@ -58,7 +58,10 @@ class LanternTable {
   });
   private readonly session = new TableSession({
     change: event => this.render(event?.effects ?? false),
-    notice: message => this.showNotice(message),
+    notice: (message, command) => {
+      this.showNotice(message);
+      if (fromPortal && command?.op === "joinRoom" && command.payload.roomId) void this.refresh(false);
+    },
     committed: command => this.committed(command),
     guestRefresh: guest => this.setGuest(guest),
   });
@@ -81,7 +84,7 @@ class LanternTable {
   private resultReveal = 0;
   private restartPending = false;
   private message = "";
-  private overlayActions: HTMLButtonElement[] = [];
+  private overlayActions?: (available: boolean) => void;
 
   constructor(mount: HTMLElement) {
     const brand = el(fromPortal ? "a" : "div", "brand", el("span", "brand-symbol"),
@@ -132,6 +135,7 @@ class LanternTable {
         this.showNotice(handoffError);
         return;
       }
+      if (entry && entry.tableId !== guest.resumeRoomId) rememberTable(appPath, "mahjong", null);
       this.session.start(guest, !fromPortal || entry?.tableId === guest.resumeRoomId);
       void this.refresh();
     } catch (error) {
@@ -204,10 +208,10 @@ class LanternTable {
     this.command(action);
   }
 
-  private command(action: Action): void {
-    if (!this.session.available) return;
+  private command(action: Action): boolean {
+    if (!this.session.available) return false;
     this.showNotice("");
-    this.session.send(action);
+    return this.session.send(action);
   }
 
   private committed(command: Command): void {
@@ -241,7 +245,8 @@ class LanternTable {
     const status = this.bootFailed ? "offline" : this.session.status;
     this.connection.dataset.status = status;
     text(this.connectionLabel, connectionText[status]);
-    const passive = status === "offline" ? "Connection lost. Your seat is kept while we reconnect." :
+    const passive = status === "offline" ? this.session.releasingSeat ?
+      "Connection lost. Checking whether your seat was handed over." : "Connection lost. Your seat is kept while we reconnect." :
       status === "taken-over" ? "This seat is open in another tab. This tab will not reconnect on its own." : "";
     const message = this.message || passive;
     this.retryButton.hidden = !this.bootFailed && !this.handoffFailed && status !== "offline" && status !== "taken-over";
@@ -319,7 +324,7 @@ class LanternTable {
     if (restarted && this.modal.kind === "match") this.modal.close();
     this.audio.setTableActive(scene === "play" && this.session.status === "online" && !state?.room.paused);
     if (cue) this.audio.play(cue);
-    this.overlayActions.forEach(control => { control.disabled = !available; });
+    this.overlayActions?.(available);
 
     const settlement = scene === "play" && state?.game?.settlement;
     const key = settlement ? `${state!.roomId}:${state!.game!.handNumber}:${state!.gameRevision}` : "";
@@ -353,9 +358,14 @@ class LanternTable {
   }
 
   private modalClosed(): void {
-    this.overlayActions = [];
+    this.overlayActions = undefined;
     this.audio.changed = undefined;
     this.audio.preview();
+  }
+
+  private setOverlayActions(controls: HTMLButtonElement[]): void {
+    this.overlayActions = available => controls.forEach(control => { control.disabled = !available; });
+    this.overlayActions(this.session.available && !this.profileBusy);
   }
 
   private async loadTable(): Promise<void> {
@@ -393,7 +403,7 @@ class LanternTable {
   private openCreate(): void {
     void this.openForm(({ showCreate }) => {
       if (!this.session.available || this.session.savedRoomId) return;
-      this.overlayActions = [showCreate(this.modal, newTableRules, payload => void this.enter({ op: "createRoom", payload }))];
+      this.setOverlayActions([showCreate(this.modal, newTableRules, fromPortal, payload => void this.enter({ op: "createRoom", payload }))]);
     });
   }
 
@@ -402,8 +412,10 @@ class LanternTable {
       const { showSettings } = await import("./settings");
       if (!this.guest || this.modal.root.open) return;
       this.overlayActions = showSettings({
-        guest: this.guest, state: this.session.snapshot, available: this.session.available && !this.profileBusy,
-        audio: this.audio, modal: this.modal, opener: this.settingsButton, leave: () => this.leave(),
+        guest: this.guest, snapshot: () => this.session.snapshot,
+        available: this.session.available && !this.profileBusy, portal: fromPortal,
+        audio: this.audio, modal: this.modal, opener: this.settingsButton,
+        leave: payload => this.command({ op: "leaveRoom", payload }),
         save: (name, prefs, form, control, choices) => void this.saveSettings(name, prefs, form, control, choices),
       });
     } catch { this.showNotice("Settings couldn’t load. Please try again."); }
@@ -415,6 +427,7 @@ class LanternTable {
     this.profileBusy = true;
     save.disabled = true;
     this.modal.message("");
+    this.render();
     try {
       const guest = await api.profile({ displayName: name, preferences });
       const remembered = !choices || this.audio.saveChoices(choices);
@@ -460,10 +473,7 @@ class LanternTable {
       showTableDialog({
         modal: this.modal, opener, snapshot: () => this.session.snapshot,
         command: action => this.command(action),
-        actions: controls => {
-          this.overlayActions = controls;
-          controls.forEach(control => { control.disabled = !this.session.available; });
-        },
+        actions: controls => this.setOverlayActions(controls),
       }, results);
     }, explicit);
   }

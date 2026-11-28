@@ -1,17 +1,18 @@
 import type { AudioChoices, LanternAudio } from "./audio";
 import type { Modal } from "./dialog";
 import { button, el, text } from "./dom";
-import type { Guest, Preferences, Snapshot } from "./protocol";
+import type { Guest, Payloads, Preferences, Snapshot } from "./protocol";
 import { field, nameField, submit, toggle } from "./screens";
 
 interface Settings {
   guest: Guest;
-  state: Snapshot | null;
+  snapshot: () => Snapshot | null;
   available: boolean;
+  portal: boolean;
   audio: LanternAudio;
   modal: Modal;
   opener: HTMLButtonElement;
-  leave: () => void;
+  leave: (payload: Payloads["leaveRoom"]) => boolean;
   save: (name: string, prefs: Preferences, form: HTMLFormElement, control: HTMLButtonElement, choices?: AudioChoices) => void;
 }
 
@@ -26,7 +27,7 @@ function select(options: [string, string][], value: string): HTMLSelectElement {
   return input;
 }
 
-export function showSettings({ guest, state, available, audio, modal, opener, leave, save }: Settings): HTMLButtonElement[] {
+export function showSettings({ guest, snapshot, available, portal, audio, modal, opener, leave, save }: Settings): (enabled: boolean) => void {
   const name = nameField(guest.displayName);
   name.required = true;
   const preferences = guest.preferences;
@@ -71,14 +72,10 @@ export function showSettings({ guest, state, available, audio, modal, opener, le
   test.addEventListener("click", event => {
     if (!event.isTrusted) return;
     event.preventDefault();
-    audio.testSound(() => form.isConnected && modal.root.open && modal.kind === "settings");
+    audio.testSound(() => form.isConnected && !form.hidden && modal.root.open && modal.kind === "settings");
   });
   const control = submit("Save settings");
   const actions = el("div", "row-actions", control);
-  const reserve = state?.room.status === "playing" || state?.room.status === "betweenHands";
-  const leaveButton = button(reserve ? "Back to lobby" : "Leave table", "btn subtle", leave);
-  leaveButton.disabled = !available;
-  if (state) actions.append(leaveButton);
   const form = el("form", "form", field("Display name", name), sound.field, music.field);
   if (track) form.append(field("Soundtrack", track));
   form.append(el("label", "field", readout, volume), test, audioNote);
@@ -99,7 +96,76 @@ export function showSettings({ guest, state, available, audio, modal, opener, le
     }, () => text(recordings, "Changsha recordings are unavailable. Table cues still play."));
   }
   form.append(motion.field, actions);
-  if (reserve) form.append(el("p", "note", "Your seat stays reserved. Timed decisions continue at the table."));
+  const roomId = snapshot()?.roomId;
+  const room = () => {
+    const state = snapshot();
+    return state?.roomId === roomId ? state : null;
+  };
+  const canRelease = (state: Snapshot | null) => portal && state?.room.status === "playing" &&
+    state.room.seats.some(seat => seat.kind === "human" && seat.seat !== state.self.seat);
+  let enabled = available;
+  let pending = false;
+  const leaveButton = button("Leave table", "btn subtle", () => {
+    const state = room();
+    if (enabled && state) leave({ roomId: state.roomId, expectedRoomRevision: state.roomRevision });
+  });
+  const reserveNote = el("p", "note", "Your seat stays reserved. Timed decisions continue at the table.");
+  if (roomId) {
+    actions.append(leaveButton);
+    form.append(reserveNote);
+  }
+  const handoffLabel = "Leave and let a bot play";
+  const handoff = button(handoffLabel, "btn secondary", () => {
+    if (!enabled || !canRelease(room())) return;
+    show(true);
+    cancel.focus();
+  });
+  const handoffActions = el("div", "row-actions", handoff);
+  if (portal && roomId) form.append(handoffActions);
+  const cancel = button("Cancel", "btn subtle", () => {
+    show(false);
+    (handoffActions.hidden ? leaveButton : handoff).focus();
+  });
+  const confirm = button(handoffLabel, "btn primary", () => {
+    const state = room();
+    if (!enabled || !state || !canRelease(state)) return;
+    pending = true;
+    if (!leave({ roomId: state.roomId, expectedRoomRevision: state.roomRevision, replaceWithBot: true })) {
+      pending = false;
+      update(false);
+    }
+  });
+  const warning = el("p", "detail", "A bot takes your place in the current hand. The other players keep playing. Your seat won’t be reserved, and you can’t rejoin this hand.");
+  warning.id = "seat-handoff-warning";
+  confirm.setAttribute("aria-describedby", warning.id);
+  const handoffStatus = el("p", "note");
+  handoffStatus.setAttribute("role", "status");
+  const confirmation = el("div", "form", warning, el("div", "row-actions", cancel, confirm), handoffStatus);
+  const content = portal && roomId ? el("div", "", form, confirmation) : form;
+  function show(confirming = false): void {
+    form.hidden = confirming;
+    confirmation.hidden = !confirming;
+    modal.show("settings", confirming ? `${handoffLabel}?` : "Settings", content, opener);
+  }
+  function update(available: boolean): void {
+    enabled = available;
+    if (available) pending = false;
+    const state = room();
+    const reserve = state?.room.status === "playing" || state?.room.status === "betweenHands";
+    leaveButton.hidden = !state;
+    leaveButton.disabled = !available;
+    text(leaveButton, reserve ? "Back to lobby" : "Leave table");
+    reserveNote.hidden = !reserve;
+    const eligible = canRelease(state);
+    handoffActions.hidden = !eligible;
+    handoff.disabled = !available;
+    confirm.disabled = !available || !eligible;
+    cancel.disabled = pending;
+    const status = pending ? "Waiting for the table to confirm your handoff…" :
+      eligible ? "" : "The handoff is no longer available. Return to Settings to review the table.";
+    handoffStatus.hidden = !status;
+    text(handoffStatus, status);
+  }
   form.addEventListener("submit", event => {
     event.preventDefault();
     const displayName = name.value.trim();
@@ -116,8 +182,9 @@ export function showSettings({ guest, state, available, audio, modal, opener, le
       volume: Number(volume.value) / 100, reducedMotion: motion.input.checked };
     save(displayName, prefs, form, control, voice ? { track: chosenTrack(), voice: voice.value as AudioChoices["voice"] } : undefined);
   });
-  modal.show("settings", "Settings", form, opener);
+  update(available);
+  show();
   void import("./fullscreen").then(module => module.addFullscreen(actions),
     () => actions.before(el("p", "note", "Full screen unavailable.")));
-  return state ? [leaveButton] : [];
+  return update;
 }

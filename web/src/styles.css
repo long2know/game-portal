@@ -129,7 +129,12 @@ a.brand::before { content: "‹"; color: var(--gold); }
 .invite-form { display: flex; gap: 8px; align-items: end; margin-top: 10px; }
 .invite-form .field { flex: 1; }
 .public-list { display: grid; gap: 7px; padding: 0; list-style: none; margin: 8px 0 0; }
+.public-search { margin-block: 10px; }
+.public-search + .empty:empty { min-height: 0; }
 .room-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 8px 4px 11px; border: 1px solid var(--line); background: #14251e; border-radius: 10px; }
+.room-summary { display: grid; justify-items: start; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+.room-summary p:empty { display: none; }
+.room-summary + .btn { flex: 0 0 auto; max-width: 55%; }
 .empty { color: var(--muted); min-height: 44px; display: grid; align-content: center; }
 .note { font-size: .84rem; color: var(--muted); min-height: 1.2em; }
 
